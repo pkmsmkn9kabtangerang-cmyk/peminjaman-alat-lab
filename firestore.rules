@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+    function isPetugasOrAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ["admin", "petugas"];
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /kartu_rfid/{kartuId} {
+      allow read: if isPetugasOrAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /alat/{alatId} {
+      allow read: if isPetugasOrAdmin();
+      allow write: if isPetugasOrAdmin();
+    }
+
+    match /transaksi/{transaksiId} {
+      allow read: if isPetugasOrAdmin();
+      allow create, update: if isPetugasOrAdmin();
+    }
+
+    match /tap_log/{logId} {
+      allow read: if isPetugasOrAdmin();
+      allow write: if true; // allow IoT API or server endpoint write
+    }
+  }
+}

@@ -1,70 +1,93 @@
+import React, { useState, useEffect } from 'react';
+import { dbService } from './services/store';
+import Sidebar from './components/Sidebar';
+import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
+import InventarisPage from './pages/InventarisPage';
+import ListBarangPage from './pages/ListBarangPage';
+import KartuRfidPage from './pages/KartuRfidPage';
+import PersetujuanPage from './pages/PersetujuanPage';
+import PeminjamanPage from './pages/PeminjamanPage';
+import PengembalianPage from './pages/PengembalianPage';
+import RiwayatPage from './pages/RiwayatPage';
+import TambahPetugasPage from './pages/TambahPetugasPage';
+import SimulasiIotPage from './pages/SimulasiIotPage';
 
-import { useState } from "react";
+export default function App() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [currentTab, setCurrentTab] = useState('dashboard');
+  const [pendingCount, setPendingCount] = useState(0);
 
-function App() {
-  const [count, setCount] = useState(0);
+  const checkUserAndLogs = () => {
+    const user = dbService.getCurrentUser();
+    setCurrentUser(user);
+
+    const logs = dbService.getTapLog();
+    setPendingCount(logs.filter(l => l.status === 'pending').length);
+  };
+
+  useEffect(() => {
+    checkUserAndLogs();
+    const handleStorage = () => checkUserAndLogs();
+    window.addEventListener('simlab_storage_updated', handleStorage);
+    const interval = setInterval(checkUserAndLogs, 2000);
+    return () => {
+      window.removeEventListener('simlab_storage_updated', handleStorage);
+      clearInterval(interval);
+    };
+  }, []);
+
+  const handleLogout = () => {
+    dbService.logout();
+    setCurrentUser(null);
+  };
+
+  if (!currentUser) {
+    return <LoginPage onLoginSuccess={(u) => setCurrentUser(u)} />;
+  }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
-      <section className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center px-6 text-center">
-        <div className="mb-6 rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-300">
-          🚀 Firebase CI/CD Active
+    <div className="min-h-screen bg-main flex">
+      {/* Sidebar (fixed left) */}
+      <Sidebar
+        currentTab={currentTab}
+        setCurrentTab={setCurrentTab}
+        user={currentUser}
+        onLogout={handleLogout}
+        pendingCount={pendingCount}
+      />
+
+      {/* Main Content Area (offset by sidebar width 240px / w-60) */}
+      <main className="flex-1 ml-60 min-h-screen flex flex-col">
+        {/* Top Header */}
+        <header className="h-16 bg-surface border-b border-main px-8 flex items-center justify-between sticky top-0 z-20">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-main capitalize">
+              {currentTab === 'list_barang' ? 'List Barang' : currentTab.replace('_', ' ')}
+            </h2>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xs font-semibold text-main">{currentUser.nama}</p>
+              <p className="text-[11px] text-muted capitalize">{currentUser.role}</p>
+            </div>
+          </div>
+        </header>
+
+        {/* Page Body Content */}
+        <div className="p-8 flex-1">
+          {currentTab === 'dashboard' && <DashboardPage setCurrentTab={setCurrentTab} />}
+          {currentTab === 'inventaris' && <InventarisPage />}
+          {currentTab === 'list_barang' && <ListBarangPage />}
+          {currentTab === 'kartu_rfid' && <KartuRfidPage />}
+          {currentTab === 'persetujuan' && <PersetujuanPage />}
+          {currentTab === 'peminjaman' && <PeminjamanPage />}
+          {currentTab === 'pengembalian' && <PengembalianPage />}
+          {currentTab === 'riwayat' && <RiwayatPage />}
+          {currentTab === 'tambah_petugas' && <TambahPetugasPage />}
+          {currentTab === 'simulasi_iot' && <SimulasiIotPage />}
         </div>
-
-        <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
-          Peminjaman Barang
-        </h1>
-
-        <p className="mt-5 max-w-2xl text-lg leading-relaxed text-slate-400">
-          Sistem sederhana untuk mengelola peminjaman barang dengan lebih
-          mudah, cepat, dan terorganisir.
-        </p>
-
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <button
-            onClick={() => setCount(count + 1)}
-            className="rounded-xl bg-white px-6 py-3 font-semibold text-slate-950 transition hover:bg-slate-200"
-          >
-            Test Interaction
-          </button>
-
-          <div className="rounded-xl border border-slate-700 bg-slate-900 px-6 py-3 text-slate-300">
-            Klik: {count}x
-          </div>
-        </div>
-
-        <div className="mt-16 grid w-full gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-            <div className="text-3xl">📦</div>
-            <h2 className="mt-4 font-semibold">Kelola Barang</h2>
-            <p className="mt-2 text-sm text-slate-400">
-              Catat dan pantau barang dengan mudah.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-            <div className="text-3xl">📝</div>
-            <h2 className="mt-4 font-semibold">Peminjaman</h2>
-            <p className="mt-2 text-sm text-slate-400">
-              Kelola proses peminjaman secara teratur.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-            <div className="text-3xl">⚡</div>
-            <h2 className="mt-4 font-semibold">Cepat & Simple</h2>
-            <p className="mt-2 text-sm text-slate-400">
-              Tampilan sederhana dan mudah digunakan.
-            </p>
-          </div>
-        </div>
-
-        <p className="mt-12 text-sm text-slate-500">
-          Deployed automatically with GitHub Actions → Firebase Hosting
-        </p>
-      </section>
-    </main>
+      </main>
+    </div>
   );
 }
-
-export default App;
