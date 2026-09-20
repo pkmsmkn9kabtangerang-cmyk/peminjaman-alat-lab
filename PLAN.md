@@ -1,392 +1,348 @@
-# Plan Implementasi: Sistem Peminjaman Alat Lab Berbasis RFID + Web (PKM)
+# Plan Implementasi v2: Sistem Peminjaman Alat Lab Berbasis RFID + Web (PKM)
 
-> **Skema IoT: Opsi 1** — Kartu RFID untuk perwakilan kelas + Sticker RFID untuk tiap alat. Keduanya dibaca lewat scanner RFID (RC522), lalu ESP32 mengirim kombinasi UID kartu + UID alat ke Firestore. Konfigurasi hardware disiapkan untuk 2 kemungkinan: **1 scanner** (gantian tap) atau **2 scanner** (kartu & alat terpisah) — tinggal pilih salah satu saat implementasi, lihat Bagian 1.1 dan 8.
+> **Perubahan besar dari v1:** Firebase (Auth + Firestore + Cloud Functions + Hosting) → **Supabase** (Auth + Postgres + Edge Functions + Realtime). UI direvisi (20 poin revisi, dipetakan di Bagian 8). Alur tap disederhanakan: **tap kartu sekali, lalu tap sticker alat sebanyak yang dipinjam**, tanpa konfirmasi manual petugas.
 
-## 1. Ringkasan Arsitektur
+## 0. Asumsi yang Dipakai (koreksi kalau salah)
+
+| # | Asumsi | Alasan |
+|---|---|---|
+| 1 | Konfirmasi petugas **dihapus**. Tap langsung masuk sebagai transaksi, petugas melihatnya di **Realtime Card**. | Kamu minta "Persetujuan" → "Realtime Card" dan data "langsung masuk". |
+| 2 | Jenis deteksi dihitung **per alat**: sticker alat yang sedang dipinjam kartu itu → *dikembalikan*; selain itu → *dipinjam*. Untuk tap kartu: belum punya pinjaman aktif → *dipinjam*, punya pinjaman aktif → *dikembalikan*. | Cocok dengan aturanmu (#11) dan tetap benar kalau satu kartu pinjam+kembalikan barang campur dalam satu sesi. |
+| 3 | Sesi kartu berlaku **60 detik**, diperpanjang tiap tap alat. | Agar tap alat tidak perlu tap kartu ulang (#16), tapi kartu tidak "nyangkut" selamanya. |
+| 4 | Satu baris `alat` = satu jenis alat dengan **satu sticker** dan `jumlah_total` unit. Tiap tap sticker = 1 unit. | Sesuai stok "4/5" (#13, #14). Kalau mau tiap unit punya sticker sendiri, bilang — schema perlu tabel `alat_unit`. |
+| 5 | Unit **rusak tidak bisa dipinjam** (stok yang bisa dipinjam = tersedia − rusak). | Supaya alat rusak tidak keluar lagi. |
+| 6 | Poin #19 tidak ada di daftarmu (loncat 18 → 20), dianggap tidak ada. | — |
+| 7 | "di page minimal ada gambar" (#1) dibaca: logo SMK tampil di setiap halaman (header sidebar + favicon). | Kalau maksudmu banner/ilustrasi per halaman, tinggal tambah. |
+
+---
+
+## 1. Arsitektur
 
 ```mermaid
 flowchart LR
-    A[Kartu RFID Siswa] -->|tap| B[Scanner RFID]
-    A2[Sticker RFID Alat] -->|tap| B
-    B -->|serial/SPI| C[ESP32]
-    C -->|HTTPS/WiFi| D[Firestore Database]
-    D <-->|Firebase SDK| E[React Web App]
-    F[Firebase Auth] --> E
-    G[Firebase Hosting] --> E
-    C -->|feedback| H[LED + Buzzer]
+    A[Kartu RFID Kelas] -->|tap 1x| S[Scanner RC522]
+    B[Sticker RFID Alat] -->|tap 1..n| S
+    S --> E[ESP32]
+    E -->|HTTPS POST uid + x-device-key| F1[Edge Function rfid-tap]
+    F1 -->|rpc process_tap| DB[(Supabase Postgres)]
+    W[React Web App] -->|supabase-js + RLS| DB
+    W -->|JWT| F2[Edge Function transaksi-manual]
+    W -->|JWT admin| F3[Edge Function admin-users]
+    F2 --> DB
+    F3 --> AU[Supabase Auth]
+    DB -->|Realtime postgres_changes| W
+    E -.->|LED + Buzzer| E
 ```
 
-**Alur singkat:**
-1. Perwakilan kelas tap **kartu RFID** dan sticker **RFID di alat** ke scanner (urutan/jumlah scanner tergantung konfigurasi yang dipilih — lihat 1.1).
-2. ESP32 baca kedua UID (kartu + alat), kirim ke Firestore lewat HTTPS request ke Cloud Function.
-3. Cloud Function validasi kedua UID, cek status alat saat ini, lalu **otomatis menentukan jenis transaksi** (pinjam/kembali) tanpa petugas perlu pilih manual.
-4. Petugas di dashboard React melihat notifikasi real-time berisi kombinasi "kelas X meminjam/mengembalikan alat Y", lalu tinggal klik **Konfirmasi**.
-5. Status alat & histori transaksi otomatis ke-update di Firestore, langsung terlihat di dashboard.
+**Pembagian tugas backend**
+- **Edge Function**: semua yang butuh rahasia / logika bisnis / bypass RLS → `rfid-tap`, `transaksi-manual`, `admin-users`.
+- **Postgres function (RPC)**: logika atomik pinjam/kembali & stok (`process_tap`, `process_manual`) — dipanggil edge function, jadi tidak ada race condition antar tap.
+- **supabase-js + RLS langsung**: baca data (tabel, dashboard) dan CRUD sederhana admin (alat, kartu). Aman karena dijaga Row Level Security.
+- **Realtime**: `tap_log`, `transaksi`, `alat` → Realtime Card, badge notifikasi, chart dashboard.
 
-### 1.1 Dua Konfigurasi Hardware yang Disiapkan
-
-| Konfigurasi | Cara Kerja | Kapan Cocok Dipakai |
-|---|---|---|
-| **A — 1 Scanner** | 1 modul RC522. Kartu ditap dulu → sistem "ingat" UID kartu selama beberapa detik (window waktu, misal 10 detik) → lalu sticker alat ditap ke scanner yang sama → ESP32 gabungkan jadi satu payload. | Kalau mau hemat 1 modul RC522, dan oke dengan sedikit tambahan waktu tap berurutan. |
-| **B — 2 Scanner** | 2 modul RC522 terpisah (1 khusus baca kartu, 1 khusus baca sticker alat), keduanya tersambung ke ESP32 yang sama lewat pin CS/SS berbeda. Kartu dan alat bisa ditap kapan saja tanpa saling menunggu. | Kalau mau transaksi lebih cepat & logic firmware lebih simpel (tidak perlu window waktu/state sementara). |
-
-> Firmware & Cloud Function di bawah ini ditulis dengan flag konfigurasi (`SCANNER_MODE = "1_SCANNER"` atau `"2_SCANNER"`) supaya AI agent tinggal pilih salah satu tanpa perlu menulis ulang seluruh logic.
-
----
-
-## 2. Tech Stack Final
+## 2. Tech Stack
 
 | Layer | Teknologi |
 |---|---|
-| Hardware | ESP32 + RFID Reader RC522 **x1 (Konfigurasi A) atau x2 (Konfigurasi B)** + Kartu Mifare 1K (4 kartu kelas) + Sticker RFID Mifare 1K (50 pcs, 1 per alat) + LED + Buzzer |
-| Firmware | Arduino IDE / PlatformIO (C++) |
-| Frontend | React + Vite + tailwind |
-| Auth | Firebase Authentication (email/password) |
-| Database | Cloud Firestore |
-| Hosting | Firebase Hosting |
-| Komunikasi IoT → Cloud | HTTPS REST call dari ESP32 ke Cloud Function, atau langsung ke Firestore REST API |
-
----
+| Hardware | ESP32 + RC522 (1 atau 2 modul) + kartu Mifare 1K + sticker RFID + LED + buzzer |
+| Firmware | Arduino IDE / PlatformIO |
+| Frontend | React + Vite + Tailwind, **font Poppins**, Recharts (bar + area), TanStack Table (sort/search), `@supabase/supabase-js` |
+| Auth | Supabase Auth (email/password, signup publik dimatikan) |
+| Database | Supabase Postgres + RLS |
+| Backend | Supabase Edge Functions (Deno, JavaScript) |
+| Realtime | Supabase Realtime |
+| Hosting web | Vercel / Netlify / Cloudflare Pages (Supabase tidak host frontend) |
 
 ## 3. Role & Akses
 
-| Role | Jenis | Akses |
-|---|---|---|
-| **Admin** | Akun login web | CRUD alat, CRUD kartu RFID, CRUD akun petugas, lihat semua laporan/histori |
-| **Petugas Lab** | Akun login web | Lihat notifikasi tap kartu, konfirmasi peminjaman/pengembalian, lihat status alat |
-| **Perwakilan Kelas** | Fisik (kartu RFID) | Tidak login web sama sekali, hanya tap kartu |
-
----
-
-## 4. Firestore Database Schema
-
-### Collection: `users`
-Menyimpan akun Admin & Petugas (selain via Firebase Auth, ini dipakai buat role-based access).
-
-```
-users (collection)
-└── {uid} (document, uid = Firebase Auth UID)
-    ├── nama: string
-    ├── email: string
-    ├── role: string        // "admin" | "petugas"
-    ├── createdAt: timestamp
-```
-
-### Collection: `kartu_rfid`
-Data 4 kartu (2 kelas x 1 kartu, atau bisa disesuaikan jadi 2 kartu/kelas sesuai kebutuhan).
-
-```
-kartu_rfid (collection)
-└── {uid_kartu} (document ID = UID fisik RFID, misal "A1B2C3D4")
-    ├── kelas: string          // "XI RPL 1", "XI RPL 2", dst
-    ├── nama_pemegang: string  // nama perwakilan kelas (opsional)
-    ├── status: string         // "aktif" | "nonaktif" (buat kartu hilang/rusak)
-    ├── createdAt: timestamp
-```
-
-### Collection: `alat`
-50 alat lab.
-
-```
-alat (collection)
-└── {id_alat} (document, auto-id atau kode alat manual, misal "ALT-001")
-    ├── nama: string
-    ├── kode: string           // kode inventaris fisik alat
-    ├── uid_rfid: string       // UID sticker RFID yang ditempel di alat ini (unik per alat)
-    ├── kategori: string       // misal "elektronik", "mekanik", dll
-    ├── status: string         // "tersedia" | "dipinjam" | "maintenance"
-    ├── stok_total: number     // kalau ada alat sejenis lebih dari 1 unit
-    ├── stok_tersedia: number
-    ├── createdAt: timestamp
-```
-
-### Collection: `transaksi`
-Log utama tiap peminjaman/pengembalian.
-
-```
-transaksi (collection)
-└── {id_transaksi} (document, auto-id)
-    ├── uid_kartu: string        // referensi ke kartu_rfid
-    ├── uid_alat: string         // referensi UID sticker RFID di alat (audit trail)
-    ├── kelas: string            // denormalized, biar gak perlu join tiap query
-    ├── id_alat: string          // referensi ke alat
-    ├── nama_alat: string        // denormalized
-    ├── jenis: string            // "pinjam" | "kembali" (auto-detected, bisa dikoreksi petugas saat konfirmasi)
-    ├── status: string           // "menunggu_konfirmasi" | "dikonfirmasi" | "selesai"
-    ├── petugas_konfirmasi: string  // uid petugas yang konfirmasi
-    ├── waktu_tap: timestamp
-    ├── waktu_konfirmasi: timestamp | null
-    ├── waktu_kembali: timestamp | null
-    ├── catatan: string          // opsional, misal kondisi alat saat kembali
-```
-
-### Collection: `tap_log` (buffer sementara dari ESP32)
-Beda dari skema sebelumnya — sekarang ESP32 mengirim **kombinasi UID kartu + UID alat sekaligus** (baik didapat dari 1 scanner gantian maupun 2 scanner terpisah), jadi payload-nya sudah lebih lengkap sebelum masuk ke `transaksi`.
-
-```
-tap_log (collection)
-└── {id_log} (document, auto-id)
-    ├── uid_kartu: string
-    ├── uid_alat: string
-    ├── kelas: string           // hasil lookup dari uid_kartu
-    ├── id_alat: string         // hasil lookup dari uid_alat
-    ├── jenis_terdeteksi: string  // "pinjam" | "kembali" — auto-detect berdasarkan status alat saat ini
-    ├── waktu_tap: timestamp
-    ├── status: string          // "pending" | "processed" | "invalid"
-```
-
----
-
-## 5. Logic Alur Sistem (Business Logic)
-
-### A. Alur Tap Kartu + Alat → Notifikasi Petugas
-
-**Konfigurasi A (1 Scanner):**
-1. Kartu ditap dulu ke scanner → ESP32 baca UID, simpan sementara di variabel (`pendingKartuUID`), mulai hitung window waktu (misal 10 detik).
-2. Sticker alat ditap ke scanner yang sama dalam window waktu tsb → ESP32 baca UID kedua.
-3. ESP32 gabungkan `{uid_kartu: pendingKartuUID, uid_alat: uidKedua}` jadi satu payload, kirim ke Cloud Function.
-4. Kalau window waktu habis sebelum tap kedua terjadi → `pendingKartuUID` direset, LED kuning berkedip lalu mati (indikasi "batal, ulangi dari awal").
-
-**Konfigurasi B (2 Scanner):**
-1. Kartu ditap ke Scanner A, sticker alat ditap ke Scanner B — bisa hampir bersamaan atau berurutan, tidak ada batasan waktu.
-2. ESP32 baca dari kedua modul, begitu keduanya sudah terisi dalam siklus loop yang sama (atau salah satu ditunggu maksimal beberapa detik saja) → langsung digabung jadi satu payload dan dikirim.
-
-**Setelah payload terkirim ke Cloud Function (berlaku untuk kedua konfigurasi):**
-1. Cloud Function validasi `uid_kartu` ke `kartu_rfid` (harus `status: aktif`) dan `uid_alat` ke `alat` (harus terdaftar).
-2. Cloud Function cek `status` alat saat ini:
-   - Kalau `tersedia` → `jenis_terdeteksi = "pinjam"`.
-   - Kalau `dipinjam` → `jenis_terdeteksi = "kembali"`.
-3. Data disimpan ke `tap_log` dengan `status: "pending"`.
-4. Dashboard petugas pasang **real-time listener** (`onSnapshot`) ke collection `tap_log` where `status == "pending"`.
-5. Begitu ada dokumen baru, dashboard nampilin notifikasi siap-konfirmasi: *"Kelas XI RPL 1 — PINJAM Multimeter #003 — Konfirmasi?"* (jenis transaksi sudah otomatis terisi, petugas tinggal cek & klik, bisa dikoreksi manual kalau ternyata salah deteksi).
-6. Petugas klik **Konfirmasi** → sistem:
-   - Bikin dokumen di `transaksi`.
-   - Update `stok_tersedia` dan `status` di dokumen `alat` terkait.
-   - Update `tap_log` jadi `status: "processed"`.
-7. ESP32 dapat response sukses dari Cloud Function → nyalain LED hijau + buzzer "tit" satu kali.
-8. Kalau ada error (salah satu/kedua UID tidak dikenal, atau gagal kirim) → LED merah + buzzer beda nada, `tap_log` diberi `status: "invalid"`.
-
-### B. Validasi Kartu/Alat Tidak Dikenal
-
-- Cloud Function (bukan ESP32) yang bertanggung jawab validasi: cek `uid_kartu` ada & aktif di `kartu_rfid`, dan `uid_alat` terdaftar di `alat`.
-- Kalau salah satu tidak valid, Cloud Function balas error spesifik (`kartu_tidak_valid` atau `alat_tidak_terdaftar`) supaya ESP32 bisa kasih pola LED/buzzer yang beda untuk tiap kasus, memudahkan petugas tahu apa yang salah tanpa harus lihat layar.
-
-### C. Aturan Bisnis Penting
-
-| Aturan | Penjelasan |
+| Role | Akses |
 |---|---|
-| 1 kartu = 1 kelas | Tidak boleh ada 2 kelas pakai kartu yang sama |
-| 1 sticker = 1 alat | Tiap alat harus punya `uid_rfid` unik, tidak boleh duplikat antar alat |
-| Kartu nonaktif ditolak | Kalau `status: nonaktif`, sistem tolak & LED merah |
-| Alat `dipinjam` tidak bisa "dipinjam" lagi | Kalau alat sudah `dipinjam` dan ditap lagi, otomatis dianggap `jenis_terdeteksi: "kembali"`, bukan ditolak |
-| Jenis transaksi bisa dikoreksi manual | Auto-detect bukan final — petugas tetap bisa ubah "pinjam" jadi "kembali" atau sebaliknya saat konfirmasi, untuk menangani kasus tak terduga |
-| Konfirmasi wajib manual oleh petugas | ESP32/Cloud Function tidak langsung ubah status alat — mencegah kesalahan tanpa sepengetahuan petugas |
-| Duplikasi tap dalam waktu singkat | Debounce minimal 3-5 detik untuk kombinasi UID kartu+alat yang sama, biar gak spam request |
-| Tap tidak lengkap (Konfigurasi A) | Kalau window waktu habis sebelum tap kedua terjadi, batalkan otomatis dan minta ulang dari tap kartu |
+| **Admin** | Semua: CRUD alat (Inventaris), kartu RFID, akun petugas, semua laporan |
+| **Petugas** | Lihat Realtime Card, Riwayat, List Barang; peminjaman/pengembalian manual; edit kondisi alat (jumlah rusak) |
+| **Perwakilan kelas** | Tidak login. Hanya tap kartu + sticker |
 
----
+## 4. Alur Tap (Business Logic)
 
-## 6. Firestore Security Rules (Draft)
+Firmware **tidak perlu tahu** mana kartu dan mana alat. ESP32 cukup kirim tiap UID; server menentukan.
 
-```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
+```
+Tap kartu  ─► validasi kartu aktif ─► buat/perbarui sesi (60 dtk)
+              jenis_terdeteksi = belum ada pinjaman aktif ? "pinjam" : "kembali"
+              ─► tap_log (muncul di Realtime Card + notifikasi)
 
-    function isSignedIn() {
-      return request.auth != null;
-    }
-    function isAdmin() {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
-    }
-    function isPetugasOrAdmin() {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ["admin", "petugas"];
-    }
+Tap alat   ─► UID tidak dikenal?             -> ditolak  uid_tidak_dikenal
+              tidak ada sesi kartu aktif?     -> ditolak  sesi_tidak_ada   (suruh tap kartu dulu)
+              kartu ini sedang pinjam alat ini? -> KEMBALI (stok +1, transaksi ditutup)
+              selain itu                         -> PINJAM  (stok -1, transaksi baru)
+                                                    stok habis? -> ditolak stok_habis
+              sesi diperpanjang 60 dtk ─► tap_log
+```
 
-    match /users/{userId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
+Aturan:
+- Debounce 3 detik untuk UID yang sama di device yang sama (tap ganda diabaikan).
+- Kartu nonaktif ditolak (`kartu_nonaktif`).
+- Alat yang sedang dipinjam kartu **lain** dan stok 0 → `stok_habis`.
+- Semua ditulis atomik di Postgres → aman kalau 2 tap datang bersamaan.
 
-    match /kartu_rfid/{kartuId} {
-      allow read: if isPetugasOrAdmin();
-      allow write: if isAdmin();
-    }
+**Kode respons API (kontrak untuk sisi IoT):**
 
-    match /alat/{alatId} {
-      allow read: if isPetugasOrAdmin();
-      allow write: if isPetugasOrAdmin(); // update status alat pas transaksi
-    }
+| `error` | Arti |
+|---|---|
+| — (`ok:true`, `type:"kartu"`) | Kartu diterima, sesi mulai |
+| — (`ok:true`, `type:"alat"`) | Pinjam/kembali berhasil |
+| `kartu_nonaktif` | Kartu diblokir |
+| `uid_tidak_dikenal` | UID belum terdaftar |
+| `sesi_tidak_ada` | Belum tap kartu / sesi habis |
+| `stok_habis` | Tidak ada unit tersedia |
+| gagal koneksi / 5xx | Jaringan/server bermasalah |
 
-    match /transaksi/{transaksiId} {
-      allow read: if isPetugasOrAdmin();
-      allow create, update: if isPetugasOrAdmin();
-    }
+> Cara IoT menampilkan tiap kode (LED, buzzer, dll) ditentukan di project IoT sendiri.
 
-    // tap_log ditulis oleh ESP32 lewat Cloud Function (pakai admin SDK, bypass rules ini)
-    match /tap_log/{logId} {
-      allow read: if isPetugasOrAdmin();
-      allow write: if false; // hanya lewat Cloud Function server-side
-    }
+## 5. Database Schema (Supabase Postgres)
+
+File lengkap: `supabase/migrations/20260920000000_init.sql`
+
+| Tabel | Isi | Pengganti di Firebase |
+|---|---|---|
+| `profiles` | id (= `auth.users.id`), nama, email, `role` (admin/petugas), aktif | `users` |
+| `kartu_rfid` | `uid_kartu` (PK), kelas, nama_pemegang, aktif | `kartu_rfid` |
+| `alat` | kode, nama, kategori, `uid_rfid` (unik), `jumlah_total`, `jumlah_rusak`, `stok_tersedia` | `alat` |
+| `transaksi` | 1 baris = 1 unit: kartu, kelas, alat, **`status`** (dipinjam/dikembalikan), **`sumber`** (otomatis/manual → kolom *Terkirim*), `kondisi_pinjam`, `kondisi_kembali`, waktu_pinjam, waktu_kembali, petugas_id, catatan | `transaksi` |
+| `tap_log` | Log tiap tap: jenis_tap, kelas, alat, **`jenis_terdeteksi`**, kondisi, status berhasil/ditolak, error_code, `is_read`, `waktu_tap` (tanggal+jam) | `tap_log` |
+| `kartu_session` | Sesi kartu per device (expires_at) | *baru* |
+| `devices` | Daftar ESP32 + hash API key | *baru* |
+| `error_log` | Error server di produksi | *baru* |
+
+**View:** `v_list_barang` (stok "4/5", status, kondisi, kartu peminjam), `v_stat_harian` (30 hari untuk bar + area chart).
+
+**Function penting:** `process_tap`, `process_manual` (hanya service_role), `update_kondisi_alat`, `set_kondisi_kembali`, `mark_taps_read` (authenticated, dicek role di dalam).
+
+**Catatan model stok:**
+`jumlah_total` = total unit · `stok_tersedia` = total − sedang dipinjam · `jumlah_rusak` = unit rusak. Contoh: total 5, dipinjam 1, rusak 1 → tersedia 4, bisa dipinjam 3, tampil "4/5", kondisi "rusak (1)".
+
+## 6. Auth & Keamanan
+
+1. **Signup publik dimatikan** (`enable_signup = false`). Akun hanya dibuat admin lewat edge function `admin-users`.
+2. Login: `supabase.auth.signInWithPassword`. Role dibaca dari `profiles` (bukan dari `user_metadata`, karena bisa diubah user).
+3. **RLS aktif di semua tabel.** Staff (admin/petugas) boleh `select`; tulis `alat`/`kartu_rfid` hanya admin; **tulis `transaksi`/`tap_log` hanya service_role** (edge function).
+4. ESP32 autentikasi dengan `x-device-id` + `x-device-key` (hash SHA-256 disimpan di `devices`). Key asli hanya ada di firmware. Jika ESP32 hilang → set `devices.aktif = false`.
+5. `SUPABASE_SERVICE_ROLE_KEY` **tidak pernah** masuk frontend/firmware/git. Frontend hanya pakai `anon` key.
+6. Admin pertama: buat user di Dashboard → jalankan SQL `update public.profiles set role='admin' ...` (ada di akhir file migrasi).
+
+**Edge Functions**
+
+| Function | Siapa | Auth | Fungsi |
+|---|---|---|---|
+| `rfid-tap` | ESP32 | `x-device-key` (`--no-verify-jwt`) | Proses tiap tap |
+| `transaksi-manual` | Admin/Petugas | JWT user | Peminjaman & pengembalian manual (jumlah, kondisi, catatan) |
+| `admin-users` | Admin | JWT + cek role admin | Buat/ubah/hapus akun petugas |
+
+## 7. Struktur Halaman & Sidebar
+
+```
+Sidebar (logo SMK + nama sekolah di atas)
+├─ Dashboard
+├─ Realtime Card          ← (dulu "Persetujuan") + badge notifikasi
+├─ Peminjaman Manual
+├─ Pengembalian Manual
+├─ Riwayat Peminjaman
+├─ List Barang
+├─ Inventaris Barang      (admin)
+├─ Kartu RFID             (admin)
+├─ Pengguna               (admin)
+├─ ─────────── <hr> ───────────
+└─ Keluar                 (tombol merah, di paling bawah sidebar)
+```
+
+**Login:** logo SMK + nama sekolah, form email/password, gambar sekolah (split layout di desktop; gambar jadi header di mobile).
+
+**Dashboard:** greeting "Selamat datang, {nama}" → card ringkasan → **Bar chart (dipinjam vs dikembalikan per hari) + Area chart (tren transaksi)** → tabel riwayat terbaru.
+
+**Realtime Card** (halaman utama IoT):
+- Kolom: **Waktu Tap (tanggal + jam)**, Kelas, Kartu ID, Jenis Tap (kartu/alat), Alat, **Jenis Deteksi** (badge Dipinjam/Dikembalikan, *read-only*), Kondisi, Hasil (berhasil/ditolak + alasan).
+- Baris baru masuk lewat Supabase Realtime, animasi highlight 3 detik.
+- Tidak ada dropdown jenis — otomatis dari server.
+- Layout kartu per tap (bukan cuma tabel) supaya nanti gampang disesuaikan dengan tampilan IoT.
+
+**Notifikasi tap:** badge angka merah di menu Realtime Card + ikon bel di pojok kanan atas (jumlah `tap_log.is_read = false`) + toast saat tap masuk. Buka Realtime Card → panggil `mark_taps_read()`.
+
+**Peminjaman/Pengembalian Manual (lengkap):** pilih kartu/kelas (searchable), pilih alat (tampilkan stok sisa & kondisi), jumlah (stepper), kondisi barang (baik/rusak — untuk pengembalian), catatan, ringkasan sebelum submit, dan panel "pinjaman aktif kartu ini" (pada pengembalian). Submit → edge function `transaksi-manual`.
+
+**Riwayat Peminjaman:** kolom Waktu Pinjam, Waktu Kembali, Kelas, Kartu ID, Alat, **Status** (dipinjam/dikembalikan), **Kondisi Barang**, **Terkirim** (otomatis/manual), Petugas. Kondisi bisa dikoreksi lewat `set_kondisi_kembali`.
+
+**Inventaris Barang** (fokus tambah alat baru): form tambah alat (kode, nama, kategori, UID sticker — bisa "scan" dari Realtime Card, total unit). Tanpa kolom status, tanpa stok "4/5".
+
+**List Barang:** Nama, Kode, **Stok "4/5"**, **Status** (tersedia/dipinjam), **Kondisi** (baik/rusak + edit jumlah rusak inline), **Kartu ID peminjam** (dari `v_list_barang.peminjam`).
+
+**Semua tabel** memakai satu komponen `DataTable`: sort ascending/descending di header, search box, pagination, empty state, loading skeleton.
+
+## 8. Checklist 20 Revisi → Implementasi
+
+| # | Revisi | Implementasi |
+|---|---|---|
+| 1 | Logo SMK + gambar di page | `src/assets/logo-smk.png` di header sidebar, favicon, tiap halaman |
+| 2a | Login: gambar + nama sekolah | Layout login split, konfigurasi `VITE_SCHOOL_NAME` |
+| 2b | Greeting di atas card | `Selamat datang, {profiles.nama}` di Dashboard |
+| 3 | Ganti backend/DB/auth ke Supabase + Edge Function | Bagian 5, 6 + folder `supabase/` |
+| 4 | Kondisi barang di Riwayat | `transaksi.kondisi_pinjam / kondisi_kembali` + kolom di tabel |
+| 5 | Bar + area chart di dashboard | Recharts + `v_stat_harian`, di antara card dan tabel riwayat |
+| 6 | Garis pemisah di sidebar | `<hr>` sebelum tombol Keluar (dan pemisah antar grup menu) |
+| 7 | Tabel: sort asc/desc + search | Komponen `DataTable` (TanStack Table) dipakai semua tabel |
+| 8 | "Persetujuan" → "Realtime Card" | Halaman baru, subscribe `tap_log` |
+| 9 | Form manual lebih lengkap | Bagian 7, Peminjaman/Pengembalian Manual |
+| 10 | Notifikasi setelah tap kartu | Badge sidebar + bel kanan atas + toast (`tap_log.is_read`) |
+| 11 | Deteksi otomatis, tidak bisa dipilih; waktu tap tgl+jam | `jenis_terdeteksi` dari server, badge read-only, `waktu_tap` `dd MMM yyyy HH:mm:ss` (Asia/Jakarta) |
+| 12 | Riwayat: "Jenis" → "Status"; "Persetujuan" → "Terkirim" (otomatis/manual) | `transaksi.status`, `transaksi.sumber` |
+| 13 | Inventaris = tambah alat baru; hapus status & stok 4/5 | Halaman Inventaris hanya CRUD alat + jumlah total |
+| 14 | List Barang: stok sisa, status, kondisi, kartu peminjam | `v_list_barang` |
+| 15 | Error handling prod & local | Bagian 9 |
+| 16 | Tap kartu 1x, lalu tap sticker alat saja | `kartu_session` (60 dtk, auto-perpanjang) |
+| 17 | Tombol Keluar di sidebar, merah | Paling bawah sidebar, `bg-red-600` |
+| 18 | Dashboard responsive | Sidebar → drawer di mobile, grid `1/2/4` kolom, tabel scroll horizontal |
+| 20 | Font Poppins | `@fontsource/poppins` + `fontFamily.sans` di Tailwind |
+
+## 9. Error Handling (Production vs Local)
+
+**Edge Function** (`_shared/http.js`, sudah diimplementasi):
+- Format error seragam: `{ ok:false, error:"kode", message:"...", request_id }`.
+- `APP_ENV=local` → response menyertakan `details` + `stack`. `APP_ENV=production` → hanya pesan generik; detail masuk `console.error` (Supabase Logs) + tabel `error_log`, dicari lewat `request_id`.
+- Error bisnis (4xx) tidak masuk `error_log`, hanya 5xx.
+
+**Frontend:**
+```js
+// src/lib/handleError.js
+const isProd = import.meta.env.PROD;
+export function handleError(e, fallback = "Terjadi kesalahan, coba lagi") {
+  const err = e ?? {};
+  if (!isProd) console.error("[DEV]", e);                 // lokal: detail lengkap di console
+  const msg = err?.message ?? fallback;
+  toast.error(isProd && err?.request_id ? `${msg} (ref: ${err.request_id.slice(0, 8)})` : msg);
+  // produksi: opsional kirim ke Sentry di sini
+}
+```
+- React `ErrorBoundary` di root: produksi → halaman "Terjadi kesalahan" + tombol muat ulang; lokal → tampilkan stack.
+- Realtime disconnect → banner "Koneksi terputus, mencoba menyambung ulang…" (channel `.subscribe(status => …)`).
+- Semua query: state `loading / error / empty` eksplisit.
+
+**IoT:** error handling perangkat (retry, buffer offline, indikator, mode debug) dikerjakan di project IoT sendiri. Sisi web/backend hanya menyediakan kode error yang konsisten (Bagian 4 dan 11).
+
+## 10. Kode Kunci Frontend
+
+```js
+// src/lib/supabase.js
+import { createClient } from "@supabase/supabase-js";
+export const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY,   // anon key saja, BUKAN service_role
+);
+```
+
+```js
+// src/lib/api.js — panggil edge function dengan JWT user
+import { supabase } from "./supabase";
+export async function callFunction(name, body) {
+  const { data, error } = await supabase.functions.invoke(name, { body });
+  if (error) {
+    // FunctionsHttpError: ambil body JSON error kita
+    const payload = await error.context?.json?.().catch(() => null);
+    throw payload ?? error;
   }
+  return data;
+}
+// contoh: await callFunction("transaksi-manual", { uid_kartu, alat_id, jenis: "pinjam", jumlah: 2 });
+```
+
+```js
+// src/hooks/useAuth.jsx — session + role dari profiles
+// onAuthStateChange -> ambil profiles(nama, role, aktif) -> expose { user, profile, isAdmin, signOut }
+// <RequireRole roles={["admin"]}> untuk route /inventaris, /kartu, /pengguna
+```
+
+```js
+// src/hooks/useRealtimeTaps.js — Realtime Card + badge + toast
+export function useRealtimeTaps() {
+  const [taps, setTaps] = useState([]);
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    supabase.from("tap_log").select("*").order("waktu_tap", { ascending: false }).limit(50)
+      .then(({ data }) => setTaps(data ?? []));
+    supabase.from("tap_log").select("id", { count: "exact", head: true }).eq("is_read", false)
+      .then(({ count }) => setUnread(count ?? 0));
+
+    const ch = supabase.channel("tap-log")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "tap_log" }, (p) => {
+        setTaps((t) => [p.new, ...t].slice(0, 50));
+        setUnread((n) => n + 1);
+        toast(`Kelas ${p.new.kelas ?? "?"} tap kartu/alat`);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  const markRead = async () => { await supabase.rpc("mark_taps_read"); setUnread(0); };
+  return { taps, unread, markRead };
 }
 ```
 
-> Catatan: request dari ESP32 sebaiknya **tidak langsung** ke Firestore client SDK (karena butuh API key yang gampang di-reverse dari firmware), tapi lewat **Cloud Function HTTP endpoint** yang pakai Admin SDK. Cloud Function ini juga tempat paling pas buat validasi UID kartu sebelum masuk ke database.
-
----
-
-## 7. Struktur Halaman Frontend (React)
-
-```
-/login              → halaman login (admin & petugas)
-/dashboard           → halaman utama petugas: notifikasi tap real-time + form konfirmasi
-/alat                → list alat, status, CRUD (admin only)
-/kartu               → list & kelola kartu RFID (admin only)
-/transaksi           → histori semua transaksi (filter by kelas/tanggal/status)
-/laporan             → rekap statistik (alat paling sering dipinjam, dll) — opsional
-/users               → kelola akun petugas (admin only)
+```js
+// tailwind.config.js
+theme: { extend: { fontFamily: { sans: ["Poppins", "ui-sans-serif", "system-ui", "sans-serif"] } } }
+// main.jsx: import "@fontsource/poppins/400.css"; "500.css"; "600.css"; "700.css"
 ```
 
----
+Query List Barang: `supabase.from("v_list_barang").select("*")`. Tampil stok: `` `${stok_tersedia}/${jumlah_total}` ``. Edit jumlah rusak: `supabase.rpc("update_kondisi_alat", { p_alat_id, p_jumlah_rusak })`.
 
-## 8. Alur ESP32 (Pseudocode Firmware)
+## 11. IoT (Plan Saja)
 
-> Pilih salah satu blok di bawah sesuai konfigurasi hardware final (lihat Bagian 1.1). Struktur payload ke Cloud Function sama persis untuk keduanya — bedanya cuma cara ESP32 mengumpulkan kedua UID sebelum dikirim.
+Logic IoT (firmware, wiring, retry, LED/buzzer) **tidak diimplementasi di dokumen ini** — dikerjakan di project IoT sendiri. Yang perlu diketahui sisi IoT:
 
-### Konfigurasi A — 1 Scanner (gantian tap)
+- **Tugas perangkat:** baca UID tiap tap (kartu maupun sticker alat, 1 atau 2 scanner sama saja) lalu kirim ke endpoint. Tidak perlu membedakan kartu/alat, tidak perlu menyimpan sesi — server yang mengurus.
+- **Endpoint:** `POST https://<project-ref>.supabase.co/functions/v1/rfid-tap`
+- **Header:** `Content-Type: application/json`, `apikey: <anon key>` (untuk gateway Supabase), `x-device-id`, `x-device-key`
+- **Body:** `{ "uid": "A1B2C3D4" }` (hex uppercase)
+- **Respons:** `ok`, `type` (`kartu`/`alat`), `jenis`, `error` — daftar kode di Bagian 4.
+- **Keamanan:** `x-device-key` hanya ada di perangkat (jangan di-commit). Perangkat hilang → set `devices.aktif = false`.
 
-```cpp
-setup():
-  connect_wifi()
-  init_rfid_reader()  // 1 modul RC522
-  pendingKartuUID = null
-  pendingStartTime = 0
-  WINDOW_TIMEOUT = 30000  // 30 detik
+## 12. Langkah Setup & Fase
 
-loop():
-  // reset kalau window habis dan belum ada tap kedua
-  if (pendingKartuUID != null && millis() - pendingStartTime > WINDOW_TIMEOUT):
-    pendingKartuUID = null
-    ledKuning_blink_then_off()  // indikasi batal, ulangi dari tap kartu
-
-  if (rfid.newCardDetected()):
-    uid = rfid.readUID()
-
-    if (pendingKartuUID == null):
-      // asumsikan tap pertama adalah kartu kelas
-      // (validasi jenis UID bisa dicek balik lewat Cloud Function kalau perlu)
-      pendingKartuUID = uid
-      pendingStartTime = millis()
-      ledKuning_ON()  // indikasi "menunggu tap alat"
-      return
-
-    // tap kedua dianggap UID alat
-    uid_alat = uid
-    uid_kartu = pendingKartuUID
-    pendingKartuUID = null  // reset session
-
-    response = httpPOST(CLOUD_FUNCTION_URL, {
-      uid_kartu: uid_kartu,
-      uid_alat: uid_alat,
-      timestamp: now()
-    })
-
-    if (response.success):
-      ledHijau_ON(); buzzer_beep(1)
-    else if (response.error == "kartu_tidak_valid"):
-      ledMerah_ON(); buzzer_beep(3)
-    else if (response.error == "alat_tidak_terdaftar"):
-      ledMerah_ON(); buzzer_beep(4)
-    else: // gagal koneksi
-      ledMerah_ON(); buzzer_beep(2)
-      // opsional: simpan ke buffer lokal (SPIFFS) buat retry nanti
+**Setup Supabase (sekali):**
+```bash
+npm i -g supabase            # atau: npx supabase ...
+supabase init
+supabase login && supabase link --project-ref <PROJECT_REF>
+# salin isi config.toml.snippet ke supabase/config.toml
+supabase db push             # jalankan migration
+supabase secrets set APP_ENV=production ALLOWED_ORIGIN=https://domain-web-kamu.com
+supabase functions deploy rfid-tap --no-verify-jwt
+supabase functions deploy transaksi-manual
+supabase functions deploy admin-users
 ```
+Lokal: `supabase start` → `supabase functions serve --env-file supabase/functions/.env`.
+Lalu: buat admin pertama + daftarkan device (SQL di akhir file migrasi).
 
-### Konfigurasi B — 2 Scanner (kartu & alat terpisah)
-
-```cpp
-setup():
-  connect_wifi()
-  init_rfid_reader_kartu()   // modul RC522 #1, pin CS berbeda dari modul #2
-  init_rfid_reader_alat()    // modul RC522 #2
-  lastUidKartu = null
-  lastUidAlat = null
-  lastSendTime = 0
-
-loop():
-  if (rfid_kartu.newCardDetected()):
-    lastUidKartu = rfid_kartu.readUID()
-
-  if (rfid_alat.newCardDetected()):
-    lastUidAlat = rfid_alat.readUID()
-
-  // begitu dua-duanya terisi, kirim (tidak perlu urutan tertentu)
-  if (lastUidKartu != null && lastUidAlat != null):
-    if (millis() - lastSendTime < 4000):
-      return  // debounce, cegah kirim ulang kombinasi yang sama terlalu cepat
-
-    response = httpPOST(CLOUD_FUNCTION_URL, {
-      uid_kartu: lastUidKartu,
-      uid_alat: lastUidAlat,
-      timestamp: now()
-    })
-
-    lastSendTime = millis()
-    lastUidKartu = null
-    lastUidAlat = null
-
-    if (response.success):
-      ledHijau_ON(); buzzer_beep(1)
-    else if (response.error == "kartu_tidak_valid"):
-      ledMerah_ON(); buzzer_beep(3)
-    else if (response.error == "alat_tidak_terdaftar"):
-      ledMerah_ON(); buzzer_beep(4)
-    else: // gagal koneksi
-      ledMerah_ON(); buzzer_beep(2)
-```
-
----
-
-## 9. Fase Implementasi (Milestone)
-
-| Fase | Task | Estimasi |
-|---|---|---|
-| **1. Setup dasar** | Buat project Firebase, setup Firestore, Auth, Hosting | 1-2 hari |
-| **2. Hardware** | Wiring ESP32 + RC522 (1 atau 2 modul sesuai konfigurasi final), test baca UID kartu & UID sticker alat via Serial Monitor | 2-4 hari |
-| **3. Koneksi IoT → Cloud** | Bikin Cloud Function endpoint, test ESP32 kirim data ke Firestore | 3-4 hari |
-| **4. Frontend Auth & Dashboard** | Login, real-time listener notifikasi tap | 3-4 hari |
-| **5. Fitur CRUD** | Halaman alat, kartu, users | 3-4 hari |
-| **6. Fitur Transaksi** | Form konfirmasi pinjam/kembali, update stok alat | 3-4 hari |
-| **7. Testing end-to-end** | Tap kartu asli → cek dashboard → cek Firestore | 2-3 hari |
-| **8. Polish & Laporan** | UI rapi, dokumentasi, siapkan buat sidang PKM | 3-5 hari |
-
----
-
-## 10. Antisipasi Masalah Lapangan (dari plan sebelumnya, dipetakan ke solusi teknis)
-
-| Masalah | Solusi di Level Sistem |
+| Fase | Task |
 |---|---|
-| WiFi putus | ESP32 retry otomatis + simpan log lokal sementara (SPIFFS/EEPROM) sebelum kirim ulang |
-| Tap ganda | Debounce di firmware (lihat pseudocode di atas) |
-| Kartu hilang | Admin set `status: nonaktif` di collection `kartu_rfid`, daftarkan UID baru |
-| Sticker alat rusak/lepas | Admin update `uid_rfid` di dokumen `alat` terkait dengan sticker pengganti |
-| Delay respons | Tampilkan loading state jelas di LED (misal LED kuning = "processing") |
-| Duplikasi transaksi | Cek dulu apakah ada `tap_log` dengan kombinasi UID sama berstatus `pending` sebelum bikin baru |
-| Petugas lupa konfirmasi | Tambah reminder/badge jumlah notifikasi belum diproses di dashboard |
-| Tap kedua tidak terjadi (Konfigurasi A) | Window timeout otomatis batalkan sesi, LED kuning berkedip lalu mati sebagai sinyal "ulangi dari tap kartu" |
-| Salah tap urutan (kartu vs alat tertukar) di Konfigurasi B | Karena scanner terpisah per jenis, secara fisik tidak mungkin tertukar — tapi tetap validasi silang di Cloud Function sebagai *safety net* |
+| 1 | Supabase project, migration, admin pertama, disable signup |
+| 2 | Hardware: wiring, baca UID via Serial |
+| 3 | Edge function `rfid-tap` + test `curl` → ESP32 |
+| 4 | Frontend: auth, layout sidebar, Poppins, login, dashboard + chart |
+| 5 | Realtime Card + notifikasi + DataTable (sort/search) |
+| 6 | Inventaris, List Barang, Kartu, Pengguna |
+| 7 | Peminjaman/Pengembalian Manual + Riwayat |
+| 8 | Error handling, responsive, test end-to-end, polish PKM |
 
----
+**Test cepat edge function (tanpa hardware):**
+```bash
+curl -X POST "$SUPABASE_URL/functions/v1/rfid-tap" \
+  -H "apikey: $ANON_KEY" -H "x-device-id: lab-esp32-01" -H "x-device-key: $KEY" \
+  -H "Content-Type: application/json" -d '{"uid":"A1B2C3D4"}'
+```
 
-## 11. Yang Perlu Disiapkan Sebelum Kasih ke AI Agent
+## 13. Yang Perlu Disiapkan
 
-1. Buat Firebase project dulu manual (Console Firebase) → catat `apiKey`, `projectId`, dll dari Firebase config.
-2. Tentukan nama-nama kelas & alokasikan UID kartu (bisa didapat setelah scan kartu fisik pertama kali).
-3. **Putuskan Konfigurasi A (1 scanner) atau B (2 scanner)** — lihat perbandingan di Bagian 1.1, lalu beri tahu AI agent konfigurasi mana yang dipakai supaya dia ambil blok pseudocode yang sesuai di Bagian 8.
-4. Siapkan daftar 50 alat (nama, kode, kategori) dalam bentuk spreadsheet, biar gampang di-import/seed ke Firestore — sekalian tempelkan sticker RFID ke tiap alat lalu catat UID-nya masing-masing ke kolom `uid_rfid`.
-5. Tentukan siapa admin & siapa petugas (untuk akun awal).
-
-Dokumen ini bisa langsung lu kasih ke AI agent sebagai spesifikasi awal — dia tinggal generate struktur project React + Cloud Function + firmware ESP32 berdasarkan schema dan logic di atas.
+1. Project Supabase (catat Project URL + anon key + project ref).
+2. Logo SMK (PNG transparan) + foto/gambar sekolah + nama sekolah resmi.
+3. Daftar kelas + UID kartu, daftar alat (nama, kode, kategori, jumlah, UID sticker) — bisa di-import CSV lewat Table Editor Supabase.
+4. Email admin & petugas awal.
+5. Putuskan: 1 sticker per jenis alat (sesuai asumsi #4) atau 1 sticker per unit.

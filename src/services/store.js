@@ -1,44 +1,85 @@
-// Initial Seed Data matching PLAN.md & Design.md
+/**
+ * src/services/store.js
+ * Local simulation store — HANYA dipakai saat Supabase belum dikonfigurasi
+ * (misal: mode demo/pengembangan tanpa koneksi Supabase).
+ *
+ * Di production, semua data berasal dari Supabase:
+ *   - Tabel: alat, kartu_rfid, transaksi, tap_log, profiles
+ *   - Auth: supabase.auth
+ *   - Realtime: supabase.channel('tap-log-realtime')
+ */
+
+// ── Seed Data sesuai schema PLAN.md ───────────────────────────
 const INITIAL_USERS = [
-  { uid: "usr-admin-1", nama: "Administrator Lab", email: "admin@smk.sch.id", role: "admin", createdAt: new Date().toISOString() },
-  { uid: "usr-petugas-1", nama: "Budi Petugas", email: "petugas@smk.sch.id", role: "petugas", createdAt: new Date().toISOString() }
+  {
+    uid: 'usr-admin-1',
+    nama: 'Administrator Lab',
+    email: 'admin@smk.sch.id',
+    role: 'admin',
+    aktif: true,
+    created_at: new Date().toISOString(),
+  },
+  {
+    uid: 'usr-petugas-1',
+    nama: 'Budi Santoso',
+    email: 'petugas@smk.sch.id',
+    role: 'petugas',
+    aktif: true,
+    created_at: new Date().toISOString(),
+  },
 ];
 
 const INITIAL_KARTU = [
-  { uid_kartu: "KARTU-XI-RPL-1", kelas: "XI RPL 1", nama_pemegang: "Ahmad Zaki (Ketua)", status: "aktif", createdAt: new Date().toISOString() },
-  { uid_kartu: "KARTU-XI-RPL-2", kelas: "XI RPL 2", nama_pemegang: "Siti Rahma (Perwakilan)", status: "aktif", createdAt: new Date().toISOString() },
-  { uid_kartu: "KARTU-XI-TKJ-1", kelas: "XI TKJ 1", nama_pemegang: "Rian Pratama", status: "aktif", createdAt: new Date().toISOString() },
-  { uid_kartu: "KARTU-XI-TKJ-2", kelas: "XI TKJ 2", nama_pemegang: "Dewi Lestari", status: "nonaktif", createdAt: new Date().toISOString() }
+  { uid_kartu: 'KARTU-XI-RPL-1', kelas: 'XI RPL 1', nama_pemegang: 'Ahmad Zaki (Ketua)', aktif: true },
+  { uid_kartu: 'KARTU-XI-RPL-2', kelas: 'XI RPL 2', nama_pemegang: 'Siti Rahma', aktif: true },
+  { uid_kartu: 'KARTU-XI-TKJ-1', kelas: 'XI TKJ 1', nama_pemegang: 'Rian Pratama', aktif: true },
+  { uid_kartu: 'KARTU-XI-TKJ-2', kelas: 'XI TKJ 2', nama_pemegang: 'Dewi Lestari', aktif: false },
 ];
 
 const INITIAL_ALAT = [
-  { id_alat: "ALT-001", nama: "Multimeter Digital Fluke", kode: "MM-001", uid_rfid: "STK-ALT-001", kategori: "elektronik", status: "tersedia", stok_total: 5, stok_tersedia: 5, createdAt: new Date().toISOString() },
-  { id_alat: "ALT-002", nama: "Oscilloscope Rigol DS1054Z", kode: "OSC-002", uid_rfid: "STK-ALT-002", kategori: "elektronik", status: "dipinjam", stok_total: 2, stok_tersedia: 1, createdAt: new Date().toISOString() },
-  { id_alat: "ALT-003", nama: "Solder Station Dekko", kode: "SLD-003", uid_rfid: "STK-ALT-003", kategori: "elektronik", status: "tersedia", stok_total: 10, stok_tersedia: 10, createdAt: new Date().toISOString() },
-  { id_alat: "ALT-004", nama: "Tang Kombinasi Tekiro", kode: "TNG-004", uid_rfid: "STK-ALT-004", kategori: "mekanik", status: "tersedia", stok_total: 8, stok_tersedia: 8, createdAt: new Date().toISOString() },
-  { id_alat: "ALT-005", nama: "Crimping Tool RJ45", kode: "CRM-005", uid_rfid: "STK-ALT-005", kategori: "jaringan", status: "maintenance", stok_total: 3, stok_tersedia: 0, createdAt: new Date().toISOString() }
+  {
+    id: 'ALT-001', kode: 'MM-001', nama: 'Multimeter Digital Fluke',
+    kategori: 'elektronik', uid_rfid: 'STK-ALT-001',
+    jumlah_total: 5, jumlah_rusak: 0, stok_tersedia: 5,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'ALT-002', kode: 'OSC-002', nama: 'Oscilloscope Rigol DS1054Z',
+    kategori: 'elektronik', uid_rfid: 'STK-ALT-002',
+    jumlah_total: 2, jumlah_rusak: 0, stok_tersedia: 2,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'ALT-003', kode: 'SLD-003', nama: 'Solder Station Dekko',
+    kategori: 'elektronik', uid_rfid: 'STK-ALT-003',
+    jumlah_total: 10, jumlah_rusak: 1, stok_tersedia: 9,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'ALT-004', kode: 'TNG-004', nama: 'Tang Kombinasi Tekiro',
+    kategori: 'mekanik', uid_rfid: 'STK-ALT-004',
+    jumlah_total: 8, jumlah_rusak: 0, stok_tersedia: 8,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'ALT-005', kode: 'CRM-005', nama: 'Crimping Tool RJ45',
+    kategori: 'jaringan', uid_rfid: 'STK-ALT-005',
+    jumlah_total: 3, jumlah_rusak: 3, stok_tersedia: 0,
+    created_at: new Date().toISOString(),
+  },
 ];
 
-const INITIAL_TAP_LOG = [
-  { id_log: "LOG-101", uid_kartu: "KARTU-XI-RPL-1", uid_alat: "STK-ALT-002", kelas: "XI RPL 1", id_alat: "ALT-002", nama_alat: "Oscilloscope Rigol DS1054Z", jenis_terdeteksi: "kembali", waktu_tap: new Date(Date.now() - 120000).toISOString(), status: "pending" }
-];
+const INITIAL_TRANSAKSI = [];
+const INITIAL_TAP_LOG   = [];
 
-const INITIAL_TRANSAKSI = [
-  { id_transaksi: "TRX-001", uid_kartu: "KARTU-XI-RPL-1", uid_alat: "STK-ALT-002", kelas: "XI RPL 1", id_alat: "ALT-002", nama_alat: "Oscilloscope Rigol DS1054Z", jenis: "pinjam", status: "dikonfirmasi", petugas_konfirmasi: "Budi Petugas", waktu_tap: new Date(Date.now() - 3600000).toISOString(), waktu_konfirmasi: new Date(Date.now() - 3500000).toISOString(), waktu_kembali: null, catatan: "Kondisi baik" }
-];
-
-// Helper to get/set localStorage
+// ── Local Storage helpers ──────────────────────────────────────
 function getStore(key, initial) {
-  const data = localStorage.getItem(`simlab_${key}`);
-  if (!data) {
+  const raw = localStorage.getItem(`simlab_${key}`);
+  if (!raw) {
     localStorage.setItem(`simlab_${key}`, JSON.stringify(initial));
     return initial;
   }
-  try {
-    return JSON.parse(data);
-  } catch {
-    return initial;
-  }
+  try { return JSON.parse(raw); } catch { return initial; }
 }
 
 function setStore(key, data) {
@@ -46,137 +87,285 @@ function setStore(key, data) {
   window.dispatchEvent(new Event('simlab_storage_updated'));
 }
 
+// ── Sesi kartu 60 detik (in-memory, reset saat refresh) ───────
+const kartuSessions = {}; // { uid_kartu: { expires: Date, jenis: 'pinjam'|'kembali', uid_kartu } }
+
+function getSession(uid_kartu) {
+  const s = kartuSessions[uid_kartu];
+  if (!s) return null;
+  if (new Date() > s.expires) {
+    delete kartuSessions[uid_kartu];
+    return null;
+  }
+  return s;
+}
+
+function setSession(uid_kartu, jenis) {
+  const expires = new Date(Date.now() + 60_000);
+  kartuSessions[uid_kartu] = { uid_kartu, jenis, expires };
+  return kartuSessions[uid_kartu];
+}
+
+function extendSession(uid_kartu) {
+  const s = kartuSessions[uid_kartu];
+  if (s) s.expires = new Date(Date.now() + 60_000);
+}
+
+// ── dbService ─────────────────────────────────────────────────
 export const dbService = {
-  getUsers: () => getStore('users', INITIAL_USERS),
-  saveUsers: (users) => setStore('users', users),
-
-  getKartu: () => getStore('kartu', INITIAL_KARTU),
-  saveKartu: (kartu) => setStore('kartu', kartu),
-
-  getAlat: () => getStore('alat', INITIAL_ALAT),
-  saveAlat: (alat) => setStore('alat', alat),
-
-  getTapLog: () => getStore('tap_log', INITIAL_TAP_LOG),
-  saveTapLog: (logs) => setStore('tap_log', logs),
-
-  getTransaksi: () => getStore('transaksi', INITIAL_TRANSAKSI),
-  saveTransaksi: (trx) => setStore('transaksi', trx),
+  // --- Users / Profiles ---
+  getUsers:  () => getStore('users', INITIAL_USERS),
+  saveUsers: (u) => setStore('users', u),
 
   getCurrentUser: () => {
-    const user = localStorage.getItem('simlab_current_user');
-    if (!user) {
-      // Default to admin for convenient testing
-      const defaultAdmin = { uid: "usr-admin-1", nama: "Administrator Lab", email: "admin@smk.sch.id", role: "admin" };
-      localStorage.setItem('simlab_current_user', JSON.stringify(defaultAdmin));
-      return defaultAdmin;
-    }
-    try {
-      return JSON.parse(user);
-    } catch {
-      return null;
-    }
+    const raw = localStorage.getItem('simlab_current_user');
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
   },
-
   setCurrentUser: (user) => {
     localStorage.setItem('simlab_current_user', JSON.stringify(user));
     window.dispatchEvent(new Event('simlab_storage_updated'));
   },
-
   logout: () => {
     localStorage.removeItem('simlab_current_user');
     window.dispatchEvent(new Event('simlab_storage_updated'));
   },
 
-  // IoT Simulation Tap function (mimicking ESP32 sending RFID tap)
-  simulateEsp32Tap: (uid_kartu, uid_alat) => {
-    const kartuList = dbService.getKartu();
-    const alatList = dbService.getAlat();
+  // --- Kartu RFID ---
+  getKartu:  () => getStore('kartu', INITIAL_KARTU),
+  saveKartu: (k) => setStore('kartu', k),
 
-    const kartu = kartuList.find(k => k.uid_kartu === uid_kartu);
-    if (!kartu || kartu.status !== "aktif") {
-      return { success: false, error: "kartu_tidak_valid", message: "Kartu tidak terdaftar atau nonaktif." };
-    }
+  // --- Alat ---
+  getAlat:  () => getStore('alat', INITIAL_ALAT),
+  saveAlat: (a) => setStore('alat', a),
 
-    const alat = alatList.find(a => a.uid_rfid === uid_alat);
-    if (!alat) {
-      return { success: false, error: "alat_tidak_terdaftar", message: "Sticker RFID alat tidak terdaftar." };
-    }
-
-    if (alat.status === "maintenance") {
-      return { success: false, error: "alat_maintenance", message: "Alat sedang dalam perbaikan/maintenance." };
-    }
-
-    const jenis_terdeteksi = (alat.status === "dipinjam") ? "kembali" : "pinjam";
-
-    const newLog = {
-      id_log: "LOG-" + Date.now(),
-      uid_kartu,
-      uid_alat,
-      kelas: kartu.kelas,
-      id_alat: alat.id_alat,
-      nama_alat: alat.nama,
-      jenis_terdeteksi,
-      waktu_tap: new Date().toISOString(),
-      status: "pending"
-    };
-
-    const logs = dbService.getTapLog();
-    logs.unshift(newLog);
-    dbService.saveTapLog(logs);
-
-    return { success: true, data: newLog };
+  // Hitung stok_tersedia dari jumlah_total & jumlah_dipinjam aktif
+  getAlatWithStok: () => {
+    const alat      = getStore('alat', INITIAL_ALAT);
+    const transaksi = getStore('transaksi', INITIAL_TRANSAKSI);
+    return alat.map((a) => {
+      const dipinjam = transaksi.filter(
+        (t) => t.alat_id === a.id && t.status === 'dipinjam'
+      ).length;
+      const stok_tersedia = Math.max(0, a.jumlah_total - a.jumlah_rusak - dipinjam);
+      return { ...a, stok_tersedia, dipinjam_aktif: dipinjam };
+    });
   },
 
-  // Confirm transaction from Tap Log
-  konfirmasiTransaksi: (logId, petugasNama, koreksiJenis = null) => {
-    const logs = dbService.getTapLog();
-    const logIndex = logs.findIndex(l => l.id_log === logId);
-    if (logIndex === -1) return { success: false, message: "Log tap tidak ditemukan." };
+  updateKondisiAlat: (id, jumlah_rusak) => {
+    const list = dbService.getAlat();
+    const idx  = list.findIndex((a) => a.id === id);
+    if (idx === -1) return;
+    list[idx].jumlah_rusak = jumlah_rusak;
+    list[idx].stok_tersedia = Math.max(0, list[idx].jumlah_total - jumlah_rusak);
+    setStore('alat', list);
+  },
 
-    const logItem = logs[logIndex];
-    const jenisTransaksi = koreksiJenis || logItem.jenis_terdeteksi;
+  // --- Tap Log ---
+  getTapLog:  () => getStore('tap_log', INITIAL_TAP_LOG),
+  saveTapLog: (l) => setStore('tap_log', l),
+  getUnreadCount: () => getStore('tap_log', INITIAL_TAP_LOG).filter((l) => !l.is_read).length,
+  markTapsRead: () => {
+    const logs = dbService.getTapLog().map((l) => ({ ...l, is_read: true }));
+    setStore('tap_log', logs);
+  },
 
-    const alatList = dbService.getAlat();
-    const alatIndex = alatList.findIndex(a => a.id_alat === logItem.id_alat);
-    if (alatIndex === -1) return { success: false, message: "Alat tidak ditemukan." };
+  // --- Transaksi ---
+  getTransaksi:  () => getStore('transaksi', INITIAL_TRANSAKSI),
+  saveTransaksi: (t) => setStore('transaksi', t),
 
-    const alat = alatList[alatIndex];
+  // --- Kartu Session ---
+  getSession,
+  setSession,
+  extendSession,
+  getActiveSessions: () => {
+    const now = new Date();
+    return Object.values(kartuSessions).filter((s) => new Date(s.expires) > now);
+  },
 
-    // Update alat status and stock
-    if (jenisTransaksi === "pinjam") {
-      alat.status = "dipinjam";
-      alat.stok_tersedia = Math.max(0, alat.stok_tersedia - 1);
-    } else {
-      alat.status = "tersedia";
-      alat.stok_tersedia = Math.min(alat.stok_total, alat.stok_tersedia + 1);
+  // ── processTap: meniru logika edge function process_tap ──────
+  /**
+   * Meniru proses tap RFID dari ESP32.
+   * Tap tunggal UID → deteksi otomatis kartu atau alat.
+   *
+   * Respons mengikuti kontrak PLAN.md §4:
+   *   { ok:true,  type:'kartu', jenis, kelas }
+   *   { ok:true,  type:'alat',  jenis, alat  }
+   *   { ok:false, error:'kartu_nonaktif' | 'uid_tidak_dikenal' | 'sesi_tidak_ada' | 'stok_habis' }
+   */
+  processTap: (uid, deviceId = 'web-sim') => {
+    const kartuList = dbService.getKartu();
+    const kartu = kartuList.find((k) => k.uid_kartu === uid);
+
+    if (kartu) {
+      // --- UID adalah kartu ---
+      if (!kartu.aktif) {
+        dbService._addTapLog(uid, null, 'kartu', null, 'ditolak', 'kartu_nonaktif', kartu.kelas, null);
+        return { ok: false, error: 'kartu_nonaktif', type: 'kartu' };
+      }
+      const transaksi    = dbService.getTransaksi();
+      const hasAktif     = transaksi.some((t) => t.uid_kartu === uid && t.status === 'dipinjam');
+      const jenis        = hasAktif ? 'kembali' : 'pinjam';
+      setSession(uid, jenis);
+      dbService._addTapLog(uid, null, 'kartu', jenis, 'berhasil', null, kartu.kelas, null);
+      return { ok: true, type: 'kartu', jenis, kelas: kartu.kelas };
     }
-    dbService.saveAlat(alatList);
 
-    // Create Transaction record
-    const newTrx = {
-      id_transaksi: "TRX-" + Date.now(),
-      uid_kartu: logItem.uid_kartu,
-      uid_alat: logItem.uid_alat,
-      kelas: logItem.kelas,
-      id_alat: logItem.id_alat,
-      nama_alat: logItem.nama_alat,
-      jenis: jenisTransaksi,
-      status: jenisTransaksi === "pinjam" ? "dikonfirmasi" : "selesai",
-      petugas_konfirmasi: petugasNama || "Petugas Lab",
-      waktu_tap: logItem.waktu_tap,
-      waktu_konfirmasi: new Date().toISOString(),
-      waktu_kembali: jenisTransaksi === "kembali" ? new Date().toISOString() : null,
-      catatan: jenisTransaksi === "pinjam" ? "Dipinjam via RFID" : "Dikembalikan via RFID"
+    // --- UID adalah alat ---
+    const alatList  = dbService.getAlatWithStok();
+    const alat      = alatList.find((a) => a.uid_rfid === uid);
+
+    if (!alat) {
+      dbService._addTapLog(null, uid, 'alat', null, 'ditolak', 'uid_tidak_dikenal', null, null);
+      return { ok: false, error: 'uid_tidak_dikenal', type: 'alat' };
+    }
+
+    // Cari sesi kartu aktif (cek semua sesi — simulasi 1 device)
+    const activeSessions = dbService.getActiveSessions();
+    if (activeSessions.length === 0) {
+      dbService._addTapLog(null, uid, 'alat', null, 'ditolak', 'sesi_tidak_ada', null, alat.nama);
+      return { ok: false, error: 'sesi_tidak_ada', type: 'alat' };
+    }
+
+    const sess = activeSessions[0];
+    const kartuData = kartuList.find((k) => k.uid_kartu === sess.uid_kartu);
+
+    // Kartu ini sudah pinjam alat ini? → KEMBALI
+    const transaksi = dbService.getTransaksi();
+    const activeTrx = transaksi.find(
+      (t) => t.uid_kartu === sess.uid_kartu && t.alat_id === alat.id && t.status === 'dipinjam'
+    );
+
+    let jenis;
+    if (activeTrx) {
+      // Kembalikan
+      const updated = transaksi.map((t) =>
+        t.id === activeTrx.id
+          ? { ...t, status: 'dikembalikan', waktu_kembali: new Date().toISOString() }
+          : t
+      );
+      setStore('transaksi', updated);
+      jenis = 'kembali';
+    } else {
+      // Pinjam — cek stok
+      if (alat.stok_tersedia <= 0) {
+        dbService._addTapLog(sess.uid_kartu, uid, 'alat', null, 'ditolak', 'stok_habis', kartuData?.kelas, alat.nama);
+        return { ok: false, error: 'stok_habis', type: 'alat' };
+      }
+      const newTrx = {
+        id: 'TRX-' + Date.now(),
+        uid_kartu: sess.uid_kartu,
+        kelas: kartuData?.kelas ?? '',
+        alat_id: alat.id,
+        nama_alat: alat.nama,
+        status: 'dipinjam',
+        sumber: 'otomatis',
+        kondisi_pinjam: 'baik',
+        kondisi_kembali: null,
+        waktu_pinjam: new Date().toISOString(),
+        waktu_kembali: null,
+        petugas: null,
+        catatan: null,
+      };
+      const all = dbService.getTransaksi();
+      all.unshift(newTrx);
+      setStore('transaksi', all);
+      jenis = 'pinjam';
+    }
+
+    extendSession(sess.uid_kartu);
+    dbService._addTapLog(sess.uid_kartu, uid, 'alat', jenis, 'berhasil', null, kartuData?.kelas, alat.nama);
+    return { ok: true, type: 'alat', jenis, alat: alat.nama, kelas: kartuData?.kelas };
+  },
+
+  // ── processManual: transaksi manual petugas ──────────────────
+  processManual: ({ uid_kartu, alat_id, jenis, jumlah = 1, kondisi_pinjam = 'baik', kondisi_kembali = null, catatan = null, petugas = null }) => {
+    const kartu = dbService.getKartu().find((k) => k.uid_kartu === uid_kartu);
+    if (!kartu) return { ok: false, error: 'uid_tidak_dikenal' };
+
+    const alat = dbService.getAlatWithStok().find((a) => a.id === alat_id);
+    if (!alat) return { ok: false, error: 'uid_tidak_dikenal' };
+
+    const transaksi = dbService.getTransaksi();
+
+    if (jenis === 'pinjam') {
+      if (alat.stok_tersedia < jumlah) return { ok: false, error: 'stok_habis' };
+      for (let i = 0; i < jumlah; i++) {
+        transaksi.unshift({
+          id: 'TRX-' + Date.now() + '-' + i,
+          uid_kartu, kelas: kartu.kelas,
+          alat_id, nama_alat: alat.nama,
+          status: 'dipinjam', sumber: 'manual',
+          kondisi_pinjam, kondisi_kembali: null,
+          waktu_pinjam: new Date().toISOString(),
+          waktu_kembali: null, petugas, catatan,
+        });
+      }
+    } else {
+      let count = 0;
+      const updated = transaksi.map((t) => {
+        if (t.uid_kartu === uid_kartu && t.alat_id === alat_id && t.status === 'dipinjam' && count < jumlah) {
+          count++;
+          return { ...t, status: 'dikembalikan', waktu_kembali: new Date().toISOString(), kondisi_kembali, catatan: catatan ?? t.catatan, petugas: petugas ?? t.petugas };
+        }
+        return t;
+      });
+      setStore('transaksi', updated);
+      return { ok: true, jenis, jumlah: count };
+    }
+
+    setStore('transaksi', transaksi);
+    return { ok: true, jenis, jumlah };
+  },
+
+  // ── Private helper: tambah tap_log ───────────────────────────
+  _addTapLog: (uid_kartu, uid_alat, jenis_tap, jenis_terdeteksi, status, error_code, kelas, nama_alat) => {
+    const log = {
+      id: 'LOG-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      uid_kartu, uid_alat,
+      jenis_tap,
+      jenis_terdeteksi,
+      kelas, nama_alat,
+      status,
+      error_code,
+      is_read: false,
+      waktu_tap: new Date().toISOString(),
     };
+    const logs = dbService.getTapLog();
+    logs.unshift(log);
+    setStore('tap_log', logs);
+    return log;
+  },
 
-    const transaksiList = dbService.getTransaksi();
-    transaksiList.unshift(newTrx);
-    dbService.saveTransaksi(transaksiList);
+  // ── Stat Harian (untuk chart dashboard) ─────────────────────
+  getStatHarian: (days = 7) => {
+    const transaksi = dbService.getTransaksi();
+    const result    = [];
+    const now       = new Date();
+    for (let i = days - 1; i >= 0; i--) {
+      const d     = new Date(now);
+      d.setDate(now.getDate() - i);
+      const key   = d.toISOString().slice(0, 10);
+      const pinjam  = transaksi.filter((t) => t.waktu_pinjam?.startsWith(key)).length;
+      const kembali = transaksi.filter((t) => t.waktu_kembali?.startsWith(key)).length;
+      result.push({ tanggal: key, jumlah_pinjam: pinjam, jumlah_kembali: kembali, total: pinjam + kembali });
+    }
+    return result;
+  },
 
-    // Update tap log status to processed
-    logs[logIndex].status = "processed";
-    dbService.saveTapLog(logs);
-
-    return { success: true, transaksi: newTrx };
-  }
+  // ── v_list_barang simulation ─────────────────────────────────
+  getListBarang: () => {
+    const alat      = dbService.getAlatWithStok();
+    const transaksi = dbService.getTransaksi();
+    const kartu     = dbService.getKartu();
+    return alat.map((a) => {
+      const activeTrx = transaksi.find((t) => t.alat_id === a.id && t.status === 'dipinjam');
+      const peminjam_kartu = activeTrx?.uid_kartu ?? null;
+      const peminjam_kelas = activeTrx
+        ? (kartu.find((k) => k.uid_kartu === activeTrx.uid_kartu)?.kelas ?? null)
+        : null;
+      const status = a.stok_tersedia <= 0 ? 'habis' : (activeTrx ? 'dipinjam' : 'tersedia');
+      return { ...a, status, peminjam_kartu, peminjam_kelas };
+    });
+  },
 };

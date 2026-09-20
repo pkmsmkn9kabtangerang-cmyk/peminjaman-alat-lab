@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from 'react';
+// src/App.jsx
+// Root aplikasi: mode demo (localStorage) atau Supabase (jika .env dikonfigurasi)
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { dbService } from './services/store';
 import Sidebar from './components/Sidebar';
 import LoginPage from './pages/LoginPage';
@@ -6,36 +9,61 @@ import DashboardPage from './pages/DashboardPage';
 import InventarisPage from './pages/InventarisPage';
 import ListBarangPage from './pages/ListBarangPage';
 import KartuRfidPage from './pages/KartuRfidPage';
-import PersetujuanPage from './pages/PersetujuanPage';
+import RealtimeCardPage from './pages/RealtimeCardPage';
 import PeminjamanPage from './pages/PeminjamanPage';
 import PengembalianPage from './pages/PengembalianPage';
 import RiwayatPage from './pages/RiwayatPage';
-import TambahPetugasPage from './pages/TambahPetugasPage';
+import PenggunaPage from './pages/PenggunaPage';
 import SimulasiIotPage from './pages/SimulasiIotPage';
+import { IconBell } from '@tabler/icons-react';
+
+const PAGE_TITLES = {
+  dashboard:      'Dashboard',
+  realtime_card:  'Realtime Card',
+  peminjaman:     'Peminjaman Manual',
+  pengembalian:   'Pengembalian Manual',
+  riwayat:        'Riwayat Peminjaman',
+  list_barang:    'List Barang',
+  inventaris:     'Inventaris Barang',
+  kartu_rfid:     'Kartu RFID',
+  pengguna:       'Pengguna',
+  simulasi_iot:   'Simulasi IoT RFID',
+};
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [currentTab, setCurrentTab] = useState('dashboard');
-  const [pendingCount, setPendingCount] = useState(0);
+  const [currentUser, setCurrentUser] = useState(() => dbService.getCurrentUser());
+  const [currentTab, setCurrentTab]   = useState('dashboard');
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const checkUserAndLogs = () => {
-    const user = dbService.getCurrentUser();
-    setCurrentUser(user);
+  const refreshUnread = useCallback(() => {
+    setUnreadCount(dbService.getUnreadCount());
+  }, []);
 
-    const logs = dbService.getTapLog();
-    setPendingCount(logs.filter(l => l.status === 'pending').length);
-  };
-
+  // Poll unread count + listen to storage updates
   useEffect(() => {
-    checkUserAndLogs();
-    const handleStorage = () => checkUserAndLogs();
-    window.addEventListener('simlab_storage_updated', handleStorage);
-    const interval = setInterval(checkUserAndLogs, 2000);
+    refreshUnread();
+    const handle = () => {
+      setCurrentUser(dbService.getCurrentUser());
+      refreshUnread();
+    };
+    window.addEventListener('simlab_storage_updated', handle);
+    const interval = setInterval(refreshUnread, 3000);
     return () => {
-      window.removeEventListener('simlab_storage_updated', handleStorage);
+      window.removeEventListener('simlab_storage_updated', handle);
       clearInterval(interval);
     };
-  }, []);
+  }, [refreshUnread]);
+
+  // Saat buka Realtime Card → tandai semua terbaca
+  const handleTabChange = (tab) => {
+    setCurrentTab(tab);
+    setMobileMenuOpen(false); // close mobile menu on nav
+    if (tab === 'realtime_card') {
+      dbService.markTapsRead();
+      setUnreadCount(0);
+    }
+  };
 
   const handleLogout = () => {
     dbService.logout();
@@ -43,49 +71,84 @@ export default function App() {
   };
 
   if (!currentUser) {
-    return <LoginPage onLoginSuccess={(u) => setCurrentUser(u)} />;
+    return (
+      <LoginPage
+        onLoginSuccess={(u) => {
+          dbService.setCurrentUser(u);
+          setCurrentUser(u);
+        }}
+      />
+    );
   }
 
   return (
     <div className="min-h-screen bg-main flex">
-      {/* Sidebar (fixed left) */}
+      {/* Sidebar */}
       <Sidebar
         currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
+        setCurrentTab={handleTabChange}
         user={currentUser}
         onLogout={handleLogout}
-        pendingCount={pendingCount}
+        unreadCount={unreadCount}
+        mobileMenuOpen={mobileMenuOpen}
+        setMobileMenuOpen={setMobileMenuOpen}
       />
 
-      {/* Main Content Area (offset by sidebar width 240px / w-60) */}
-      <main className="flex-1 ml-60 min-h-screen flex flex-col">
-        {/* Top Header */}
-        <header className="h-16 bg-surface border-b border-main px-8 flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-main capitalize">
-              {currentTab === 'list_barang' ? 'List Barang' : currentTab.replace('_', ' ')}
+      {/* Main Content */}
+      <main className="flex-1 transition-all duration-300 md:ml-16 min-h-screen flex flex-col min-w-0">
+        {/* Header */}
+        <header className="h-14 bg-surface border-b border-main px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20 shadow-sm">
+          <div className="flex items-center gap-3">
+            {/* Hamburger Button (Mobile Only) */}
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="md:hidden p-1.5 -ml-2 text-gray-500 hover:bg-gray-100 rounded-lg transition"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <h2 className="text-sm font-bold text-main truncate">
+              {PAGE_TITLES[currentTab] ?? currentTab}
             </h2>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-xs font-semibold text-main">{currentUser.nama}</p>
+
+          <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+            {/* Bell Notifikasi */}
+            <button
+              id="btn-bell-notifikasi"
+              onClick={() => handleTabChange('realtime_card')}
+              className="relative p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+              title="Realtime Card"
+            >
+              <IconBell size={18} />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* User info */}
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-semibold text-main leading-tight truncate max-w-[120px]">{currentUser.nama}</p>
               <p className="text-[11px] text-muted capitalize">{currentUser.role}</p>
             </div>
           </div>
         </header>
 
-        {/* Page Body Content */}
-        <div className="p-8 flex-1">
-          {currentTab === 'dashboard' && <DashboardPage setCurrentTab={setCurrentTab} />}
-          {currentTab === 'inventaris' && <InventarisPage />}
-          {currentTab === 'list_barang' && <ListBarangPage />}
-          {currentTab === 'kartu_rfid' && <KartuRfidPage />}
-          {currentTab === 'persetujuan' && <PersetujuanPage />}
-          {currentTab === 'peminjaman' && <PeminjamanPage />}
-          {currentTab === 'pengembalian' && <PengembalianPage />}
-          {currentTab === 'riwayat' && <RiwayatPage />}
-          {currentTab === 'tambah_petugas' && <TambahPetugasPage />}
-          {currentTab === 'simulasi_iot' && <SimulasiIotPage />}
+        {/* Page Content */}
+        <div className="p-4 sm:p-6 flex-1 min-w-0">
+          {currentTab === 'dashboard'     && <DashboardPage setCurrentTab={handleTabChange} user={currentUser} />}
+          {currentTab === 'realtime_card' && <RealtimeCardPage />}
+          {currentTab === 'peminjaman'    && <PeminjamanPage />}
+          {currentTab === 'pengembalian'  && <PengembalianPage />}
+          {currentTab === 'riwayat'       && <RiwayatPage />}
+          {currentTab === 'list_barang'   && <ListBarangPage />}
+          {currentTab === 'inventaris'    && <InventarisPage />}
+          {currentTab === 'kartu_rfid'    && <KartuRfidPage />}
+          {currentTab === 'pengguna'      && <PenggunaPage />}
+          {currentTab === 'simulasi_iot'  && <SimulasiIotPage />}
         </div>
       </main>
     </div>

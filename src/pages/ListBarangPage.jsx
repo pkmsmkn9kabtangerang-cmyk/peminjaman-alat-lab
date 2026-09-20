@@ -1,166 +1,143 @@
-import { useState } from 'react';
+// src/pages/ListBarangPage.jsx
+// List Barang: stok "4/5", status, kondisi inline edit, kartu/kelas peminjam
+
+import { useState, useEffect } from 'react';
 import { dbService } from '../services/store';
 import Badge from '../components/Badge';
-import Button from '../components/Button';
-import Modal from '../components/Modal';
-import { IconPlus } from '@tabler/icons-react';
+import DataTable from '../components/DataTable';
+import { IconPencil, IconCheck, IconX } from '@tabler/icons-react';
 
-export default function ListBarangPage() {
-  const [alatList, setAlatList] = useState(() => dbService.getAlat());
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    nama: '',
-    kode: '',
-    uid_rfid: '',
-    kategori: 'elektronik',
-    stok_total: 1
-  });
+function KondisiCell({ alat, onUpdate }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal]         = useState(alat.jumlah_rusak);
 
-  const loadAlat = () => setAlatList(dbService.getAlat());
-
-  const handleAddTool = (e) => {
-    e.preventDefault();
-    const current = dbService.getAlat();
-    const newTool = {
-      id_alat: 'ALT-' + Math.floor(100 + Math.random() * 900),
-      ...formData,
-      status: 'tersedia',
-      stok_tersedia: Number(formData.stok_total),
-      createdAt: new Date().toISOString()
-    };
-    current.unshift(newTool);
-    dbService.saveAlat(current);
-    setIsModalOpen(false);
-    setFormData({ nama: '', kode: '', uid_rfid: '', kategori: 'elektronik', stok_total: 1 });
-    loadAlat();
+  const save = () => {
+    const n = Math.max(0, Math.min(Number(val), alat.jumlah_total));
+    dbService.updateKondisiAlat(alat.id, n);
+    onUpdate();
+    setEditing(false);
   };
 
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          type="number" min={0} max={alat.jumlah_total}
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          className="w-14 px-2 py-1 text-xs border border-main rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+          autoFocus
+        />
+        <span className="text-xs text-muted">rusak</span>
+        <button onClick={save}  className="p-1 text-green-600 hover:bg-green-50 rounded transition"><IconCheck size={13} /></button>
+        <button onClick={() => setEditing(false)} className="p-1 text-red-500 hover:bg-red-50 rounded transition"><IconX size={13} /></button>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="flex items-center gap-1.5 group">
+      {alat.jumlah_rusak > 0
+        ? <Badge status="rusak" />
+        : <Badge status="baik" />
+      }
+      {alat.jumlah_rusak > 0 && (
+        <span className="text-xs text-muted">({alat.jumlah_rusak} unit)</span>
+      )}
+      <button
+        onClick={() => { setVal(alat.jumlah_rusak); setEditing(true); }}
+        className="p-0.5 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition"
+        title="Edit jumlah rusak"
+      >
+        <IconPencil size={12} />
+      </button>
+    </div>
+  );
+}
+
+export default function ListBarangPage() {
+  const [data, setData] = useState(() => dbService.getListBarang());
+
+  const reload = () => setData(dbService.getListBarang());
+
+  useEffect(() => {
+    window.addEventListener('simlab_storage_updated', reload);
+    const t = setInterval(reload, 3000);
+    return () => { window.removeEventListener('simlab_storage_updated', reload); clearInterval(t); };
+  }, []);
+
+  const columns = [
+    {
+      key: 'nama',
+      label: 'Alat / Kode',
+      sortable: true,
+      render: (row) => (
         <div>
-          <h2 className="text-lg font-bold text-main">List Status Semua Alat (Petugas)</h2>
-          <p className="text-xs text-muted">Pantau ketersediaan alat dan daftarkan alat baru saat stiker RFID baru ditempel.</p>
+          <p className="font-semibold text-main text-xs">{row.nama}</p>
+          <p className="text-[11px] text-muted font-mono">{row.kode}</p>
         </div>
-        <Button
-          icon={IconPlus}
-          onClick={() => {
-            setFormData({
-              nama: '',
-              kode: 'KODE-' + Math.floor(1000 + Math.random() * 9000),
-              uid_rfid: 'STK-ALT-' + Math.floor(1000 + Math.random() * 9000),
-              kategori: 'elektronik',
-              stok_total: 1
-            });
-            setIsModalOpen(true);
-          }}
-        >
-          Tambah Alat Baru (Stiker RFID)
-        </Button>
+      ),
+    },
+    {
+      key: 'stok_tersedia',
+      label: 'Stok',
+      sortable: true,
+      render: (row) => (
+        <div>
+          <span className={`text-sm font-bold ${row.stok_tersedia === 0 ? 'text-red-600' : 'text-main'}`}>
+            {row.stok_tersedia}/{row.jumlah_total}
+          </span>
+          <p className="text-[10px] text-muted">tersedia</p>
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      sortable: true,
+      render: (row) => <Badge status={row.status} />,
+    },
+    {
+      key: 'kondisi',
+      label: 'Kondisi',
+      render: (row) => <KondisiCell alat={row} onUpdate={reload} />,
+    },
+    {
+      key: 'peminjam_kelas',
+      label: 'Peminjam',
+      render: (row) => (
+        row.peminjam_kartu
+          ? (
+            <div>
+              <p className="text-xs font-semibold text-blue-700">{row.peminjam_kelas}</p>
+              <p className="text-[10px] font-mono text-muted">{row.peminjam_kartu}</p>
+            </div>
+          )
+          : <span className="text-xs text-muted">—</span>
+      ),
+    },
+    {
+      key: 'kategori',
+      label: 'Kategori',
+      sortable: true,
+      render: (row) => <span className="text-xs capitalize text-muted">{row.kategori}</span>,
+    },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-bold text-main">List Barang</h2>
+        <p className="text-xs text-muted">Pantau ketersediaan dan kondisi alat lab secara realtime.</p>
       </div>
 
-      <div className="bg-surface rounded-xl border border-main overflow-hidden shadow-xs">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-main bg-gray-50 text-xs text-muted">
-              <th className="p-4 font-medium">Alat / Kode Inventaris</th>
-              <th className="p-4 font-medium">UID Sticker RFID</th>
-              <th className="p-4 font-medium">Kategori</th>
-              <th className="p-4 font-medium">Stok Tersedia</th>
-              <th className="p-4 font-medium">Status Alat</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-main">
-            {alatList.map((alat) => (
-              <tr key={alat.id_alat} className="hover:bg-gray-50/50 transition">
-                <td className="p-4">
-                  <p className="font-semibold text-main">{alat.nama}</p>
-                  <p className="text-xs text-muted">{alat.kode}</p>
-                </td>
-                <td className="p-4">
-                  <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded text-gray-700">
-                    {alat.uid_rfid}
-                  </span>
-                </td>
-                <td className="p-4 text-xs capitalize text-muted">{alat.kategori}</td>
-                <td className="p-4 text-xs font-semibold text-main">
-                  {alat.stok_tersedia} dari {alat.stok_total} unit
-                </td>
-                <td className="p-4">
-                  <Badge status={alat.status} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Tambah Alat Baru dengan Stiker RFID">
-        <form onSubmit={handleAddTool} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-muted mb-1">Nama Alat</label>
-            <input
-              type="text"
-              required
-              value={formData.nama}
-              onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
-              className="w-full px-3 py-2 rounded-lg border border-main text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Contoh: Power Supply DC"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-muted mb-1">Kode Inventaris</label>
-              <input
-                type="text"
-                required
-                value={formData.kode}
-                onChange={(e) => setFormData({ ...formData, kode: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg border border-main text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted mb-1">UID Sticker RFID</label>
-              <input
-                type="text"
-                required
-                value={formData.uid_rfid}
-                onChange={(e) => setFormData({ ...formData, uid_rfid: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg border border-main text-sm font-mono"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-muted mb-1">Kategori</label>
-              <select
-                value={formData.kategori}
-                onChange={(e) => setFormData({ ...formData, kategori: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg border border-main text-sm bg-white"
-              >
-                <option value="elektronik">Elektronik</option>
-                <option value="mekanik">Mekanik</option>
-                <option value="jaringan">Jaringan</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted mb-1">Jumlah Stok</label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={formData.stok_total}
-                onChange={(e) => setFormData({ ...formData, stok_total: Number(e.target.value) })}
-                className="w-full px-3 py-2 rounded-lg border border-main text-sm"
-              />
-            </div>
-          </div>
-          <div className="pt-4 flex justify-end gap-3">
-            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>Batal</Button>
-            <Button type="submit">Daftarkan Alat</Button>
-          </div>
-        </form>
-      </Modal>
+      <DataTable
+        columns={columns}
+        data={data}
+        searchPlaceholder="Cari nama alat, kode, atau kategori..."
+        searchKeys={['nama', 'kode', 'kategori', 'peminjam_kelas']}
+        emptyMessage="Belum ada alat yang terdaftar."
+      />
     </div>
   );
 }
