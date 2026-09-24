@@ -1,10 +1,13 @@
 // src/pages/RealtimeCardPage.jsx
-// Menggantikan PersetujuanPage — Realtime tap log tanpa konfirmasi manual
+// Realtime tap log — hari ini saja, tanpa filter waktu
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { dbService } from '../services/store';
 import Badge from '../components/Badge';
-import { IconRadioactive, IconAlertTriangle } from '@tabler/icons-react';
+import DataTable from '../components/DataTable';
+import Modal from '../components/Modal';
+import Button from '../components/Button';
+import { IconRadioactive, IconAlertTriangle, IconTrash } from '@tabler/icons-react';
 
 const FORMAT_WIB = (iso) => {
   if (!iso) return '—';
@@ -15,21 +18,21 @@ const FORMAT_WIB = (iso) => {
   }).format(new Date(iso));
 };
 
-const ERROR_LABELS = {
-  kartu_nonaktif:    'Kartu nonaktif',
-  uid_tidak_dikenal: 'UID tidak dikenal',
-  sesi_tidak_ada:    'Sesi habis / belum tap kartu',
-  stok_habis:        'Stok habis',
-};
+const TODAY = () => new Date().toISOString().slice(0, 10);
 
 export default function RealtimeCardPage() {
-  const [taps, setTaps]     = useState(() => dbService.getTapLog());
-  const [newIds, setNewIds] = useState(new Set());
-  const prevLen             = useRef(taps.length);
+  const [taps, setTaps]           = useState(() => dbService.getTapLog());
+  const [kartuList, setKartuList] = useState(() => dbService.getKartu());
+  const [newIds, setNewIds]       = useState(new Set());
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearInput, setClearInput]         = useState('');
+  const CONFIRM_TEXT = 'hapus semua log';
+  const prevLen = useRef(taps.length);
 
   const reload = () => {
     const logs = dbService.getTapLog();
     setTaps(logs);
+    setKartuList(dbService.getKartu());
     if (logs.length > prevLen.current) {
       const added = logs.slice(0, logs.length - prevLen.current).map((l) => l.id);
       setNewIds((prev) => new Set([...prev, ...added]));
@@ -45,9 +48,7 @@ export default function RealtimeCardPage() {
   };
 
   useEffect(() => {
-    // Tandai semua terbaca saat halaman dibuka
     dbService.markTapsRead();
-
     window.addEventListener('simlab_storage_updated', reload);
     const t = setInterval(reload, 1500);
     return () => {
@@ -56,94 +57,155 @@ export default function RealtimeCardPage() {
     };
   }, []);
 
+  // Hanya tampilkan data hari ini, maks 50
+  const filteredData = useMemo(() => {
+    const today = TODAY();
+    const todayLogs = taps
+      .filter(d => d.waktu_tap?.startsWith(today))
+      .slice(0, 50);
+
+    return todayLogs.map(log => {
+      const kartu = kartuList.find(k => k.uid_kartu === log.uid_kartu);
+      return {
+        ...log,
+        nama_pemegang: kartu?.nama_pemegang || log.nama_pemegang || null,
+        _isNew: newIds.has(log.id),
+      };
+    });
+  }, [taps, kartuList, newIds]);
+
+  const handleClearAll = () => {
+    if (clearInput.toLowerCase() !== CONFIRM_TEXT) return;
+    dbService.saveTapLog([]);
+    setShowClearModal(false);
+    setClearInput('');
+    reload();
+  };
+
+  const columns = [
+    {
+      key: 'waktu_tap',
+      label: 'Waktu',
+      sortable: true,
+      render: (row) => <span className="text-xs font-mono text-muted whitespace-nowrap">{FORMAT_WIB(row.waktu_tap)}</span>,
+    },
+    {
+      key: 'kelas',
+      label: 'Kelas',
+      sortable: true,
+      render: (row) => <span className="text-xs font-semibold text-main">{row.kelas ?? '—'}</span>,
+    },
+    {
+      key: 'nama_pemegang',
+      label: 'Pemegang',
+      sortable: true,
+      render: (row) => <span className="font-semibold text-main text-xs">{row.nama_pemegang || '—'}</span>,
+    },
+    {
+      key: 'uid_kartu',
+      label: 'Kartu ID',
+      render: (row) => <span className="text-xs font-mono text-muted">{row.uid_kartu ?? '—'}</span>,
+    },
+    {
+      key: 'jenis_tap',
+      label: 'Jenis Tap',
+      render: (row) => <Badge status={row.jenis_tap} />,
+    },
+    {
+      key: 'nama_alat',
+      label: 'Alat',
+      sortable: true,
+      render: (row) => <span className="text-xs text-main">{row.nama_alat ?? '—'}</span>,
+    },
+    {
+      key: 'jenis_terdeteksi',
+      label: 'Jenis Deteksi',
+      sortable: true,
+      render: (row) => {
+        const isManual = row.jenis_terdeteksi === 'manual' || row.sumber === 'manual';
+        return <Badge status={isManual ? 'manual' : 'otomatis'} />;
+      },
+    },
+    {
+      key: 'hasil',
+      label: 'Hasil',
+      render: (row) => {
+        if (row.status === 'ditolak') {
+          return (
+            <div className="flex items-center gap-1.5">
+              <IconAlertTriangle size={13} className="text-red-500 flex-shrink-0" />
+              <span className="text-xs text-red-600 font-medium">Gagal</span>
+            </div>
+          );
+        }
+        return <Badge status="berhasil" />;
+      },
+    },
+  ];
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-main flex items-center gap-2">
             <IconRadioactive size={20} className="text-blue-600" />
             Realtime Card
           </h2>
-          <p className="text-xs text-muted">
-            Log setiap tap RFID dari scanner ESP32. Transaksi masuk otomatis tanpa konfirmasi manual.
-          </p>
+          <p className="text-xs text-muted mt-0.5">Aktivitas tap RFID hari ini · Diperbarui otomatis setiap 1,5 detik</p>
         </div>
-        <div className="inline-flex items-center gap-2 text-xs text-emerald-600 font-semibold bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full self-start sm:self-auto">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping-slow inline-block" />
-          Live
-        </div>
+        <button
+          onClick={() => setShowClearModal(true)}
+          className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-lg border border-red-200 transition-colors font-medium"
+        >
+          <IconTrash size={14} />
+          Hapus Semua Aktivitas
+        </button>
       </div>
 
-      {/* Tabel */}
-      <div className="bg-surface rounded-xl border border-main overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead>
-              <tr className="border-b border-main bg-gray-50 text-xs text-muted">
-                <th className="p-4 font-semibold">Waktu Tap</th>
-                <th className="p-4 font-semibold">Kelas</th>
-                <th className="p-4 font-semibold">Kartu ID</th>
-                <th className="p-4 font-semibold">Jenis Tap</th>
-                <th className="p-4 font-semibold">Alat</th>
-                <th className="p-4 font-semibold">Jenis Deteksi</th>
-                <th className="p-4 font-semibold">Hasil</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-main">
-              {taps.map((log) => {
-                const isNew     = newIds.has(log.id);
-                const isDitolak = log.status === 'ditolak';
-                return (
-                  <tr
-                    key={log.id}
-                    className={`transition ${isNew ? 'animate-highlight' : 'hover:bg-gray-50/50'} ${isDitolak ? 'bg-red-50/40' : ''}`}
-                  >
-                    <td className="p-4 text-xs font-mono text-muted whitespace-nowrap">
-                      {FORMAT_WIB(log.waktu_tap)}
-                    </td>
-                    <td className="p-4 text-xs font-semibold text-main">{log.kelas ?? '—'}</td>
-                    <td className="p-4 text-xs font-mono text-muted">{log.uid_kartu ?? '—'}</td>
-                    <td className="p-4">
-                      <Badge status={log.jenis_tap} />
-                    </td>
-                    <td className="p-4 text-xs text-main">{log.nama_alat ?? '—'}</td>
-                    <td className="p-4">
-                      {log.jenis_terdeteksi
-                        ? <Badge status={log.jenis_terdeteksi} />
-                        : <span className="text-xs text-muted">—</span>
-                      }
-                    </td>
-                    <td className="p-4">
-                      {isDitolak ? (
-                        <div className="flex items-center gap-1.5">
-                          <IconAlertTriangle size={13} className="text-red-500 flex-shrink-0" />
-                          <span className="text-xs text-red-600 font-medium">
-                            {ERROR_LABELS[log.error_code] ?? log.error_code ?? 'Ditolak'}
-                          </span>
-                        </div>
-                      ) : (
-                        <Badge status="berhasil" />
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {taps.length === 0 && (
-                <tr>
-                  <td colSpan="7" className="py-16 text-center text-muted text-sm">
-                    Belum ada tap RFID. Lakukan tap kartu kelas dan sticker alat lab.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <DataTable
+        columns={columns}
+        data={filteredData}
+        searchPlaceholder="Cari kelas, kartu ID, alat..."
+        searchKeys={['kelas', 'uid_kartu', 'nama_alat', 'jenis_terdeteksi', 'jenis_tap', 'nama_pemegang']}
+        emptyMessage="Belum ada tap RFID hari ini."
+      />
 
       <p className="text-xs text-center text-muted">
-        Showing {taps.length} tap log terbaru · Diperbarui otomatis setiap 1,5 detik
+        Menampilkan {filteredData.length} tap log hari ini
       </p>
+
+      {/* Modal Konfirmasi Hapus Semua */}
+      <Modal isOpen={showClearModal} onClose={() => { setShowClearModal(false); setClearInput(''); }} title="Hapus Semua Log Tap RFID">
+        <div className="space-y-4">
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm font-semibold text-red-700 mb-1">⚠ Tindakan ini tidak dapat dibatalkan!</p>
+            <p className="text-xs text-red-600">Seluruh data log tap RFID akan dihapus secara permanen.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-2">
+              Ketik <code className="bg-gray-100 px-1.5 py-0.5 rounded text-red-600 font-mono">{CONFIRM_TEXT}</code> untuk mengkonfirmasi:
+            </label>
+            <input
+              type="text"
+              value={clearInput}
+              onChange={(e) => setClearInput(e.target.value)}
+              placeholder={CONFIRM_TEXT}
+              className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+              autoComplete="off"
+            />
+          </div>
+          <div className="flex justify-end gap-3 pt-1">
+            <Button variant="secondary" onClick={() => { setShowClearModal(false); setClearInput(''); }}>Batal</Button>
+            <button
+              onClick={handleClearAll}
+              disabled={clearInput.toLowerCase() !== CONFIRM_TEXT}
+              className="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Hapus Semua Log
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

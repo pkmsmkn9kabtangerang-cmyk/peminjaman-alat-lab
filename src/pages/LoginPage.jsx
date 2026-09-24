@@ -8,21 +8,38 @@ import logoSmk from '../assets/logo-smk.svg';
 const SCHOOL_NAME = import.meta.env.VITE_SCHOOL_NAME ?? 'SMK Negeri';
 
 export default function LoginPage({ onLoginSuccess }) {
-  const [email, setEmail]     = useState('admin@smk.sch.id');
-  const [password, setPassword] = useState('demo');
-  const [error, setError]     = useState('');
-  const [loading, setLoading] = useState(false);
+  const [username, setUsername] = useState('admin');
+  const [password, setPassword] = useState('petugas123');
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
+    // Trik Autentikasi Supabase dengan Username
+    // Saat memakai Supabase asli:
+    const fakeEmail = `${username.toLowerCase()}@sekolah.internal`;
+    
+    // const { data, error } = await supabase.auth.signInWithPassword({
+    //   email: fakeEmail,
+    //   password: password,
+    // });
+
     // Mode demo: cek dari local store
     const users = dbService.getUsers();
-    const found = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    const found = users.find((u) => u.email.toLowerCase() === fakeEmail);
+    
     if (!found) {
-      setError('Email tidak terdaftar. Gunakan admin@smk.sch.id atau petugas@smk.sch.id');
+      // Fallback untuk akun demo lama jika ada
+      const fallback = users.find(u => u.email.toLowerCase() === `${username.toLowerCase()}@smk.sch.id`);
+      if (fallback) {
+        onLoginSuccess(fallback);
+        setLoading(false);
+        return;
+      }
+      setError('Username tidak terdaftar atau password salah.');
       setLoading(false);
       return;
     }
@@ -103,14 +120,14 @@ export default function LoginPage({ onLoginSuccess }) {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label htmlFor="email-login" className="block text-xs font-semibold text-muted mb-1.5">Email</label>
+              <label htmlFor="username-login" className="block text-xs font-semibold text-muted mb-1.5">Username</label>
               <input
-                id="email-login"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="username-login"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s+/g, ''))}
                 required
-                placeholder="admin@smk.sch.id"
+                placeholder="admin"
                 className="w-full px-4 py-3 rounded-xl border border-main text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
               />
             </div>
