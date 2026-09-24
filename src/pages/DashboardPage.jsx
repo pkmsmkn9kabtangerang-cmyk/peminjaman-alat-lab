@@ -190,47 +190,6 @@ export default function DashboardPage({ setCurrentTab, user }) {
             </table>
           </div>
         </div>
-
-        {/* Status Panel */}
-        <div className="bg-surface rounded-xl border border-main p-4 sm:p-5 shadow-sm space-y-4">
-          <h3 className="font-semibold text-main text-sm">Status Sistem</h3>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg text-xs">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping-slow" />
-                <span className="font-medium text-main">Supabase Realtime</span>
-              </div>
-              <span className="text-emerald-600 font-semibold">Active</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg text-xs">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-500" />
-                <span className="font-medium text-main">Supabase DB</span>
-              </div>
-              <span className="text-blue-600 font-semibold">Connected</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg text-xs">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping-slow" />
-                <span className="font-medium text-main">ESP32 (Demo)</span>
-              </div>
-              <span className="text-emerald-600 font-semibold">Simulated</span>
-            </div>
-          </div>
-
-          <div className="pt-2">
-            <button
-              onClick={() => setCurrentTab('realtime_card')}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition flex items-center justify-center gap-2"
-            >
-              <IconWifi size={14} />
-              Buka Realtime Card
-            </button>
-          </div>
-
-          <p className="text-[10px] text-center text-muted pt-2">SIMLAB v2.0 — PKM 2026</p>
-        </div>
       </div>
     </div>
   );
