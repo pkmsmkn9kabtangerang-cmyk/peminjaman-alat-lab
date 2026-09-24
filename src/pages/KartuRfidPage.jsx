@@ -21,7 +21,7 @@ export default function KartuRfidPage() {
 
   const openAdd = () => {
     setEditItem(null);
-    setForm({ ...EMPTY_FORM, uid_kartu: 'KARTU-' + Math.random().toString(36).substring(2, 8).toUpperCase() });
+    setForm({ ...EMPTY_FORM, uid_kartu: 'KARTU-' + Math.random().toString(36).substring(2, 8).toUpperCase(), aktif: true });
     setModal(true);
   };
 
@@ -38,7 +38,7 @@ export default function KartuRfidPage() {
       const updated = current.map((k) => k.uid_kartu === editItem.uid_kartu ? { ...form } : k);
       dbService.saveKartu(updated);
     } else {
-      current.unshift({ ...form, created_at: new Date().toISOString() });
+      current.unshift({ ...form, aktif: true, created_at: new Date().toISOString() });
       dbService.saveKartu(current);
     }
     setModal(false);
@@ -65,15 +65,16 @@ export default function KartuRfidPage() {
       render: (row) => <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded text-gray-700">{row.uid_kartu}</span>,
     },
     {
-      key: 'kelas',
-      label: 'Kelas / Pemegang',
+      key: 'pemegang',
+      label: 'Pemegang',
       sortable: true,
-      render: (row) => (
-        <div>
-          <p className="font-semibold text-main text-xs">{row.kelas}</p>
-          <p className="text-[11px] text-muted">{row.nama_pemegang}</p>
-        </div>
-      ),
+      render: (row) => <span className="font-semibold text-main text-xs">{row.nama_pemegang || '—'}</span>,
+    },
+    {
+      key: 'kelas',
+      label: 'Kelas',
+      sortable: true,
+      render: (row) => <span className="text-[11px] text-muted">{row.kelas}</span>,
     },
     {
       key: 'aktif',
@@ -98,12 +99,9 @@ export default function KartuRfidPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-bold text-main">Kartu RFID</h2>
-          <p className="text-xs text-muted">Kelola kartu setiap perwakilan kelas</p>
-        </div>
-        <Button icon={IconPlus} onClick={openAdd}>Daftar Kartu</Button>
+      <div>
+        <h2 className="text-lg font-bold text-main">Kartu RFID</h2>
+        <p className="text-xs text-muted">Kelola kartu setiap perwakilan kelas</p>
       </div>
 
       <DataTable
@@ -111,6 +109,7 @@ export default function KartuRfidPage() {
         data={kartu}
         searchPlaceholder="Cari kelas, nama, atau UID..."
         searchKeys={['kelas', 'nama_pemegang', 'uid_kartu']}
+        actionButton={<Button icon={IconPlus} onClick={openAdd}>Daftar Kartu</Button>}
       />
 
       <Modal isOpen={modal} onClose={() => setModal(false)} title={editItem ? 'Edit Kartu' : 'Daftar Kartu Baru'}>
@@ -127,10 +126,14 @@ export default function KartuRfidPage() {
             <label className="block text-xs font-semibold text-muted mb-1">Nama Perwakilan</label>
             <input value={form.nama_pemegang} onChange={(e) => setForm({ ...form, nama_pemegang: e.target.value })} placeholder="Ketua Kelas / Penanggung Jawab" className="w-full px-3 py-2 rounded-lg border border-main text-sm focus:ring-2 focus:ring-blue-500" />
           </div>
-          <div className="flex items-center gap-2 pt-2">
-            <input type="checkbox" id="chk-aktif" checked={form.aktif} onChange={(e) => setForm({ ...form, aktif: e.target.checked })} className="w-4 h-4 text-blue-600 rounded" />
-            <label htmlFor="chk-aktif" className="text-sm font-medium text-main">Kartu Aktif</label>
-          </div>
+          
+          {editItem && (
+            <div className="flex items-center gap-2 pt-2">
+              <input type="checkbox" id="chk-aktif" checked={form.aktif} onChange={(e) => setForm({ ...form, aktif: e.target.checked })} className="w-4 h-4 text-blue-600 rounded" />
+              <label htmlFor="chk-aktif" className="text-sm font-medium text-main">Kartu Aktif</label>
+            </div>
+          )}
+
           <div className="flex justify-end gap-3 pt-3">
             <Button variant="secondary" onClick={() => setModal(false)}>Batal</Button>
             <Button type="submit">Simpan</Button>

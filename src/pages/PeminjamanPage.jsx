@@ -1,21 +1,23 @@
 // src/pages/PeminjamanPage.jsx
-// Form Peminjaman Manual: searchable kartu, preview stok, stepper jumlah, kondisi, ringkasan
+// Form Peminjaman Manual: layout dua kolom di lg+, dropdown Alat pakai FilterDropdown
 
 import { useState, useEffect } from 'react';
 import { dbService } from '../services/store';
-import Button from '../components/Button';
 import Badge from '../components/Badge';
-import { IconPlus, IconMinus, IconCheck } from '@tabler/icons-react';
+import Button from '../components/Button';
+import FilterDropdown from '../components/FilterDropdown';
+import { IconPlus, IconMinus, IconCheck, IconSearch, IconUsers, IconBox } from '@tabler/icons-react';
+
+const FMT = (iso) => iso
+  ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
+  : '—';
 
 export default function PeminjamanPage() {
-  const [kartuList, setKartuList] = useState([]);
-  const [alatList, setAlatList]   = useState([]);
-  const [filterKartu, setFilterKartu] = useState('');
+  const [kartuList, setKartuList]   = useState([]);
+  const [alatList, setAlatList]     = useState([]);
   const [selectedKartu, setSelectedKartu] = useState(null);
-  const [selectedAlat, setSelectedAlat]   = useState(null);
+  const [selectedAlatId, setSelectedAlatId] = useState('');
   const [jumlah, setJumlah]     = useState(1);
-  const [kondisi, setKondisi]   = useState('baik');
-  const [catatan, setCatatan]   = useState('');
   const [success, setSuccess]   = useState('');
   const [error, setError]       = useState('');
 
@@ -24,35 +26,41 @@ export default function PeminjamanPage() {
     setAlatList(dbService.getAlatWithStok().filter((a) => a.stok_tersedia > 0));
   }, []);
 
-  const filteredKartu = kartuList.filter((k) =>
-    `${k.kelas} ${k.nama_pemegang} ${k.uid_kartu}`.toLowerCase().includes(filterKartu.toLowerCase())
-  );
+  const kartuOptions = kartuList.map((k) => ({
+    value: k.uid_kartu,
+    label: `${k.kelas} — ${k.nama_pemegang ?? k.uid_kartu}`,
+  }));
+
+  const selectedAlat = alatList.find((a) => a.id === selectedAlatId) ?? null;
+
+  const alatOptions = alatList.map((a) => ({
+    value: a.id,
+    label: `${a.nama} — Stok: ${a.stok_tersedia}/${a.jumlah_total}`,
+  }));
 
   const handleSubmit = (e) => {
     e.preventDefault();
     setError('');
-    if (!selectedKartu || !selectedAlat) {
+    if (!selectedKartu || !selectedAlatId) {
       setError('Pilih kartu kelas dan alat terlebih dahulu.');
       return;
     }
     const user = dbService.getCurrentUser();
     const res  = dbService.processManual({
-      uid_kartu:     selectedKartu.uid_kartu,
-      alat_id:       selectedAlat.id,
-      jenis:         'pinjam',
+      uid_kartu:      selectedKartu.uid_kartu,
+      alat_id:        selectedAlatId,
+      jenis:          'pinjam',
       jumlah,
-      kondisi_pinjam: kondisi,
-      catatan,
-      petugas: user?.nama ?? 'Petugas',
+      kondisi_pinjam: 'baik',
+      catatan:        null,
+      petugas:        user?.nama ?? 'Petugas',
     });
 
     if (res.ok) {
-      setSuccess(`✓ Peminjaman ${jumlah} unit "${selectedAlat.nama}" untuk kelas ${selectedKartu.kelas} berhasil dicatat.`);
+      setSuccess(`✓ Peminjaman ${jumlah} unit "${selectedAlat?.nama}" untuk kelas ${selectedKartu.kelas} berhasil dicatat.`);
       setSelectedKartu(null);
-      setSelectedAlat(null);
+      setSelectedAlatId('');
       setJumlah(1);
-      setCatatan('');
-      setKondisi('baik');
       setAlatList(dbService.getAlatWithStok().filter((a) => a.stok_tersedia > 0));
       setTimeout(() => setSuccess(''), 6000);
     } else {
@@ -61,12 +69,16 @@ export default function PeminjamanPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <h2 className="text-lg font-bold text-main">Peminjaman Manual</h2>
-        <p className="text-xs text-muted">Digunakan saat RFID scanner bermasalah atau peminjaman langsung oleh petugas.</p>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-main">Peminjaman Manual</h2>
+          <p className="text-xs text-muted">Digunakan saat RFID scanner bermasalah atau peminjaman langsung oleh petugas.</p>
+        </div>
       </div>
 
+      {/* Alert Messages */}
       {success && (
         <div className="p-4 bg-green-50 border border-green-200 text-green-800 text-xs rounded-xl flex items-center gap-2">
           <IconCheck size={14} className="text-green-600 flex-shrink-0" /> {success}
@@ -76,131 +88,144 @@ export default function PeminjamanPage() {
         <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl">{error}</div>
       )}
 
-      <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-main p-6 space-y-5 shadow-sm">
-        {/* Pilih Kartu */}
-        <div>
-          <label className="block text-xs font-semibold text-muted mb-2">Pilih Kelas / Kartu RFID *</label>
-          <input
-            type="text"
-            placeholder="Cari kelas atau nama perwakilan..."
-            value={filterKartu}
-            onChange={(e) => { setFilterKartu(e.target.value); setSelectedKartu(null); }}
-            className="w-full px-3.5 py-2.5 rounded-lg border border-main text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
-          />
-          {filterKartu && !selectedKartu && (
-            <div className="border border-main rounded-lg overflow-hidden max-h-40 overflow-y-auto">
-              {filteredKartu.map((k) => (
-                <button
-                  key={k.uid_kartu}
-                  type="button"
-                  onClick={() => { setSelectedKartu(k); setFilterKartu(`${k.kelas} — ${k.nama_pemegang ?? k.uid_kartu}`); }}
-                  className="w-full text-left px-4 py-2.5 text-xs hover:bg-blue-50 border-b border-main last:border-0 transition"
-                >
-                  <span className="font-semibold text-main">{k.kelas}</span>
-                  <span className="text-muted ml-2">{k.nama_pemegang}</span>
-                  <span className="text-[10px] font-mono text-muted ml-2">({k.uid_kartu})</span>
-                </button>
-              ))}
-              {filteredKartu.length === 0 && <p className="px-4 py-3 text-xs text-muted">Tidak ditemukan.</p>}
+      {/* Form Card */}
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 shadow-sm">
+        <div className="p-5 border-b border-gray-100 bg-gray-50/50 rounded-t-xl">
+          <h3 className="font-semibold text-sm text-gray-800">Form Peminjaman</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Semua kolom wajib di isi</p>
+        </div>
+
+        <div className="p-5 lg:p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            {/* ── Kolom Kiri: Pilih Kartu ── */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
+                  <IconUsers size={14} className="text-blue-600" />
+                </div>
+                <span className="font-semibold text-sm text-gray-800">Pilih Kelas / Kartu RFID *</span>
+              </div>
+
+              <FilterDropdown
+                icon={IconUsers}
+                value={selectedKartu?.uid_kartu ?? ''}
+                onChange={(uid) => {
+                  const found = kartuList.find((k) => k.uid_kartu === uid);
+                  setSelectedKartu(found ?? null);
+                }}
+                options={[{ value: '', label: '— Pilih Kelas Peminjam —' }, ...kartuOptions]}
+                placeholder="— Pilih Kelas Peminjam —"
+                className="w-full"
+              />
+
+              {/* Selected Kartu display */}
+              {selectedKartu && (
+                <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs flex items-center justify-between">
+                  <div>
+                    <p className="font-bold text-blue-800">{selectedKartu.kelas}</p>
+                    <p className="text-blue-600 mt-0.5">{selectedKartu.nama_pemegang} · <span className="font-mono">{selectedKartu.uid_kartu}</span></p>
+                  </div>
+                  <button type="button" onClick={() => setSelectedKartu(null)} className="text-blue-600 hover:text-blue-800 text-[11px] font-semibold hover:underline">
+                    Ganti
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ── Kolom Kanan: Pilih Alat & Jumlah ── */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center">
+                  <IconBox size={14} className="text-purple-600" />
+                </div>
+                <span className="font-semibold text-sm text-gray-800">Pilih Alat *</span>
+              </div>
+
+              {/* Dropdown Alat */}
+              <FilterDropdown
+                icon={IconBox}
+                value={selectedAlatId}
+                onChange={(v) => { setSelectedAlatId(v); setJumlah(1); }}
+                options={[{ value: '', label: '— Pilih Alat Lab —' }, ...alatOptions]}
+                placeholder="— Pilih Alat Lab —"
+                className="w-full"
+              />
+
+              {/* Preview stok alat */}
+              {selectedAlat && (
+                <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600">Stok tersedia</span>
+                    <span className={`font-bold text-base ${selectedAlat.stok_tersedia === 0 ? 'text-red-600' : 'text-gray-800'}`}>
+                      {selectedAlat.stok_tersedia}/{selectedAlat.jumlah_total}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge status={selectedAlat.stok_tersedia > 0 ? 'tersedia' : 'habis'} />
+                    {selectedAlat.jumlah_rusak > 0 && (
+                      <span className="text-amber-600 font-medium">⚠ {selectedAlat.jumlah_rusak} unit rusak</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Stepper Jumlah */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-2">Jumlah Unit</label>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setJumlah((j) => Math.max(1, j - 1))}
+                    className="w-9 h-9 rounded-lg border border-gray-300 hover:bg-gray-100 flex items-center justify-center transition-colors"
+                  >
+                    <IconMinus size={14} className="text-gray-600" />
+                  </button>
+                  <span className="w-10 text-center font-bold text-gray-800 text-lg">{jumlah}</span>
+                  <button
+                    type="button"
+                    onClick={() => setJumlah((j) => Math.min(selectedAlat?.stok_tersedia ?? 1, j + 1))}
+                    className="w-9 h-9 rounded-lg border border-gray-300 hover:bg-gray-100 flex items-center justify-center transition-colors"
+                    disabled={!selectedAlat}
+                  >
+                    <IconPlus size={14} className="text-gray-600" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Ringkasan Preview */}
+          {selectedKartu && selectedAlat && (
+            <div className="mt-5 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl text-xs">
+              <p className="font-bold text-gray-700 text-sm mb-3">Ringkasan Peminjaman</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex gap-2">
+                  <span className="text-gray-500">Kelas:</span>
+                  <span className="font-semibold text-gray-800">{selectedKartu.kelas}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-gray-500">Pemegang:</span>
+                  <span className="font-semibold text-gray-800">{selectedKartu.nama_pemegang}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-gray-500">Alat:</span>
+                  <span className="font-semibold text-gray-800">{selectedAlat.nama}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-gray-500">Jumlah:</span>
+                  <span className="font-semibold text-gray-800">{jumlah} unit</span>
+                </div>
+              </div>
             </div>
           )}
-          {selectedKartu && (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs flex items-center justify-between">
-              <span className="font-semibold text-blue-800">{selectedKartu.kelas} — {selectedKartu.nama_pemegang}</span>
-              <button type="button" onClick={() => { setSelectedKartu(null); setFilterKartu(''); }} className="text-blue-600 hover:underline text-[11px]">Ganti</button>
-            </div>
-          )}
         </div>
 
-        {/* Pilih Alat */}
-        <div>
-          <label className="block text-xs font-semibold text-muted mb-2">Pilih Alat *</label>
-          <select
-            value={selectedAlat?.id ?? ''}
-            onChange={(e) => {
-              const a = alatList.find((x) => x.id === e.target.value) ?? null;
-              setSelectedAlat(a);
-              setJumlah(1);
-            }}
-            required
-            className="w-full px-3.5 py-2.5 rounded-lg border border-main text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">— Pilih Alat Lab —</option>
-            {alatList.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.nama} (Stok: {a.stok_tersedia}/{a.jumlah_total}) {a.jumlah_rusak > 0 ? `· Rusak: ${a.jumlah_rusak}` : ''}
-              </option>
-            ))}
-          </select>
-          {selectedAlat && (
-            <div className="mt-2 p-3 bg-gray-50 rounded-lg text-xs flex items-center gap-4">
-              <span>Stok tersedia: <strong className="text-main">{selectedAlat.stok_tersedia}/{selectedAlat.jumlah_total}</strong></span>
-              <Badge status={selectedAlat.stok_tersedia > 0 ? 'tersedia' : 'habis'} />
-              {selectedAlat.jumlah_rusak > 0 && <span className="text-amber-600">⚠ {selectedAlat.jumlah_rusak} unit rusak</span>}
-            </div>
-          )}
+        <div className="px-5 lg:px-6 pb-5 lg:pb-6">
+          <Button type="submit" className="w-full lg:w-auto lg:min-w-[240px] justify-center py-2.5">
+            Proses Peminjaman Manual
+          </Button>
         </div>
-
-        {/* Jumlah */}
-        <div>
-          <label className="block text-xs font-semibold text-muted mb-2">Jumlah Unit</label>
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={() => setJumlah((j) => Math.max(1, j - 1))}
-              className="w-9 h-9 rounded-lg border border-main hover:bg-gray-100 flex items-center justify-center transition">
-              <IconMinus size={14} />
-            </button>
-            <span className="w-10 text-center font-bold text-main text-sm">{jumlah}</span>
-            <button type="button" onClick={() => setJumlah((j) => Math.min(selectedAlat?.stok_tersedia ?? 1, j + 1))}
-              className="w-9 h-9 rounded-lg border border-main hover:bg-gray-100 flex items-center justify-center transition">
-              <IconPlus size={14} />
-            </button>
-          </div>
-        </div>
-
-        {/* Kondisi */}
-        <div>
-          <label className="block text-xs font-semibold text-muted mb-2">Kondisi Saat Dipinjam</label>
-          <div className="flex gap-3">
-            {['baik', 'rusak'].map((k) => (
-              <button
-                key={k} type="button"
-                onClick={() => setKondisi(k)}
-                className={`flex-1 py-2.5 rounded-lg border text-xs font-semibold capitalize transition ${
-                  kondisi === k ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-main text-muted hover:bg-gray-50'
-                }`}
-              >
-                {k === 'baik' ? '✓ Baik' : '⚠ Rusak'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Catatan */}
-        <div>
-          <label className="block text-xs font-semibold text-muted mb-1.5">Catatan (Opsional)</label>
-          <textarea
-            value={catatan}
-            onChange={(e) => setCatatan(e.target.value)}
-            rows={2}
-            className="w-full px-3.5 py-2.5 rounded-lg border border-main text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Kondisi fisik, kelengkapan, catatan khusus..."
-          />
-        </div>
-
-        {/* Ringkasan Preview */}
-        {selectedKartu && selectedAlat && (
-          <div className="p-4 bg-gray-50 border border-main rounded-xl text-xs space-y-1.5">
-            <p className="font-semibold text-main text-sm mb-2">Ringkasan Peminjaman</p>
-            <p>📋 Kelas: <strong>{selectedKartu.kelas}</strong></p>
-            <p>🔧 Alat: <strong>{selectedAlat.nama}</strong> × {jumlah} unit</p>
-            <p>📦 Kondisi: <strong className="capitalize">{kondisi}</strong></p>
-            <p>🏷 Sumber: <strong>Manual</strong></p>
-          </div>
-        )}
-
-        <Button type="submit" className="w-full justify-center py-3">
-          Proses Peminjaman Manual
-        </Button>
       </form>
     </div>
   );

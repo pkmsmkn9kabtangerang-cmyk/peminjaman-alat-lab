@@ -301,6 +301,9 @@ export const dbService = {
           waktu_kembali: null, petugas, catatan,
         });
       }
+      setStore('transaksi', transaksi);
+      dbService._addTapLog(uid_kartu, null, 'pinjam', 'manual', 'berhasil', null, kartu.kelas, alat.nama);
+      return { ok: true, jenis, jumlah };
     } else {
       let count = 0;
       const updated = transaksi.map((t) => {
@@ -311,20 +314,19 @@ export const dbService = {
         return t;
       });
       setStore('transaksi', updated);
+      dbService._addTapLog(uid_kartu, null, 'kembali', 'manual', 'berhasil', null, kartu.kelas, alat.nama);
       return { ok: true, jenis, jumlah: count };
     }
-
-    setStore('transaksi', transaksi);
-    return { ok: true, jenis, jumlah };
   },
 
   // ── Private helper: tambah tap_log ───────────────────────────
   _addTapLog: (uid_kartu, uid_alat, jenis_tap, jenis_terdeteksi, status, error_code, kelas, nama_alat) => {
+    const deteksi = jenis_terdeteksi === 'manual' ? 'manual' : 'otomatis';
     const log = {
       id: 'LOG-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
       uid_kartu, uid_alat,
       jenis_tap,
-      jenis_terdeteksi,
+      jenis_terdeteksi: deteksi,
       kelas, nama_alat,
       status,
       error_code,

@@ -66,15 +66,10 @@ export default function InventarisPage() {
 
   const columns = [
     {
-      key: 'nama',
-      label: 'Alat / Kode',
+      key: 'kode',
+      label: 'Kode Alat',
       sortable: true,
-      render: (row) => (
-        <div>
-          <p className="font-semibold text-main text-xs">{row.nama}</p>
-          <p className="text-[11px] text-muted">{row.kode} · {row.id}</p>
-        </div>
-      ),
+      render: (row) => <p className="text-[11px] text-muted">{row.kode} · {row.id}</p>,
     },
     {
       key: 'uid_rfid',
@@ -82,6 +77,12 @@ export default function InventarisPage() {
       render: (row) => (
         <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded text-gray-700">{row.uid_rfid}</span>
       ),
+    },
+    {
+      key: 'nama',
+      label: 'Nama Alat',
+      sortable: true,
+      render: (row) => <p className="font-semibold text-main text-xs">{row.nama}</p>,
     },
     {
       key: 'kategori',
@@ -140,6 +141,16 @@ export default function InventarisPage() {
         emptyMessage="Belum ada alat terdaftar. Klik tombol Tambah Alat untuk memulai."
       />
 
+      <datalist id="kategori-list">
+        {Array.from(new Set(alat.map(a => a.kategori))).map(kat => (
+          <option key={kat} value={kat} />
+        ))}
+        <option value="elektronik" />
+        <option value="mekanik" />
+        <option value="jaringan" />
+        <option value="umum" />
+      </datalist>
+
       <Modal isOpen={modal} onClose={() => setModal(false)} title={editItem ? 'Edit Alat Lab' : 'Tambah Alat Lab Baru'}>
         <form onSubmit={handleSave} className="space-y-4">
           <div>
@@ -156,25 +167,51 @@ export default function InventarisPage() {
               <input required value={form.uid_rfid} onChange={(e) => setForm({ ...form, uid_rfid: e.target.value })} className={`${inputCls} font-mono`} placeholder="STK-ALT-001" />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-muted mb-1">Kategori</label>
-              <select value={form.kategori} onChange={(e) => setForm({ ...form, kategori: e.target.value })} className={`${inputCls} bg-white`}>
-                <option value="elektronik">Elektronik</option>
-                <option value="mekanik">Mekanik</option>
-                <option value="jaringan">Jaringan</option>
-                <option value="umum">Umum</option>
-              </select>
+              <label className="block text-xs font-semibold text-muted mb-1">Kategori *</label>
+              <input 
+                required 
+                list="kategori-list"
+                value={form.kategori} 
+                onChange={(e) => setForm({ ...form, kategori: e.target.value })} 
+                className={inputCls} 
+                placeholder="Pilih atau ketik kategori..."
+              />
             </div>
             <div>
               <label className="block text-xs font-semibold text-muted mb-1">Total Unit *</label>
-              <input type="number" min={1} required value={form.jumlah_total} onChange={(e) => setForm({ ...form, jumlah_total: Number(e.target.value) })} className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-muted mb-1">Rusak</label>
-              <input type="number" min={0} value={form.jumlah_rusak} onChange={(e) => setForm({ ...form, jumlah_rusak: Number(e.target.value) })} className={inputCls} />
+              <input 
+                type="text" 
+                required 
+                pattern="[0-9]+"
+                title="Masukkan angka saja (contoh: 5)"
+                value={form.jumlah_total} 
+                onChange={(e) => setForm({ ...form, jumlah_total: e.target.value.replace(/\D/g, '') })} 
+                className={inputCls} 
+                placeholder="Contoh: 5"
+              />
             </div>
           </div>
+          
+          {editItem && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <label className="block text-xs font-semibold text-red-700 mb-1">Rusak (Edit Saja)</label>
+              <input 
+                type="text" 
+                pattern="[0-9]+"
+                title="Masukkan angka saja"
+                value={form.jumlah_rusak} 
+                onChange={(e) => setForm({ ...form, jumlah_rusak: e.target.value.replace(/\D/g, '') })} 
+                className={`${inputCls} border-red-300 bg-white`} 
+                placeholder="Jumlah unit rusak"
+              />
+              <p className="text-[10px] text-red-600 mt-2 font-medium">
+                * Kalo alat sudah diperbaiki jangan lupa untuk mengubah alat nya jadi 0 lagi supaya bisa digunakan.
+              </p>
+            </div>
+          )}
+
           <div className="flex justify-end gap-3 pt-3">
             <Button variant="secondary" onClick={() => setModal(false)}>Batal</Button>
             <Button type="submit">Simpan Alat</Button>

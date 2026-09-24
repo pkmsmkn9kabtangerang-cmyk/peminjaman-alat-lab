@@ -168,7 +168,7 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, unr
             id="btn-logout"
             onClick={onLogout}
             title="Keluar"
-            className="w-full flex items-center justify-center gap-2 px-2.5 py-2.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-lg text-sm font-semibold transition-colors shadow-sm overflow-hidden"
+            className="w-full flex items-center gap-3 px-2.5 py-2.5 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white rounded-lg text-sm font-semibold transition-all duration-150 overflow-hidden group/logout border border-red-100 hover:border-red-600"
           >
             <IconLogout size={18} className="shrink-0" />
             <span className="whitespace-nowrap transition-opacity duration-300 md:opacity-0 md:group-hover:opacity-100">

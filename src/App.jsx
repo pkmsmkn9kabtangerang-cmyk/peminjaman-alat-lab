@@ -24,7 +24,7 @@ const PAGE_TITLES = {
   pengembalian:   'Pengembalian Manual',
   riwayat:        'Riwayat Peminjaman',
   list_barang:    'List Barang',
-  inventaris:     'Inventaris Barang',
+  inventaris:     'Inventaris Alat',
   kartu_rfid:     'Kartu RFID',
   pengguna:       'Pengguna',
   simulasi_iot:   'Simulasi IoT RFID',
@@ -128,12 +128,6 @@ export default function App() {
                 </span>
               )}
             </button>
-
-            {/* User info */}
-            <div className="text-right hidden sm:block">
-              <p className="text-xs font-semibold text-main leading-tight truncate max-w-[120px]">{currentUser.nama}</p>
-              <p className="text-[11px] text-muted capitalize">{currentUser.role}</p>
-            </div>
           </div>
         </header>
 

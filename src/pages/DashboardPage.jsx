@@ -151,44 +151,52 @@ export default function DashboardPage({ setCurrentTab, user }) {
         </div>
       </div>
 
-      {/* ── Histori Terbaru + Status Sistem ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Tabel */}
-        <div className="lg:col-span-2 bg-surface rounded-xl border border-main p-4 sm:p-5 shadow-sm flex flex-col min-w-0">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-main text-sm">Transaksi Terbaru</h3>
-            <button onClick={() => setCurrentTab('riwayat')} className="text-xs font-medium text-blue-600 hover:underline">
-              Lihat Semua →
-            </button>
+      {/* ── Transaksi Terbaru (Full Width) ── */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-semibold text-gray-800 text-sm">Transaksi Terbaru</h3>
+            <p className="text-xs text-gray-400 mt-0.5">6 transaksi terkini di semua alat</p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead>
-                <tr className="border-b border-main text-xs text-muted">
-                  <th className="pb-3 font-medium">Kelas / Alat</th>
-                  <th className="pb-3 font-medium">Status</th>
-                  <th className="pb-3 font-medium">Waktu</th>
-                  <th className="pb-3 font-medium">Sumber</th>
+          <button
+            onClick={() => setCurrentTab('riwayat')}
+            className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Lihat Semua →
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left whitespace-nowrap">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/50">
+                <th className="px-5 py-3.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase">Kelas</th>
+                <th className="px-5 py-3.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase">Alat</th>
+                <th className="px-5 py-3.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase">Status</th>
+                <th className="px-5 py-3.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase">Waktu</th>
+                <th className="px-5 py-3.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase">Sumber</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {recent.map((trx) => (
+                <tr key={trx.id} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-5 py-3.5">
+                    <span className="text-xs font-semibold text-gray-800">{trx.kelas}</span>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <span className="text-xs text-gray-600">{trx.nama_alat}</span>
+                  </td>
+                  <td className="px-5 py-3.5"><Badge status={trx.status} /></td>
+                  <td className="px-5 py-3.5 text-xs text-gray-400">{trx.waktu_pinjam ? FORMAT_TIME.format(new Date(trx.waktu_pinjam)) : '—'}</td>
+                  <td className="px-5 py-3.5"><Badge status={trx.sumber ?? 'otomatis'} /></td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-main">
-                {recent.map((trx) => (
-                  <tr key={trx.id} className="hover:bg-gray-50/50 transition">
-                    <td className="py-3">
-                      <p className="font-semibold text-main text-xs">{trx.kelas}</p>
-                      <p className="text-[11px] text-muted">{trx.nama_alat}</p>
-                    </td>
-                    <td className="py-3"><Badge status={trx.status} /></td>
-                    <td className="py-3 text-[11px] text-muted">{trx.waktu_pinjam ? FORMAT_TIME.format(new Date(trx.waktu_pinjam)) : '—'}</td>
-                    <td className="py-3"><Badge status={trx.sumber ?? 'otomatis'} /></td>
-                  </tr>
-                ))}
-                {recent.length === 0 && (
-                  <tr><td colSpan="4" className="py-8 text-center text-xs text-muted">Belum ada transaksi.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+              ))}
+              {recent.length === 0 && (
+                <tr>
+                  <td colSpan="5" className="py-12 text-center text-xs text-gray-400">Belum ada transaksi.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
