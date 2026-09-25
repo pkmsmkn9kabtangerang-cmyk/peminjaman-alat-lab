@@ -53,14 +53,14 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, unr
       roles: ['admin', 'petugas'],
     },
     {
-      id: 'list_barang',
-      label: 'List Barang',
+      id: 'list_alat',
+      label: 'List Alat',
       icon: IconListDetails,
       roles: ['admin', 'petugas'],
     },
     {
       id: 'inventaris',
-      label: 'Inventaris Barang',
+      label: 'Inventaris Alat',
       icon: IconBox,
       roles: ['admin'],
     },

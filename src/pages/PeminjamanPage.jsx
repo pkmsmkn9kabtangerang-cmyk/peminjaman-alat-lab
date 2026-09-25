@@ -104,7 +104,7 @@ export default function PeminjamanPage() {
                 <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
                   <IconUsers size={14} className="text-blue-600" />
                 </div>
-                <span className="font-semibold text-sm text-gray-800">Pilih Kelas / Kartu RFID *</span>
+                <span className="font-semibold text-sm text-gray-800">Pilih Kelas / Kartu RFID</span>
               </div>
 
               <FilterDropdown
@@ -139,7 +139,7 @@ export default function PeminjamanPage() {
                 <div className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center">
                   <IconBox size={14} className="text-purple-600" />
                 </div>
-                <span className="font-semibold text-sm text-gray-800">Pilih Alat *</span>
+                <span className="font-semibold text-sm text-gray-800">Pilih Alat</span>
               </div>
 
               {/* Dropdown Alat */}
@@ -223,7 +223,7 @@ export default function PeminjamanPage() {
 
         <div className="px-5 lg:px-6 pb-5 lg:pb-6">
           <Button type="submit" className="w-full lg:w-auto lg:min-w-[240px] justify-center py-2.5">
-            Proses Peminjaman Manual
+            Persetujui Peminjaman Manual
           </Button>
         </div>
       </form>

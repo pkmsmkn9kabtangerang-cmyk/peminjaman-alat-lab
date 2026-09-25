@@ -82,7 +82,7 @@ export default function ListBarangPage() {
       <DataTable
         columns={columns}
         data={filteredData}
-        searchPlaceholder="Cari nama alat, kode, atau kategori..."
+        searchPlaceholder="Search"
         searchKeys={['nama', 'kode', 'kategori', 'peminjam_kelas']}
         emptyMessage="Belum ada alat yang terdaftar atau sesuai filter."
         filters={

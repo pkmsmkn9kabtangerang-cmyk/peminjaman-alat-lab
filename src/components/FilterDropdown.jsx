@@ -70,14 +70,14 @@ export default function FilterDropdown({
       <button
         type="button"
         onClick={handleToggle}
-        className={`flex items-center gap-2.5 px-4 py-2.5 text-sm rounded-lg border transition-all font-medium text-left
+        className={`flex items-center gap-2.5 px-3.5 sm:px-4 h-10 text-xs sm:text-sm rounded-lg border transition-all font-medium text-left
           ${isFullWidth ? 'w-full justify-between' : 'justify-between'}
           ${open
             ? 'border-blue-500 ring-2 ring-blue-500/20 bg-white text-gray-800'
-            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+            : 'border-gray-300/90 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
           }`}
       >
-        <div className="flex items-center gap-2.5 min-w-0 overflow-hidden">
+        <div className="flex items-center gap-2 min-w-0 overflow-hidden">
           {Icon && <Icon size={16} className={`flex-shrink-0 ${open ? 'text-blue-600' : 'text-gray-500'}`} />}
           <span className="truncate">{selected?.label ?? placeholder}</span>
         </div>
@@ -92,9 +92,9 @@ export default function FilterDropdown({
           className={`absolute z-50 ${
             openUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
           } left-0 ${
-            isFullWidth ? 'w-full min-w-full' : 'min-w-[200px]'
-          } bg-white border border-gray-200 rounded-xl shadow-xl py-1 flex flex-col`}
-          style={{ minWidth: isFullWidth ? '100%' : '200px' }}
+            isFullWidth ? 'w-full min-w-full' : 'w-full sm:w-auto min-w-[190px]'
+          } max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-xl shadow-xl py-1 flex flex-col`}
+          style={{ minWidth: isFullWidth ? '100%' : undefined }}
         >
           {isSearchable && (
             <div className="p-2 border-b border-gray-100">

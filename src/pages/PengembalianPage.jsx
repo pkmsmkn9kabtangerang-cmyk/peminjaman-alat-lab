@@ -104,7 +104,7 @@ export default function PengembalianPage() {
                 <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
                   <IconUsers size={14} className="text-blue-600" />
                 </div>
-                <span className="font-semibold text-sm text-gray-800">Pilih Kelas / Kartu RFID *</span>
+                <span className="font-semibold text-sm text-gray-800">Pilih Kelas / Kartu RFID</span>
               </div>
 
               <FilterDropdown
@@ -132,7 +132,7 @@ export default function PengembalianPage() {
                   <IconBox size={14} className="text-amber-600" />
                 </div>
                 <span className="font-semibold text-sm text-gray-800">
-                  Pilih Alat yang Dikembalikan *
+                  Pilih Alat yang Dikembalikan
                   {selectedKartuId && (
                     <span className="ml-2 text-xs font-normal text-gray-500">({pinjamanAktif.length} alat dipinjam)</span>
                   )}

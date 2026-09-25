@@ -7,7 +7,7 @@ import Modal from '../components/Modal';
 import DataTable from '../components/DataTable';
 import Button from '../components/Button';
 import Badge from '../components/Badge';
-import { IconPlus, IconTrash, IconEdit } from '@tabler/icons-react';
+import { IconPlus, IconTrash, IconEdit, IconCreditCard, IconX, IconCheck } from '@tabler/icons-react';
 
 const EMPTY_FORM = { uid_kartu: '', kelas: '', nama_pemegang: '', aktif: true };
 
@@ -98,45 +98,62 @@ export default function KartuRfidPage() {
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
       <div>
-        <h2 className="text-lg font-bold text-main">Kartu RFID</h2>
-        <p className="text-xs text-muted">Kelola kartu setiap perwakilan kelas</p>
+        <h2 className="text-lg sm:text-xl font-bold text-main flex items-center gap-2">          
+          <span>Kartu RFID</span>
+        </h2>
+        <p className="text-xs sm:text-sm text-muted mt-0.5">Kelola kartu setiap perwakilan kelas</p>
       </div>
 
       <DataTable
         columns={columns}
         data={kartu}
-        searchPlaceholder="Cari kelas, nama, atau UID..."
+        searchPlaceholder="Cari kelas, pemegang, UID..."
         searchKeys={['kelas', 'nama_pemegang', 'uid_kartu']}
-        actionButton={<Button icon={IconPlus} onClick={openAdd}>Daftar Kartu</Button>}
+        actionButton={
+          <Button icon={IconPlus} onClick={openAdd} className="w-full md:w-auto justify-center">
+            Daftar Kartu
+          </Button>
+        }
       />
 
-      <Modal isOpen={modal} onClose={() => setModal(false)} title={editItem ? 'Edit Kartu' : 'Daftar Kartu Baru'}>
+      <Modal
+        isOpen={modal}
+        onClose={() => setModal(false)}
+        title={editItem ? 'Edit Kartu RFID' : 'Daftar Kartu Baru'}
+        subtitle={editItem ? 'Perbarui data kelas atau status kartu RFID' : 'Registrasikan kartu RFID baru ke dalam sistem'}
+        icon={IconCreditCard}
+        iconVariant="primary"
+      >
         <form onSubmit={handleSave} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-muted mb-1">UID Kartu *</label>
-            <input required value={form.uid_kartu} onChange={(e) => setForm({ ...form, uid_kartu: e.target.value })} disabled={!!editItem} className="w-full px-3 py-2 rounded-lg border border-main text-sm font-mono bg-gray-50" />
+            <input required value={form.uid_kartu} onChange={(e) => setForm({ ...form, uid_kartu: e.target.value })} disabled={!!editItem} className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm font-mono bg-gray-50 text-gray-700" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-muted mb-1">Kelas *</label>
-            <input required value={form.kelas} onChange={(e) => setForm({ ...form, kelas: e.target.value })} placeholder="XI RPL 1" className="w-full px-3 py-2 rounded-lg border border-main text-sm focus:ring-2 focus:ring-blue-500" />
+            <input required value={form.kelas} onChange={(e) => setForm({ ...form, kelas: e.target.value })} placeholder="XI RPL 1" className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-muted mb-1">Nama Perwakilan</label>
-            <input value={form.nama_pemegang} onChange={(e) => setForm({ ...form, nama_pemegang: e.target.value })} placeholder="Ketua Kelas / Penanggung Jawab" className="w-full px-3 py-2 rounded-lg border border-main text-sm focus:ring-2 focus:ring-blue-500" />
+            <input value={form.nama_pemegang} onChange={(e) => setForm({ ...form, nama_pemegang: e.target.value })} placeholder="Ketua Kelas / Penanggung Jawab" className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
           </div>
           
           {editItem && (
-            <div className="flex items-center gap-2 pt-2">
-              <input type="checkbox" id="chk-aktif" checked={form.aktif} onChange={(e) => setForm({ ...form, aktif: e.target.checked })} className="w-4 h-4 text-blue-600 rounded" />
-              <label htmlFor="chk-aktif" className="text-sm font-medium text-main">Kartu Aktif</label>
+            <div className="flex items-center gap-2 pt-1">
+              <input type="checkbox" id="chk-aktif" checked={form.aktif} onChange={(e) => setForm({ ...form, aktif: e.target.checked })} className="w-4 h-4 text-blue-600 rounded cursor-pointer" />
+              <label htmlFor="chk-aktif" className="text-xs sm:text-sm font-medium text-main cursor-pointer select-none">Kartu Aktif</label>
             </div>
           )}
 
-          <div className="flex justify-end gap-3 pt-3">
-            <Button variant="secondary" onClick={() => setModal(false)}>Batal</Button>
-            <Button type="submit">Simpan</Button>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 pt-3 border-t border-gray-100">
+            <Button variant="secondary" icon={IconX} onClick={() => setModal(false)} className="w-full sm:w-auto justify-center">
+              Batal
+            </Button>
+            <Button type="submit" icon={IconCheck} className="w-full sm:w-auto justify-center">
+              Simpan Kartu
+            </Button>
           </div>
         </form>
       </Modal>

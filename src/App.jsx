@@ -7,7 +7,7 @@ import Sidebar from './components/Sidebar';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import InventarisPage from './pages/InventarisPage';
-import ListBarangPage from './pages/ListBarangPage';
+import ListAlatPage from './pages/ListAlatPage';
 import KartuRfidPage from './pages/KartuRfidPage';
 import RealtimeCardPage from './pages/RealtimeCardPage';
 import PeminjamanPage from './pages/PeminjamanPage';
@@ -23,7 +23,7 @@ const PAGE_TITLES = {
   peminjaman:     'Peminjaman Manual',
   pengembalian:   'Pengembalian Manual',
   riwayat:        'Riwayat Peminjaman',
-  list_barang:    'List Barang',
+  list_alat:    'List Alat',
   inventaris:     'Inventaris Alat',
   kartu_rfid:     'Kartu RFID',
   pengguna:       'Pengguna',
@@ -132,13 +132,13 @@ export default function App() {
         </header>
 
         {/* Page Content */}
-        <div className="p-4 sm:p-6 flex-1 min-w-0">
+        <div className="p-3 sm:p-6 flex-1 min-w-0">
           {currentTab === 'dashboard'     && <DashboardPage setCurrentTab={handleTabChange} user={currentUser} />}
           {currentTab === 'realtime_card' && <RealtimeCardPage />}
           {currentTab === 'peminjaman'    && <PeminjamanPage />}
           {currentTab === 'pengembalian'  && <PengembalianPage />}
           {currentTab === 'riwayat'       && <RiwayatPage />}
-          {currentTab === 'list_barang'   && <ListBarangPage />}
+          {currentTab === 'list_alat'   && <ListAlatPage />}
           {currentTab === 'inventaris'    && <InventarisPage />}
           {currentTab === 'kartu_rfid'    && <KartuRfidPage />}
           {currentTab === 'pengguna'      && <PenggunaPage />}

@@ -6,7 +6,7 @@ import { dbService } from '../services/store';
 import Modal from '../components/Modal';
 import DataTable from '../components/DataTable';
 import Button from '../components/Button';
-import { IconPlus, IconTrash, IconEdit } from '@tabler/icons-react';
+import { IconPlus, IconTrash, IconEdit, IconTools, IconX, IconCheck } from '@tabler/icons-react';
 
 const EMPTY_FORM = {
   id: '', kode: '', nama: '', kategori: 'elektronik', uid_rfid: '', jumlah_total: 1, jumlah_rusak: 0,
@@ -127,18 +127,18 @@ export default function InventarisPage() {
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-main">Inventaris Barang</h2>
-          <p className="text-xs text-muted">Kelola master data alat lab dan stiker RFID. (Admin)</p>
+          <h2 className="text-lg font-bold text-main">Inventaris Alat</h2>
+          <p className="text-xs text-muted">Kelola Semua Alat Lab </p>
         </div>
-        <Button icon={IconPlus} onClick={openAdd}>Tambah Alat</Button>
       </div>
 
       <DataTable
         columns={columns}
         data={alat}
-        searchPlaceholder="Cari nama, kode, atau UID RFID..."
+        searchPlaceholder="Search"
         searchKeys={['nama', 'kode', 'uid_rfid', 'kategori']}
         emptyMessage="Belum ada alat terdaftar. Klik tombol Tambah Alat untuk memulai."
+        actionButton={<Button icon={IconPlus} onClick={openAdd}>Tambah Alat</Button>}
       />
 
       <datalist id="kategori-list">
@@ -151,13 +151,20 @@ export default function InventarisPage() {
         <option value="umum" />
       </datalist>
 
-      <Modal isOpen={modal} onClose={() => setModal(false)} title={editItem ? 'Edit Alat Lab' : 'Tambah Alat Lab Baru'}>
+      <Modal
+        isOpen={modal}
+        onClose={() => setModal(false)}
+        title={editItem ? 'Edit Alat Lab' : 'Tambah Alat Lab Baru'}
+        subtitle={editItem ? 'Perbarui data stok atau kondisi alat lab' : 'Daftarkan alat lab baru ke inventaris sistem'}
+        icon={IconTools}
+        iconVariant="primary"
+      >
         <form onSubmit={handleSave} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-muted mb-1">Nama Alat *</label>
             <input required value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} className={inputCls} placeholder="Multimeter Digital" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-muted mb-1">Kode Inventaris *</label>
               <input required value={form.kode} onChange={(e) => setForm({ ...form, kode: e.target.value })} className={inputCls} placeholder="MM-001" />
@@ -167,7 +174,7 @@ export default function InventarisPage() {
               <input required value={form.uid_rfid} onChange={(e) => setForm({ ...form, uid_rfid: e.target.value })} className={`${inputCls} font-mono`} placeholder="STK-ALT-001" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-muted mb-1">Kategori *</label>
               <input 
@@ -195,7 +202,7 @@ export default function InventarisPage() {
           </div>
           
           {editItem && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
               <label className="block text-xs font-semibold text-red-700 mb-1">Rusak (Edit Saja)</label>
               <input 
                 type="text" 
@@ -212,9 +219,13 @@ export default function InventarisPage() {
             </div>
           )}
 
-          <div className="flex justify-end gap-3 pt-3">
-            <Button variant="secondary" onClick={() => setModal(false)}>Batal</Button>
-            <Button type="submit">Simpan Alat</Button>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 pt-3 border-t border-gray-100">
+            <Button variant="secondary" icon={IconX} onClick={() => setModal(false)} className="w-full sm:w-auto justify-center">
+              Batal
+            </Button>
+            <Button type="submit" icon={IconCheck} className="w-full sm:w-auto justify-center">
+              Simpan Alat
+            </Button>
           </div>
         </form>
       </Modal>
