@@ -11,7 +11,16 @@ if (!supabaseUrl || !supabaseAnon) {
   console.warn('[Supabase] VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY belum diisi di .env');
 }
 
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl &&
+  supabaseAnon &&
+  !supabaseUrl.includes('your-project-ref') &&
+  !supabaseAnon.includes('your-anon-key') &&
+  supabaseUrl.startsWith('https://')
+);
+
 export const supabase = createClient(
   supabaseUrl  ?? '',
   supabaseAnon ?? '',
 );
+

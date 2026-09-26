@@ -15,7 +15,7 @@ const VARIANTS = {
   baik:           'badge-success',
   rusak:          'badge-warning',
   // Sumber transaksi
-  otomatis:       'badge-info',
+  realtime:       'badge-info',
   manual:         'badge-purple',
   // Tap status
   berhasil:       'badge-success',
@@ -23,6 +23,7 @@ const VARIANTS = {
   // Jenis deteksi
   pinjam:         'badge-info',
   kembali:        'badge-purple',
+  selesai:        'badge-success',
   // Jenis tap
   kartu:          'badge-gray',
   alat:           'badge-info',
@@ -37,12 +38,13 @@ const LABELS = {
   nonaktif:       'Nonaktif',
   baik:           'Baik',
   rusak:          'Rusak',
-  otomatis:       'Otomatis',
+  realtime:       'Realtime',
   manual:         'Manual',
   berhasil:       'Berhasil',
   ditolak:        'Ditolak',
   pinjam:         'Dipinjam',
   kembali:        'Dikembalikan',
+  selesai:        'Selesai',
   kartu:          'Kartu',
   alat:           'Alat',
 };

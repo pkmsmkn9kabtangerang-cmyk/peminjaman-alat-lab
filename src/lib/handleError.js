@@ -33,11 +33,12 @@ export function handleError(e, fallback = 'Terjadi kesalahan, coba lagi.', toast
  * Map kode error dari edge function ke pesan bahasa Indonesia
  */
 export const ERROR_MESSAGES = {
-  kartu_nonaktif:    'Kartu RFID diblokir atau tidak aktif.',
-  uid_tidak_dikenal: 'UID RFID belum terdaftar di sistem.',
-  sesi_tidak_ada:    'Belum tap kartu atau sesi sudah habis (60 detik).',
-  stok_habis:        'Stok alat habis — tidak ada unit tersedia.',
-  alat_rusak:        'Alat dalam kondisi rusak dan tidak bisa dipinjam.',
+  kartu_nonaktif:        'Kartu RFID diblokir atau tidak aktif.',
+  uid_tidak_dikenal:     'UID RFID belum terdaftar di sistem.',
+  sesi_tidak_ada:        'Belum tap kartu atau sesi sudah habis (20 detik).',
+  sesi_kartu_lain_aktif: 'Sesi kartu lain masih aktif. Harap tunggu hingga sesi selesai atau ditutup.',
+  stok_habis:            'Stok alat habis — tidak ada unit tersedia.',
+  alat_rusak:            'Alat dalam kondisi rusak dan tidak bisa dipinjam.',
   payload_tidak_lengkap: 'Data tidak lengkap dikirim ke server.',
 };
 

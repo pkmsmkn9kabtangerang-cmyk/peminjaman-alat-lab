@@ -88,11 +88,16 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
 
 .animate-fadeIn      { animation: fadeIn 0.3s ease forwards; }
 .animate-slideIn     { animation: slideInRight 0.3s ease forwards; }
 .animate-highlight   { animation: highlight-row 3s ease forwards; }
 .animate-ping-slow   { animation: ping-slow 2s ease-in-out infinite; }
+.animate-spin-slow   { animation: spin-slow 3s linear infinite; }
 
 /* ====== Scrollbar ====== */
 ::-webkit-scrollbar        { width: 6px; height: 6px; }

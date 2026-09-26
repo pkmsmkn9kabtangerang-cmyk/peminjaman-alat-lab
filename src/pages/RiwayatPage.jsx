@@ -138,15 +138,14 @@ export default function RiwayatPage() {
       render: (row) => row.status === 'dikembalikan' ? <Badge status="dikembalikan" /> : <span className="text-muted">—</span>,
     },
     {
-      key: 'sumber',
-      label: 'Terkirim',
-      render: (row) => <Badge status={row.sumber ?? 'otomatis'} />,
-    },
-    {
-      key: 'petugas',
-      label: 'Petugas',
-      render: (row) => <span className="text-xs text-muted">{row.petugas ?? '—'}</span>,
-    },
+          key: 'jenis_terdeteksi',
+          label: 'Jenis Deteksi',
+          sortable: true,
+          render: (row) => {
+            const isManual = row.jenis_terdeteksi === 'manual' || row.sumber === 'manual';
+            return <Badge status={isManual ? 'manual' : 'realtime'} />;
+          },
+        },
   ];
 
   return (

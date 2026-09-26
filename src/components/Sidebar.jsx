@@ -132,14 +132,23 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, unr
                     {item.label}
                   </span>
                 </div>
+                {/* Notification Badge: Responsive (Collapsed dot + Expanded pill) */}
                 {item.badge > 0 && (
-                  <span className="bg-red-500 text-white text-[11px] px-1.5 py-0.5 rounded-full font-bold min-w-[20px] text-center animate-ping-slow shrink-0 absolute right-3 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
-                    {item.badge > 99 ? '99+' : item.badge}
-                  </span>
-                )}
-                {/* Badge for collapsed mode */}
-                {item.badge > 0 && (
-                  <span className="md:block hidden md:group-hover:hidden absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-ping-slow" />
+                  <>
+                    {/* Collapsed mode on desktop */}
+                    <span className="md:flex hidden md:group-hover:hidden absolute top-2 right-2.5 items-center justify-center">
+                      <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 ring-2 ring-white" />
+                    </span>
+
+                    {/* Expanded mode (hover desktop / mobile) */}
+                    <div className="shrink-0 transition-all duration-200 md:opacity-0 md:group-hover:opacity-100 flex items-center">
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                        {item.badge > 99 ? '99+' : `${item.badge} Baru`}
+                      </span>
+                    </div>
+                  </>
                 )}
               </button>
             );

@@ -87,28 +87,44 @@ function setStore(key, data) {
   window.dispatchEvent(new Event('simlab_storage_updated'));
 }
 
-// ── Sesi kartu 60 detik (in-memory, reset saat refresh) ───────
-const kartuSessions = {}; // { uid_kartu: { expires: Date, jenis: 'pinjam'|'kembali', uid_kartu } }
+// ── Sesi kartu 20 detik (in-memory, reset saat refresh) ───────
+export const SESSION_DURATION_SECONDS = 20;
+export const SESSION_DURATION_MS = SESSION_DURATION_SECONDS * 1000;
+
+const kartuSessions = {}; // { uid_kartu: { expires: Date, jenis: 'pinjam'|'kembali', uid_kartu, kelas: string } }
 
 function getSession(uid_kartu) {
   const s = kartuSessions[uid_kartu];
   if (!s) return null;
-  if (new Date() > s.expires) {
+  if (new Date() > new Date(s.expires)) {
     delete kartuSessions[uid_kartu];
     return null;
   }
   return s;
 }
 
-function setSession(uid_kartu, jenis) {
-  const expires = new Date(Date.now() + 60_000);
-  kartuSessions[uid_kartu] = { uid_kartu, jenis, expires };
+function setSession(uid_kartu, jenis, kelas = '') {
+  const expires = new Date(Date.now() + SESSION_DURATION_MS);
+  kartuSessions[uid_kartu] = { uid_kartu, jenis, kelas, expires };
+  window.dispatchEvent(new Event('simlab_storage_updated'));
   return kartuSessions[uid_kartu];
 }
 
 function extendSession(uid_kartu) {
   const s = kartuSessions[uid_kartu];
-  if (s) s.expires = new Date(Date.now() + 60_000);
+  if (s) {
+    s.expires = new Date(Date.now() + SESSION_DURATION_MS);
+    window.dispatchEvent(new Event('simlab_storage_updated'));
+  }
+}
+
+function clearSession(uid_kartu) {
+  if (uid_kartu) {
+    delete kartuSessions[uid_kartu];
+  } else {
+    for (const k in kartuSessions) delete kartuSessions[k];
+  }
+  window.dispatchEvent(new Event('simlab_storage_updated'));
 }
 
 // ── dbService ─────────────────────────────────────────────────
@@ -134,6 +150,24 @@ export const dbService = {
   // --- Kartu RFID ---
   getKartu:  () => getStore('kartu', INITIAL_KARTU),
   saveKartu: (k) => setStore('kartu', k),
+  getActiveLoansByCard: (uid) => {
+    const transaksi = dbService.getTransaksi();
+    return transaksi.filter((t) => t.uid_kartu === uid && t.status === 'dipinjam');
+  },
+  deleteKartu: (uid) => {
+    const active = dbService.getActiveLoansByCard(uid);
+    if (active.length > 0) {
+      return {
+        ok: false,
+        error: 'kartu_sedang_meminjam',
+        message: `Kartu tidak dapat dihapus karena masih memiliki ${active.length} pinjaman aktif.`,
+        count: active.length,
+      };
+    }
+    const list = dbService.getKartu().filter((k) => k.uid_kartu !== uid);
+    setStore('kartu', list);
+    return { ok: true };
+  },
 
   // --- Alat ---
   getAlat:  () => getStore('alat', INITIAL_ALAT),
@@ -178,8 +212,14 @@ export const dbService = {
   getSession,
   setSession,
   extendSession,
+  clearSession,
   getActiveSessions: () => {
     const now = new Date();
+    for (const uid in kartuSessions) {
+      if (new Date(kartuSessions[uid].expires) <= now) {
+        delete kartuSessions[uid];
+      }
+    }
     return Object.values(kartuSessions).filter((s) => new Date(s.expires) > now);
   },
 
@@ -203,12 +243,45 @@ export const dbService = {
         dbService._addTapLog(uid, null, 'kartu', null, 'ditolak', 'kartu_nonaktif', kartu.kelas, null);
         return { ok: false, error: 'kartu_nonaktif', type: 'kartu' };
       }
-      const transaksi    = dbService.getTransaksi();
-      const hasAktif     = transaksi.some((t) => t.uid_kartu === uid && t.status === 'dipinjam');
-      const jenis        = hasAktif ? 'kembali' : 'pinjam';
-      setSession(uid, jenis);
+
+      // Periksa apakah ada sesi kartu aktif saat ini
+      const activeSessions = dbService.getActiveSessions();
+      const currentActiveSession = activeSessions.length > 0 ? activeSessions[0] : null;
+
+      if (currentActiveSession) {
+        // Jika sesi aktif adalah milik kartu yang sama -> Pengguna men-tap kartu lagi untuk mengakhiri sesi
+        if (currentActiveSession.uid_kartu === uid) {
+          clearSession(uid);
+          dbService._addTapLog(uid, null, 'kartu', 'selesai', 'berhasil', null, kartu.kelas, null);
+          return {
+            ok: true,
+            type: 'kartu',
+            action: 'selesai',
+            jenis: 'selesai',
+            kelas: kartu.kelas,
+            message: `Sesi ${kartu.kelas} selesai diakhiri.`,
+          };
+        } else {
+          // Kartu lain (User 2) men-tap saat sesi User 1 masih aktif -> Tolak!
+          const activeKelas = currentActiveSession.kelas || currentActiveSession.uid_kartu;
+          dbService._addTapLog(uid, null, 'kartu', null, 'ditolak', 'sesi_kartu_lain_aktif', kartu.kelas, null);
+          return {
+            ok: false,
+            error: 'sesi_kartu_lain_aktif',
+            type: 'kartu',
+            activeCard: currentActiveSession,
+            message: `Sesi ${activeKelas} sedang aktif! Harap tunggu hingga sesi selesai atau diakhiri.`,
+          };
+        }
+      }
+
+      // Belum ada sesi aktif -> mulai sesi baru (20 detik)
+      const transaksi = dbService.getTransaksi();
+      const hasAktif  = transaksi.some((t) => t.uid_kartu === uid && t.status === 'dipinjam');
+      const jenis     = hasAktif ? 'kembali' : 'pinjam';
+      setSession(uid, jenis, kartu.kelas);
       dbService._addTapLog(uid, null, 'kartu', jenis, 'berhasil', null, kartu.kelas, null);
-      return { ok: true, type: 'kartu', jenis, kelas: kartu.kelas };
+      return { ok: true, type: 'kartu', action: 'mulai', jenis, kelas: kartu.kelas };
     }
 
     // --- UID adalah alat ---
@@ -369,5 +442,43 @@ export const dbService = {
       const status = a.stok_tersedia <= 0 ? 'habis' : (activeTrx ? 'dipinjam' : 'tersedia');
       return { ...a, status, peminjam_kartu, peminjam_kelas };
     });
+  },
+
+  // ── v_pinjaman_aktif simulation ──────────────────────────────
+  getPinjamanAktif: () => {
+    const transaksi = dbService.getTransaksi();
+    const kartuList = dbService.getKartu();
+    const alatList  = dbService.getAlat();
+    const now       = Date.now();
+
+    return transaksi
+      .filter((t) => t.status === 'dipinjam')
+      .map((t) => {
+        const kartu = kartuList.find((k) => k.uid_kartu === t.uid_kartu);
+        const alat  = alatList.find((a) => a.id === t.alat_id);
+        const waktuPinjamMs = t.waktu_pinjam ? new Date(t.waktu_pinjam).getTime() : now;
+        const durasi_menit = Math.max(0, Math.floor((now - waktuPinjamMs) / 60000));
+
+        return {
+          transaksi_id: t.id,
+          id: t.id,
+          uid_kartu: t.uid_kartu,
+          kelas: t.kelas || kartu?.kelas || '—',
+          nama_pemegang: kartu?.nama_pemegang || null,
+          kartu_aktif: kartu ? kartu.aktif : true,
+          alat_id: t.alat_id,
+          alat_nama: t.nama_alat || alat?.nama || '—',
+          nama_alat: t.nama_alat || alat?.nama || '—',
+          alat_kode: alat?.kode || null,
+          alat_kategori: alat?.kategori || 'umum',
+          status: t.status,
+          sumber: t.sumber,
+          kondisi_pinjam: t.kondisi_pinjam || 'baik',
+          petugas: t.petugas,
+          catatan: t.catatan,
+          waktu_pinjam: t.waktu_pinjam,
+          durasi_menit,
+        };
+      });
   },
 };

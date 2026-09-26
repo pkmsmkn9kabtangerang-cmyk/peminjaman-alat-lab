@@ -8,7 +8,6 @@ import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
 import {
-  IconRadioactive,
   IconAlertTriangle,
   IconAlertOctagon,
   IconShieldExclamation,
@@ -54,7 +53,7 @@ export default function RealtimeCardPage() {
           added.forEach((id) => next.delete(id));
           return next;
         });
-      }, 3000);
+      }, 12000); // Tanda 'BARU' aktif selama 12 detik agar jelas terlihat
     }
     prevLen.current = logs.length;
   };
@@ -100,7 +99,25 @@ export default function RealtimeCardPage() {
     {
       key: 'uid_kartu',
       label: 'Kartu ID',
-      render: (row) => <span className="text-xs font-mono text-muted">{row.uid_kartu ?? '—'}</span>,
+      render: (row) => (
+        <div className="flex items-center gap-2">
+          {row._isNew && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-600 text-white shadow-xs animate-pulse shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+              BARU
+            </span>
+          )}
+          <span
+            className={`text-xs font-mono px-2 py-0.5 rounded ${
+              row._isNew
+                ? 'bg-emerald-100 text-emerald-900 font-bold border border-emerald-300'
+                : 'bg-gray-100 text-gray-700 font-medium'
+            }`}
+          >
+            {row.uid_kartu ?? '—'}
+          </span>
+        </div>
+      ),
     },
     {
       key: 'nama_pemegang',
@@ -137,7 +154,7 @@ export default function RealtimeCardPage() {
       sortable: true,
       render: (row) => {
         const isManual = row.jenis_terdeteksi === 'manual' || row.sumber === 'manual';
-        return <Badge status={isManual ? 'manual' : 'otomatis'} />;
+        return <Badge status={isManual ? 'manual' : 'realtime'} />;
       },
     },
     {

@@ -183,8 +183,10 @@ export default function DataTable({
               : paged.map((row, i) => (
                   <tr
                     key={row.id ?? i}
-                    className={`hover:bg-blue-50/30 transition-colors duration-150 ${
-                      row._isNew ? 'bg-blue-50/50' : 'bg-white'
+                    className={`transition-all duration-300 ${
+                      row._isNew
+                        ? 'bg-emerald-50/90 font-medium border-l-4 border-l-emerald-500 shadow-xs'
+                        : 'bg-white hover:bg-blue-50/30'
                     }`}
                   >
                     {columns.map((col) => (
