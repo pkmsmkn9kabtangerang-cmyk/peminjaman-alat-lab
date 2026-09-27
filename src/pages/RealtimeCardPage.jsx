@@ -143,6 +143,14 @@ export default function RealtimeCardPage() {
       render: (row) => <span className="text-xs text-main">{row.nama_alat ?? '—'}</span>,
     },
     {
+  key: 'status_alat',
+  label: 'Status Alat',
+  render: (row) =>
+    row.status === 'dipinjam' || row.status === 'dikembalikan'
+      ? <Badge status={row.status} />
+      : <span className="text-[11px] text-gray-400">—</span>,
+},
+    {
       key: 'waktu_tap',
       label: 'Waktu',
       sortable: true,
@@ -211,7 +219,7 @@ export default function RealtimeCardPage() {
         data={filteredData}
         searchPlaceholder="Cari aktivitas tap..."
         searchKeys={['kelas', 'uid_kartu', 'nama_alat', 'jenis_terdeteksi', 'jenis_tap', 'nama_pemegang']}
-        emptyMessage="Belum ada tap RFID hari ini."
+        emptyMessage="Belum ada aktivitas tap RFID untuk hari ini"
         actionButton={
           <Button
             variant="danger-soft"

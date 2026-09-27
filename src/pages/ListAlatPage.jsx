@@ -75,7 +75,7 @@ export default function ListBarangPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-bold text-main">List Barang</h2>
+        <h2 className="text-lg font-bold text-main">List Alat</h2>
         <p className="text-xs text-muted">Pantau ketersediaan alat lab secara realtime.</p>
       </div>
 
@@ -84,7 +84,7 @@ export default function ListBarangPage() {
         data={filteredData}
         searchPlaceholder="Search"
         searchKeys={['nama', 'kode', 'kategori', 'peminjam_kelas']}
-        emptyMessage="Belum ada alat yang terdaftar atau sesuai filter."
+        emptyMessage="Belum ada alat yang terdaftar."
         filters={
           <FilterDropdown
             icon={IconFilter}

@@ -137,7 +137,7 @@ export default function InventarisPage() {
         data={alat}
         searchPlaceholder="Search"
         searchKeys={['nama', 'kode', 'uid_rfid', 'kategori']}
-        emptyMessage="Belum ada alat terdaftar. Klik tombol Tambah Alat untuk memulai."
+        emptyMessage="Belum ada alat terdaftar. Silahkan Daftarkan Alat Lab Baru."
         actionButton={<Button icon={IconPlus} onClick={openAdd}>Tambah Alat</Button>}
       />
 

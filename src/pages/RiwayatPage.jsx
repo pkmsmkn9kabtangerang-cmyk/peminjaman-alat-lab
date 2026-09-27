@@ -185,7 +185,7 @@ export default function RiwayatPage() {
         data={filteredData}
         searchPlaceholder="Cari riwayat..."
         searchKeys={['kelas', 'nama_alat', 'uid_kartu', 'pemegang', 'sumber']}
-        emptyMessage="Belum ada riwayat transaksi."
+        emptyMessage="Belum ada riwayat Peminjaman Alat"
         actionButton={
           <Button
             variant="danger-soft"
