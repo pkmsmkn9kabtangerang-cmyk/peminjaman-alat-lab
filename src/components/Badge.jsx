@@ -1,49 +1,38 @@
-// src/components/Badge.jsx
-// Komponen badge/chip yang menangani semua status di aplikasi
-
 const VARIANTS = {
-  // Status transaksi
   dipinjam:       'badge-info',
   dikembalikan:   'badge-success',
-  // Status alat / stok
   tersedia:       'badge-success',
   habis:          'badge-error',
-  // Status kartu
   aktif:          'badge-success',
   nonaktif:       'badge-gray',
-  // Kondisi barang
   baik:           'badge-success',
   rusak:          'badge-warning',
-  // Sumber transaksi
   realtime:       'badge-info',
-  manual:         'badge-purple',
-  // Tap status
+  manual:         'badge-gray',
   berhasil:       'badge-success',
   ditolak:        'badge-error',
-  // Jenis deteksi
   pinjam:         'badge-info',
-  kembali:        'badge-purple',
+  kembali:        'badge-success',
   selesai:        'badge-success',
-  // Jenis tap
   kartu:          'badge-gray',
   alat:           'badge-info',
 };
 
 const LABELS = {
-  dipinjam:       'Dipinjam',
-  dikembalikan:   'Dikembalikan',
+  dipinjam:       'Sedang dipinjam',
+  dikembalikan:   'Sudah dikembalikan',
   tersedia:       'Tersedia',
-  habis:          'Stok Habis',
+  habis:          'Stok habis',
   aktif:          'Aktif',
-  nonaktif:       'Nonaktif',
+  nonaktif:       'Diblokir',
   baik:           'Baik',
   rusak:          'Rusak',
-  realtime:       'Realtime',
+  realtime:       'Kartu RFID',
   manual:         'Manual',
   berhasil:       'Berhasil',
   ditolak:        'Ditolak',
-  pinjam:         'Dipinjam',
-  kembali:        'Dikembalikan',
+  pinjam:         'Peminjaman',
+  kembali:        'Pengembalian',
   selesai:        'Selesai',
   kartu:          'Kartu',
   alat:           'Alat',
@@ -56,7 +45,7 @@ export default function Badge({ status, className = '' }) {
 
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${variant} ${className}`}
+      className={`inline-flex items-center px-2 py-0.5 rounded text-sm font-medium ${variant} ${className}`}
     >
       {label}
     </span>

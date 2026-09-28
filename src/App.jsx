@@ -1,9 +1,7 @@
-// src/App.jsx
-// Root aplikasi: mode demo (localStorage) atau Supabase (jika .env dikonfigurasi)
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { dbService } from './services/store';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { getErrorMessage } from './lib/handleError';
 import Sidebar from './components/Sidebar';
 import NotificationToast from './components/NotificationToast';
 import LoginPage from './pages/LoginPage';
@@ -17,22 +15,45 @@ import PengembalianPage from './pages/PengembalianPage';
 import RiwayatPage from './pages/RiwayatPage';
 import PenggunaPage from './pages/PenggunaPage';
 import SimulasiIotPage from './pages/SimulasiIotPage';
-import { IconBell } from '@tabler/icons-react';
+import { IconBell, IconX, IconCheck, IconAlertTriangle } from '@tabler/icons-react';
 
 const PAGE_TITLES = {
   dashboard:      'Dashboard',
-  realtime_card:  'Realtime Card',
-  peminjaman:     'Peminjaman Manual',
-  pengembalian:   'Pengembalian Manual',
-  riwayat:        'Riwayat Peminjaman',
-  list_alat:      'List Alat',
-  inventaris:     'Inventaris Alat',
+  realtime_card:  'Aktivitas RFID',
+  peminjaman:     'Peminjaman',
+  pengembalian:   'Pengembalian',
+  riwayat:        'Riwayat',
+  list_alat:      'Daftar Alat',
+  inventaris:     'Inventaris',
   kartu_rfid:     'Kartu RFID',
   pengguna:       'Pengguna',
-  simulasi_iot:   'Simulasi IoT RFID',
+  simulasi_iot:   'Simulasi Kartu',
 };
 
-// Ambil tab awal dari URL hash atau localStorage agar saat di-refresh posisi tab tetap terjaga
+function tapNotification(latest) {
+  const rejected = latest.status === 'ditolak';
+  let subMessage = 'Aktivitas berhasil dicatat.';
+  if (rejected) {
+    subMessage = getErrorMessage(latest.error_code);
+  } else if (latest.jenis_tap === 'pinjam' || latest.status === 'dipinjam') {
+    subMessage = 'Peminjaman berhasil dicatat.';
+  } else if (latest.jenis_tap === 'kembali' || latest.status === 'dikembalikan') {
+    subMessage = 'Pengembalian berhasil dicatat.';
+  } else if (latest.jenis_tap === 'kartu') {
+    subMessage = 'Kartu kelas terdeteksi.';
+  }
+
+  return {
+    title: rejected ? 'Kartu ditolak' : 'Kartu RFID terdeteksi',
+    status: rejected ? 'ditolak' : 'berhasil',
+    jenis: latest.jenis_tap,
+    kelas: latest.kelas,
+    nama_pemegang: latest.nama_pemegang,
+    nama_alat: latest.nama_alat || null,
+    subMessage,
+  };
+}
+
 const getInitialTab = () => {
   try {
     const hash = window.location.hash.replace(/^#\/?/, '');
@@ -44,6 +65,49 @@ const getInitialTab = () => {
   }
   return 'dashboard';
 };
+
+function FeedbackToast() {
+  const [item, setItem] = useState(null);
+
+  useEffect(() => {
+    const onFeedback = (e) => setItem(e.detail);
+    window.addEventListener('simlab_feedback', onFeedback);
+    return () => window.removeEventListener('simlab_feedback', onFeedback);
+  }, []);
+
+  useEffect(() => {
+    if (!item) return undefined;
+    const t = setTimeout(() => setItem(null), 4200);
+    return () => clearTimeout(t);
+  }, [item]);
+
+  if (!item) return null;
+
+  const isError = item.type === 'error';
+  return (
+    <div className="fixed bottom-4 right-4 z-50 w-[min(100%-2rem,360px)]">
+      <div className={`border shadow-md rounded bg-white px-3 py-2.5 flex items-start gap-2.5 ${isError ? 'border-red-300' : 'border-green-300'}`}>
+        {isError ? (
+          <IconAlertTriangle size={18} className="text-red-700 shrink-0 mt-0.5" />
+        ) : (
+          <IconCheck size={18} className="text-green-800 shrink-0 mt-0.5" />
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-semibold text-gray-900">{item.title}</p>
+          {item.message && <p className="text-sm text-gray-700 mt-0.5 leading-relaxed">{item.message}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={() => setItem(null)}
+          className="p-1 text-gray-500 hover:text-gray-800 min-h-8 min-w-8"
+          aria-label="Tutup"
+        >
+          <IconX size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [currentUser, setCurrentUser]   = useState(() => dbService.getCurrentUser());
@@ -58,43 +122,26 @@ export default function App() {
     setUnreadCount(dbService.getUnreadCount());
   }, []);
 
-  // Trigger popup notifikasi mengambang (maks 3 item)
-  const triggerNotification = useCallback((notif) => {
-    const id = 'notif-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
-    setNotifications((prev) => [
-      { id, ...notif },
-      ...prev,
-    ].slice(0, 3));
+  const triggerNotification = useCallback((latest) => {
+    const id = 'notif-' + Date.now();
+    setNotifications([{ id, ...tapNotification(latest) }]);
   }, []);
 
   const dismissNotification = useCallback((id) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   }, []);
 
-  // Poll unread count + listen to storage updates & realtime tap notifications
   useEffect(() => {
     refreshUnread();
     const handle = () => {
       setCurrentUser(dbService.getCurrentUser());
       refreshUnread();
 
-      // Deteksi adanya data tap RFID baru yang masuk ke sistem
       const logs = dbService.getTapLog();
       if (logs.length > prevLogsLen.current) {
         const added = logs.slice(0, logs.length - prevLogsLen.current);
         const latest = added[0];
-        if (latest) {
-          triggerNotification({
-            title: latest.status === 'ditolak' ? 'Tap Ditolak' : 'Data Masuk: Tap RFID',
-            jenis: latest.jenis_tap,
-            kelas: latest.kelas,
-            nama_alat: latest.nama_alat || latest.error_code || 'Aktivitas Tap',
-            uid_kartu: latest.uid_kartu,
-            subMessage: latest.status === 'ditolak'
-              ? `Ditolak: ${latest.error_code}`
-              : `Status: Berhasil (${latest.jenis_terdeteksi})`,
-          });
-        }
+        if (latest) triggerNotification(latest);
       }
       prevLogsLen.current = logs.length;
     };
@@ -102,23 +149,12 @@ export default function App() {
     window.addEventListener('simlab_storage_updated', handle);
     const interval = setInterval(refreshUnread, 3000);
 
-    // Supabase Realtime channel jika Supabase terkonfigurasi
     let channel = null;
     if (isSupabaseConfigured) {
       channel = supabase
         .channel('app-global-realtime-taps')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tap_log' }, (payload) => {
-          const latest = payload.new;
-          triggerNotification({
-            title: latest.status === 'ditolak' ? 'Tap Ditolak' : 'Data Masuk: Tap RFID',
-            jenis: latest.jenis_tap,
-            kelas: latest.kelas,
-            nama_alat: latest.nama_alat || latest.error_code || 'Aktivitas Tap',
-            uid_kartu: latest.uid_kartu,
-            subMessage: latest.status === 'ditolak'
-              ? `Ditolak: ${latest.error_code}`
-              : `Status: Berhasil (${latest.jenis_terdeteksi})`,
-          });
+          triggerNotification(payload.new);
           refreshUnread();
         })
         .subscribe();
@@ -131,7 +167,6 @@ export default function App() {
     };
   }, [refreshUnread, triggerNotification]);
 
-  // Handle pergantian tab & sinkronisasi dengan URL hash dan localStorage
   const handleTabChange = useCallback((tab) => {
     if (!PAGE_TITLES[tab]) return;
     setCurrentTab(tab);
@@ -143,14 +178,13 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
-    setMobileMenuOpen(false); // close mobile menu on nav
+    setMobileMenuOpen(false);
     if (tab === 'realtime_card') {
       dbService.markTapsRead();
       setUnreadCount(0);
     }
   }, []);
 
-  // Sinkronisasi saat user menekan tombol Back / Forward di browser atau refresh
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace(/^#\/?/, '');
@@ -184,14 +218,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-main flex">
-      {/* Popup Notifikasi Realtime Melayang */}
       <NotificationToast
         notifications={notifications}
         onDismiss={dismissNotification}
         onNavigate={handleTabChange}
       />
+      <FeedbackToast />
 
-      {/* Sidebar */}
       <Sidebar
         currentTab={currentTab}
         setCurrentTab={handleTabChange}
@@ -202,45 +235,39 @@ export default function App() {
         setMobileMenuOpen={setMobileMenuOpen}
       />
 
-      {/* Main Content */}
-      <main className="flex-1 transition-all duration-300 md:ml-16 min-h-screen flex flex-col min-w-0">
-        {/* Header */}
-        <header className="h-14 bg-surface border-b border-main px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20 shadow-sm">
-          <div className="flex items-center gap-3">
-            {/* Hamburger Button (Mobile Only) */}
+      <main className="flex-1 md:ml-[232px] min-h-screen flex flex-col min-w-0">
+        <header className="min-h-14 bg-surface border-b border-main px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="md:hidden p-1.5 -ml-2 text-gray-500 hover:bg-gray-100 rounded-lg transition"
+              className="md:hidden p-2 -ml-2 text-gray-700 hover:bg-gray-100 rounded min-h-11 min-w-11"
+              aria-label="Buka menu"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <h2 className="text-sm font-bold text-main truncate">
+            <h2 className="text-lg font-semibold text-main truncate">
               {PAGE_TITLES[currentTab] ?? currentTab}
             </h2>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
-            {/* Bell Notifikasi */}
-            <button
-              id="btn-bell-notifikasi"
-              onClick={() => handleTabChange('realtime_card')}
-              className="relative p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-              title="Realtime Card"
-            >
-              <IconBell size={18} />
-              {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 bg-rose-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none ring-2 ring-white animate-pulse">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </button>
-          </div>
+          <button
+            id="btn-bell-notifikasi"
+            onClick={() => handleTabChange('realtime_card')}
+            className="relative px-3 py-2 text-[15px] font-medium text-gray-700 hover:bg-gray-100 rounded min-h-11 inline-flex items-center gap-2"
+          >
+            <IconBell size={18} />
+            <span className="hidden sm:inline">Aktivitas RFID</span>
+            {unreadCount > 0 && (
+              <span className="bg-red-700 text-white text-xs font-semibold rounded-full min-w-5 h-5 px-1 flex items-center justify-center">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
         </header>
 
-        {/* Page Content: Dashboard tetap dipertahankan mounted agar tidak re-render/hilang saat berpindah menu */}
-        <div className="p-3 sm:p-6 flex-1 min-w-0">
+        <div className="p-4 sm:p-6 flex-1 min-w-0">
           <div className={currentTab === 'dashboard' ? 'block' : 'hidden'}>
             <DashboardPage setCurrentTab={handleTabChange} user={currentUser} />
           </div>

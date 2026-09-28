@@ -1,6 +1,6 @@
 # Plan Implementasi v2: Sistem Peminjaman Alat Lab Berbasis RFID + Web (PKM)
 
-> **Perubahan besar dari v1:** Firebase (Auth + Firestore + Cloud Functions + Hosting) → **Supabase** (Auth + Postgres + Edge Functions + Realtime). UI direvisi (20 poin revisi, dipetakan di Bagian 8). Alur tap disederhanakan: **tap kartu sekali, lalu tap sticker alat sebanyak yang dipinjam**, tanpa konfirmasi manual petugas.
+**Supabase** (Auth + Postgres + Edge Functions + Realtime). UI direvisi (20 poin revisi, dipetakan di Bagian 8). Alur tap disederhanakan: **tap kartu sekali, lalu tap sticker alat sebanyak yang dipinjam**, tanpa konfirmasi manual petugas.
 
 ## 0. Asumsi yang Dipakai (koreksi kalau salah)
 
@@ -66,7 +66,7 @@ flowchart LR
 Firmware **tidak perlu tahu** mana kartu dan mana alat. ESP32 cukup kirim tiap UID; server menentukan.
 
 ```
-Tap kartu  ─► validasi kartu aktif ─► buat/perbarui sesi (60 dtk)
+Tap kartu  ─► validasi kartu aktif ─► buat/perbarui sesi (20 dtk)
               jenis_terdeteksi = belum ada pinjaman aktif ? "pinjam" : "kembali"
               ─► tap_log (muncul di Realtime Card + notifikasi)
 
@@ -75,7 +75,7 @@ Tap alat   ─► UID tidak dikenal?             -> ditolak  uid_tidak_dikenal
               kartu ini sedang pinjam alat ini? -> KEMBALI (stok +1, transaksi ditutup)
               selain itu                         -> PINJAM  (stok -1, transaksi baru)
                                                     stok habis? -> ditolak stok_habis
-              sesi diperpanjang 60 dtk ─► tap_log
+              sesi diperpanjang 20 dtk ─► tap_log
 ```
 
 Aturan:
@@ -100,7 +100,7 @@ Aturan:
 
 ## 5. Database Schema (Supabase Postgres)
 
-File lengkap: `supabase/migrations/20260920000000_init.sql`
+File lengkap: `supabase/migrations/001_initial_schema.sql`
 
 | Tabel | Isi | Pengganti di Firebase |
 |---|---|---|
@@ -214,7 +214,7 @@ Sidebar (logo SMK + nama sekolah di atas)
 const isProd = import.meta.env.PROD;
 export function handleError(e, fallback = "Terjadi kesalahan, coba lagi") {
   const err = e ?? {};
-  if (!isProd) console.error("[DEV]", e);                 // lokal: detail lengkap di console
+  if (!isProd) console.error("[DEV]", e);// lokal: detail lengkap di console
   const msg = err?.message ?? fallback;
   toast.error(isProd && err?.request_id ? `${msg} (ref: ${err.request_id.slice(0, 8)})` : msg);
   // produksi: opsional kirim ke Sentry di sini
