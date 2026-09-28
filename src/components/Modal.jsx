@@ -1,16 +1,13 @@
-// src/components/Modal.jsx
-// Komponen Modal dialog berstandar SaaS modern
-
 import { useEffect, useCallback } from 'react';
 import { IconX } from '@tabler/icons-react';
 
 const ICON_VARIANTS = {
-  danger:  'bg-red-50 text-red-600 border-red-200/80 ring-red-500/10',
-  warning: 'bg-amber-50 text-amber-600 border-amber-200/80 ring-amber-500/10',
-  info:    'bg-blue-50 text-blue-600 border-blue-200/80 ring-blue-500/10',
-  success: 'bg-emerald-50 text-emerald-600 border-emerald-200/80 ring-emerald-500/10',
-  primary: 'bg-blue-50 text-blue-600 border-blue-200/80 ring-blue-500/10',
-  default: 'bg-gray-50 text-gray-700 border-gray-200 ring-gray-100',
+  danger:  'bg-red-50 text-red-700 border-red-200',
+  warning: 'bg-orange-50 text-orange-700 border-orange-200',
+  info:    'bg-blue-50 text-blue-800 border-blue-200',
+  success: 'bg-green-50 text-green-800 border-green-200',
+  primary: 'bg-blue-50 text-blue-800 border-blue-200',
+  default: 'bg-gray-50 text-gray-700 border-gray-200',
 };
 
 export default function Modal({
@@ -55,33 +52,31 @@ export default function Modal({
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
+      aria-labelledby="dialog-title"
     >
-      {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+        className="fixed inset-0 bg-slate-900/45"
         onClick={onClose}
       />
 
-      {/* Modal Card */}
       <div
-        className={`relative bg-white w-full ${maxWidth} rounded-2xl shadow-2xl border border-gray-100/80 flex flex-col my-auto max-h-[92vh] overflow-hidden animate-fadeIn z-10`}
+        className={`relative bg-white w-full ${maxWidth} rounded border border-gray-300 shadow-lg flex flex-col my-auto max-h-[92vh] overflow-hidden z-10`}
       >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 p-4 sm:p-5 border-b border-gray-100 bg-gray-50/50">
+        <div className="flex items-start justify-between gap-3 px-4 sm:px-5 py-4 border-b border-gray-200">
           <div className="flex items-start gap-3 min-w-0">
             {Icon && (
               <div
-                className={`w-10 h-10 rounded-xl border flex items-center justify-center ring-4 shrink-0 transition-transform ${iconStyle}`}
+                className={`w-9 h-9 rounded border flex items-center justify-center shrink-0 ${iconStyle}`}
               >
-                <Icon size={20} />
+                <Icon size={18} />
               </div>
             )}
             <div className="min-w-0 pt-0.5">
-              <h3 className="text-sm sm:text-base font-bold text-gray-900 leading-snug tracking-tight">
+              <h3 id="dialog-title" className="text-lg font-semibold text-gray-900 leading-snug">
                 {title}
               </h3>
               {subtitle && (
-                <p className="text-xs text-gray-500 mt-0.5 leading-normal">
+                <p className="text-[15px] text-gray-600 mt-1 leading-relaxed">
                   {subtitle}
                 </p>
               )}
@@ -91,7 +86,7 @@ export default function Modal({
           {showCloseButton && (
             <button
               onClick={onClose}
-              className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-200/60 rounded-lg transition-colors shrink-0"
+              className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded shrink-0 min-h-10 min-w-10 flex items-center justify-center"
               aria-label="Tutup"
             >
               <IconX size={18} />
@@ -99,12 +94,10 @@ export default function Modal({
           )}
         </div>
 
-        {/* Content */}
-        <div className="p-4 sm:p-6 overflow-y-auto">
+        <div className="p-4 sm:p-5 overflow-y-auto">
           {children}
         </div>
       </div>
     </div>
   );
 }
-

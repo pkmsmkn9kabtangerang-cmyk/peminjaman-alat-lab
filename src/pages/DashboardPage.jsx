@@ -1,18 +1,12 @@
 // src/pages/DashboardPage.jsx
-// Dashboard: greeting, stat cards, Bar+Area chart Recharts, dan fitur "Sedang Dipinjam" realtime
+// Dashboard: ringkasan stok, pinjaman aktif, dan aktivitas terbaru
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { dbService } from '../services/store';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import StatCard from '../components/StatCard';
-import {
-  BarChart, Bar, AreaChart, Area,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-} from 'recharts';
-import {
-  IconBox, IconClock, IconCheck, IconArrowRight,
-  IconIdBadge2, IconCircleCheck, IconLayersLinked,
-} from '@tabler/icons-react';
+import Badge from '../components/Badge';
+import { IconArrowRight } from '@tabler/icons-react';
 
 const FORMAT_DATE = new Intl.DateTimeFormat('id-ID', {
   weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -80,7 +74,6 @@ export default function DashboardPage({ setCurrentTab, user }) {
   const [alat, setAlat]           = useState(() => dbService.getAlatWithStok());
   const [transaksi, setTransaksi] = useState(() => dbService.getTransaksi());
   const [tapLog, setTapLog]       = useState(() => dbService.getTapLog());
-  const [chartDays, setChartDays] = useState(7);
 
   // State untuk fitur "Sedang Dipinjam":
   // Di-load INSTAN (0ms) secara sinkron dari cache memory / local store
@@ -326,242 +319,158 @@ export default function DashboardPage({ setCurrentTab, user }) {
     return t.waktu_pinjam?.startsWith(today);
   }).length;
 
-  // Chart data
-  const chartData = useMemo(() => dbService.getStatHarian(chartDays), [transaksi, chartDays]);
-
-  // Format tanggal chart: "20 Sep"
-  const fmtTgl = (s) => {
-    const d = new Date(s);
-    return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-  };
-
   const totalActiveItems = useMemo(
     () => activeCards.reduce((acc, c) => acc + c.items.length, 0),
     [activeCards]
   );
 
+  const recentLoans = useMemo(() => transaksi.slice(0, 6), [transaksi]);
+  const recentTaps = useMemo(() => tapLog.slice(0, 6), [tapLog]);
+
+  const FMT = (iso) => iso
+    ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
+    : '—';
+
   return (
     <div className="space-y-6">
-      {/* ── Greeting ── */}
       <div>
-        <p className="text-muted text-xs">{FORMAT_DATE.format(new Date())}</p>
-        <h1 className="text-xl font-bold text-main">
-          Selamat datang, <span className="text-blue-600">{user?.nama ?? 'Pengguna'}</span> 👋
+        <p className="text-muted text-[15px]">{FORMAT_DATE.format(new Date())}</p>
+        <h1 className="text-xl font-semibold text-main mt-0.5">
+          Selamat datang, {user?.nama ?? 'Pengguna'}
         </h1>
-        <p className="text-muted text-sm mt-0.5">
-          <span className="inline-flex items-center gap-1 capitalize bg-blue-50 text-blue-700 text-xs font-semibold px-2 py-0.5 rounded-full">
-            {user?.role}
-          </span>
+        <p className="text-[15px] text-muted mt-1">
+          {user?.role === 'admin' ? 'Admin' : 'Petugas lab'} · ringkasan peminjaman alat laboratorium hari ini.
         </p>
       </div>
 
-      {/* ── Stat Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard title="Total Unit Alat"    value={totalAlat}    icon={IconBox}       color="blue"   />
-        <StatCard title="Stok Tersedia"      value={totalTersedia} icon={IconCheck}     color="green"  />
-        <StatCard title="Sedang Dipinjam"    value={totalDipinjam} icon={IconClock}     color="amber"  />
-        <StatCard title="Transaksi Hari Ini" value={totalHariIni}  icon={IconArrowRight} color="purple" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <StatCard title="Total unit alat" value={totalAlat} />
+        <StatCard title="Stok tersedia" value={totalTersedia} />
+        <StatCard title="Sedang dipinjam" value={totalDipinjam} />
+        <StatCard title="Peminjaman hari ini" value={totalHariIni} />
       </div>
 
-      {/* ── Charts ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
-        {/* Bar Chart */}
-        <div className="bg-surface rounded-xl border border-main p-4 sm:p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-semibold text-main text-sm">Peminjaman dan Pengembalian</h3>
-              <p className="text-xs text-muted">Perbandingan transaksi per hari</p>
-            </div>
-            <div className="flex gap-1">
-              {[7, 14, 30].map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setChartDays(d)}
-                  className={`text-xs px-2 py-1 rounded font-medium transition ${
-                    chartDays === d ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {d}H
-                </button>
-              ))}
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-              <XAxis dataKey="tanggal" tickFormatter={fmtTgl} tick={{ fontSize: 10, fill: '#94A3B8' }} />
-              <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} allowDecimals={false} />
-              <Tooltip
-                formatter={(v, n) => [v, n === 'jumlah_pinjam' ? 'Dipinjam' : 'Dikembalikan']}
-                labelFormatter={fmtTgl}
-                contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E2E8F0' }}
-              />
-              <Legend formatter={(v) => (v === 'jumlah_pinjam' ? 'Dipinjam' : 'Dikembalikan')} wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="jumlah_pinjam"  fill="#3B82F6" radius={[4, 4, 0, 0]} maxBarSize={32} />
-              <Bar dataKey="jumlah_kembali" fill="#8B5CF6" radius={[4, 4, 0, 0]} maxBarSize={32} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Area Chart */}
-        <div className="bg-surface rounded-xl border border-main p-4 sm:p-5 shadow-sm">
-          <div className="mb-4">
-            <h3 className="font-semibold text-main text-sm">Tren Total Transaksi</h3>
-            <p className="text-xs text-muted">Akumulasi aktivitas {chartDays} hari terakhir</p>
-          </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
-              <defs>
-                <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#2563EB" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-              <XAxis dataKey="tanggal" tickFormatter={fmtTgl} tick={{ fontSize: 10, fill: '#94A3B8' }} />
-              <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} allowDecimals={false} />
-              <Tooltip
-                formatter={(v) => [v, 'Total Transaksi']}
-                labelFormatter={fmtTgl}
-                contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E2E8F0' }}
-              />
-              <Area type="monotone" dataKey="total" stroke="#2563EB" strokeWidth={2} fill="url(#colorTotal)" dot={{ r: 3, fill: '#2563EB' }} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* ── Fitur Baru: "Sedang Dipinjam" (Dikelompokkan Per Kartu RFID) ── */}
-      <div className="bg-surface rounded-xl border border-main p-4 sm:p-6 shadow-xs space-y-4">
-        {/* Section Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
+      <div className="bg-surface border border-main">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-4 border-b border-main">
           <div>
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-base font-bold text-main flex items-center gap-2">
-                <IconLayersLinked size={20} className="text-blue-600" />
-                Sedang Dipinjam
-              </h2>
-              {activeCards.length > 0 && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  {activeCards.length} Kartu Aktif • {totalActiveItems} Unit Alat
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-muted mt-0.5">
-              Daftar kartu RFID yang memiliki pinjaman alat aktif di laboratorium, dikelompokkan per kelas.
+            <h2 className="text-lg font-semibold text-main">Barang yang sedang dipinjam</h2>
+            <p className="text-[15px] text-muted mt-0.5">
+              {activeCards.length === 0
+                ? 'Tidak ada alat yang sedang dipinjam.'
+                : `${activeCards.length} kelas · ${totalActiveItems} unit alat`}
             </p>
           </div>
-
           <button
             onClick={() => setCurrentTab('riwayat')}
-            className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 self-start sm:self-auto"
+            className="text-[15px] font-semibold text-[#1E5AAB] hover:underline inline-flex items-center gap-1 min-h-10"
           >
-            Lihat Semua Riwayat <IconArrowRight size={14} />
+            Lihat riwayat <IconArrowRight size={16} />
           </button>
         </div>
 
-        {/* Content: Empty State atau Cards Grid */}
         {activeCards.length === 0 ? (
-          /* Empty State Ringan */
-          <div className="py-10 text-center flex flex-col items-center justify-center bg-gray-50/70 rounded-xl border border-dashed border-gray-200">
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-full mb-2.5 ring-8 ring-emerald-50/40">
-              <IconCircleCheck size={28} />
-            </div>
-            <h3 className="text-sm font-bold text-main">Tidak ada pinjaman aktif saat ini</h3>
-            <p className="text-xs text-muted mt-1 max-w-sm">
-              Semua alat laboratorium telah dikembalikan. Kartu RFID kelas saat ini tidak memiliki tanggungan peminjaman.
-            </p>
+          <div className="px-5 py-10 text-center">
+            <p className="text-base font-semibold text-main">Belum ada peminjaman aktif</p>
+            <p className="text-[15px] text-muted mt-1">Semua alat laboratorium sudah dikembalikan.</p>
           </div>
         ) : (
-          /* Grid Card per Kartu Aktif */
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
+          <div className="divide-y divide-gray-200">
             {activeCards.map((card) => (
-              <div
-                key={card.uid_kartu}
-                className="bg-white rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all p-4 sm:p-5 flex flex-col justify-between space-y-4"
-              >
-                {/* Header Card */}
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <div className="min-w-0">
-                      <span className="text-base font-extrabold text-main block leading-tight truncate">
-                        {card.kelas}
-                      </span>
-                      {card.nama_pemegang && (
-                        <span className="text-[11px] text-muted block mt-0.5 truncate">
-                          Pemegang: <span className="font-semibold text-gray-700">{card.nama_pemegang}</span>
-                        </span>
-                      )}
-                    </div>
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
-                      {card.items.length} Alat
-                    </span>
+              <div key={card.uid_kartu} className="px-4 sm:px-5 py-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+                  <div>
+                    <p className="text-base font-semibold text-main">{card.kelas}</p>
+                    {card.nama_pemegang && (
+                      <p className="text-[15px] text-muted">{card.nama_pemegang}</p>
+                    )}
                   </div>
-
-                  <div className="flex items-center gap-1.5 mt-2">
-                    <IconIdBadge2 size={13} className="text-gray-400" />
-                    <span className="text-[10px] font-mono font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                      {card.uid_kartu}
-                    </span>
-                  </div>
+                  <p className="text-[15px] text-muted">{card.items.length} alat</p>
                 </div>
-
-                {/* List Alat yang Sedang Dipinjam */}
-                <div className="space-y-2 pt-3 border-t border-gray-100">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                    Daftar Alat Dipinjam:
-                  </p>
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
-                    {card.items.map((item) => {
-                      const durasiText = formatDuration(item.waktu_pinjam);
-                      const durasiMenit = Math.max(0, Math.floor((Date.now() - new Date(item.waktu_pinjam).getTime()) / 60000));
-                      const isLong = durasiMenit >= 90;
-
-                      return (
-                        <div
-                          key={item.transaksi_id || item.id}
-                          className="flex items-center justify-between gap-2 p-2 rounded-lg bg-gray-50/80 border border-gray-100 text-xs"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-                            <span className="font-semibold text-gray-800 truncate" title={item.alat_nama}>
-                              {item.alat_nama}
-                            </span>
-                          </div>
-                          <span
-                            className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
-                              isLong
-                                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : 'bg-white text-gray-600 border-gray-200'
-                            }`}
-                            title={item.waktu_pinjam ? new Date(item.waktu_pinjam).toLocaleString('id-ID') : ''}
-                          >
-                            <IconClock size={11} className={isLong ? 'text-amber-600' : 'text-gray-400'} />
-                            {durasiText}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Footer Card */}
-                <div className="pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-muted">
-                  <span>
-                    Total: <strong className="text-gray-800">{card.items.length} unit</strong>
-                  </span>
-                  <button
-                    onClick={() => setCurrentTab('pengembalian')}
-                    className="text-blue-600 hover:text-blue-700 font-semibold hover:underline"
-                  >
-                    Proses Kembali →
-                  </button>
-                </div>
+                <ul className="space-y-1.5">
+                  {card.items.map((item) => (
+                    <li
+                      key={item.transaksi_id || item.id}
+                      className="flex items-center justify-between gap-3 text-[15px] py-1.5 border-b border-gray-100 last:border-0"
+                    >
+                      <span className="text-gray-800">{item.alat_nama}</span>
+                      <span className="text-muted shrink-0">{formatDuration(item.waktu_pinjam)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  onClick={() => setCurrentTab('pengembalian')}
+                  className="mt-3 text-[15px] font-semibold text-[#1E5AAB] hover:underline min-h-10"
+                >
+                  Proses pengembalian
+                </button>
               </div>
             ))}
           </div>
         )}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="bg-surface border border-main">
+          <div className="px-4 sm:px-5 py-4 border-b border-main flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-main">Peminjaman terbaru</h2>
+            <button
+              onClick={() => setCurrentTab('riwayat')}
+              className="text-[15px] font-semibold text-[#1E5AAB] hover:underline"
+            >
+              Lihat semua
+            </button>
+          </div>
+          {recentLoans.length === 0 ? (
+            <div className="px-5 py-8">
+              <p className="font-semibold text-main">Belum ada peminjaman</p>
+              <p className="text-[15px] text-muted mt-1">Data peminjaman akan muncul di sini.</p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-gray-200">
+              {recentLoans.map((row) => (
+                <li key={row.id} className="px-4 sm:px-5 py-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-medium text-main truncate">{row.nama_alat}</p>
+                    <p className="text-sm text-muted mt-0.5">{row.kelas} · {FMT(row.waktu_pinjam)}</p>
+                  </div>
+                  <Badge status={row.status} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="bg-surface border border-main">
+          <div className="px-4 sm:px-5 py-4 border-b border-main flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-main">Aktivitas RFID</h2>
+            <button
+              onClick={() => setCurrentTab('realtime_card')}
+              className="text-[15px] font-semibold text-[#1E5AAB] hover:underline"
+            >
+              Lihat semua
+            </button>
+          </div>
+          {recentTaps.length === 0 ? (
+            <div className="px-5 py-8">
+              <p className="font-semibold text-main">Belum ada aktivitas RFID</p>
+              <p className="text-[15px] text-muted mt-1">Aktivitas kartu yang masuk akan muncul di sini.</p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-gray-200">
+              {recentTaps.map((row) => (
+                <li key={row.id} className="px-4 sm:px-5 py-3">
+                  <p className="text-[15px] font-medium text-main">
+                    {row.kelas || 'Kartu tidak dikenal'}
+                    {row.nama_alat ? ` · ${row.nama_alat}` : ''}
+                  </p>
+                  <p className="text-sm text-muted mt-0.5">
+                    {row.status === 'ditolak' ? 'Ditolak' : 'Berhasil'} · {FMT(row.waktu_tap)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,12 +1,13 @@
-// src/pages/PenggunaPage.jsx
-// Manajemen User Petugas
-
 import { useState } from 'react';
 import { dbService } from '../services/store';
 import Modal from '../components/Modal';
 import DataTable from '../components/DataTable';
 import Button from '../components/Button';
-import { IconPlus, IconTrash, IconEdit, IconShieldLock, IconUserPlus, IconX, IconCheck } from '@tabler/icons-react';
+import PageHeader from '../components/PageHeader';
+import ConfirmDialog from '../components/ConfirmDialog';
+import FormField, { inputClass } from '../components/FormField';
+import { showFeedback, friendlyError } from '../lib/feedback';
+import { IconPlus } from '@tabler/icons-react';
 
 const EMPTY_FORM = { uid: '', nama: '', username: '', nip: '', role: 'petugas', aktif: true };
 
@@ -15,94 +16,119 @@ export default function PenggunaPage() {
   const [modal, setModal]       = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm]         = useState(EMPTY_FORM);
+  const [errors, setErrors]     = useState({});
+  const [saving, setSaving]     = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [blockSelf, setBlockSelf] = useState(false);
 
   const reload = () => setUsers(dbService.getUsers().filter(u => u.role === 'petugas'));
 
   const openAdd = () => {
     setEditItem(null);
+    setErrors({});
     setForm({ ...EMPTY_FORM, uid: 'USR-' + Date.now() });
     setModal(true);
   };
 
   const openEdit = (item) => {
     setEditItem(item);
+    setErrors({});
     setForm({ ...item, username: item.username || item.email?.split('@')[0] || '' });
     setModal(true);
   };
 
   const handleSave = (e) => {
     e.preventDefault();
-    const current = dbService.getUsers();
+    const next = {};
+    if (!form.nama?.trim()) next.nama = 'Nama lengkap wajib diisi.';
+    if (!form.username?.trim()) next.username = 'Nama pengguna wajib diisi.';
+    setErrors(next);
+    if (Object.keys(next).length) return;
 
-    // Produksi: panggil Edge Function create-petugas
-    // const res = await fetch('/api/create-petugas', { ... })
-    // Fallback demo: simpan ke store lokal
-    const fakeEmail = `${form.username}@sekolah.internal`;
+    setSaving(true);
+    try {
+      const current = dbService.getUsers();
+      const fakeEmail = `${form.username}@sekolah.internal`;
 
-    if (editItem) {
-      const updated = current.map((u) => u.uid === editItem.uid ? { ...u, ...form, email: fakeEmail } : u);
-      dbService.saveUsers(updated);
-    } else {
-      current.push({ ...form, email: fakeEmail, created_at: new Date().toISOString() });
-      dbService.saveUsers(current);
+      if (editItem) {
+        const updated = current.map((u) => u.uid === editItem.uid ? { ...u, ...form, email: fakeEmail } : u);
+        dbService.saveUsers(updated);
+        showFeedback({ type: 'success', title: 'Perubahan berhasil disimpan.' });
+      } else {
+        current.push({ ...form, email: fakeEmail, created_at: new Date().toISOString() });
+        dbService.saveUsers(current);
+        showFeedback({ type: 'success', title: 'Petugas berhasil ditambahkan.' });
+      }
+      setModal(false);
+      reload();
+    } catch (err) {
+      console.error(err);
+      showFeedback({
+        type: 'error',
+        title: 'Data gagal disimpan. Silakan coba lagi.',
+        message: friendlyError(err),
+      });
+    } finally {
+      setSaving(false);
     }
-    setModal(false);
-    reload();
   };
 
-  const handleDelete = (uid) => {
-    if (uid === dbService.getCurrentUser()?.uid) return alert('Tidak dapat menghapus diri sendiri.');
-    if (!confirm('Hapus petugas ini?')) return;
-    dbService.saveUsers(dbService.getUsers().filter((u) => u.uid !== uid));
-    reload();
+  const requestDelete = (row) => {
+    if (row.uid === dbService.getCurrentUser()?.uid) {
+      setBlockSelf(true);
+      return;
+    }
+    setDeleteTarget(row);
+  };
+
+  const handleExecuteDelete = () => {
+    if (!deleteTarget) return;
+    try {
+      dbService.saveUsers(dbService.getUsers().filter((u) => u.uid !== deleteTarget.uid));
+      showFeedback({ type: 'success', title: 'Petugas berhasil dihapus.' });
+      setDeleteTarget(null);
+      reload();
+    } catch (err) {
+      console.error(err);
+      showFeedback({ type: 'error', title: 'Petugas gagal dihapus.', message: friendlyError(err) });
+    }
   };
 
   const columns = [
     {
       key: 'nama',
-      label: 'Nama Lengkap',
+      label: 'Nama lengkap',
       sortable: true,
-      render: (row) => (
-        <p className="font-semibold text-main text-xs">{row.nama}</p>
-      ),
+      render: (row) => <p className="font-medium text-main">{row.nama}</p>,
     },
     {
       key: 'username',
-      label: 'Username',
+      label: 'Nama pengguna',
       sortable: true,
       render: (row) => (
-        <span className="text-[11px] text-blue-700 font-mono bg-blue-50 px-2 py-1 rounded">
-          @{row.username || row.email?.split('@')[0]}
-        </span>
+        <span className="text-muted">{row.username || row.email?.split('@')[0]}</span>
       ),
     },
     {
       key: 'nip',
       label: 'NIP',
       render: (row) => (
-        row.nip
-          ? <span className="text-xs font-mono text-gray-600">{row.nip}</span>
-          : <span className="text-xs text-gray-400">—</span>
+        row.nip ? <span>{row.nip}</span> : <span className="text-muted">—</span>
       ),
     },
     {
       key: 'role',
-      label: 'Role',
+      label: 'Peran',
       sortable: true,
-      render: (row) => (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full capitalize bg-blue-100 text-blue-700">
-          <IconShieldLock size={12} />
-          {row.role}
-        </span>
-      ),
+      render: (row) => <span>{row.role === 'admin' ? 'Admin' : 'Petugas lab'}</span>,
     },
     {
       key: 'aksi',
-      label: '',
+      label: 'Tindakan',
       render: (row) => (
         <div className="flex items-center gap-1 justify-end">
-          <button onClick={() => openEdit(row)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition" title="Edit"><IconEdit size={15} /></button>
-          <button onClick={() => handleDelete(row.uid)} className="p-1.5 text-red-500 hover:bg-red-50 rounded transition" title="Hapus"><IconTrash size={15} /></button>
+          <button type="button" onClick={() => openEdit(row)} className="table-action table-action-edit">Edit</button>
+          <button type="button" onClick={() => requestDelete(row)} className="table-action table-action-danger">Hapus</button>
         </div>
       ),
     },
@@ -110,68 +136,77 @@ export default function PenggunaPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-lg font-bold text-main">Pengguna Petugas</h2>
-        <p className="text-xs text-muted">Kelola akun petugas lab.</p>
-      </div>
+      <PageHeader
+        title="Pengguna"
+        description="Kelola akun petugas yang dapat masuk ke sistem."
+      />
 
       <DataTable
         columns={columns}
         data={users}
         searchKeys={['nama', 'username', 'nip']}
-        searchPlaceholder="Cari petugas..."
+        searchPlaceholder="Cari nama atau NIP..."
+        emptyMessage="Belum ada petugas"
+        emptyDescription="Petugas yang ditambahkan akan muncul di sini."
         actionButton={
           <Button icon={IconPlus} onClick={openAdd} className="w-full md:w-auto justify-center">
-            Tambah Petugas
+            Tambah petugas
           </Button>
         }
       />
 
       <Modal
         isOpen={modal}
-        onClose={() => setModal(false)}
-        title={editItem ? 'Edit Petugas' : 'Tambah Petugas Baru'}
-        subtitle={editItem ? 'Perbarui informasi profil akun petugas lab' : 'Daftarkan akun petugas lab baru ke sistem'}
-        icon={editItem ? IconEdit : IconUserPlus}
-        iconVariant="primary"
+        onClose={() => !saving && setModal(false)}
+        title={editItem ? 'Ubah petugas' : 'Tambah petugas'}
+        subtitle="Kolom bertanda * wajib diisi."
       >
         <form onSubmit={handleSave} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-muted mb-1">Nama Lengkap *</label>
-            <input required value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" placeholder="Budi Santoso" />
-          </div>
+          <FormField label="Nama lengkap" required error={errors.nama}>
+            <input required value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} className={inputClass} placeholder="Budi Santoso" />
+          </FormField>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-muted mb-1">Username *</label>
-              <input required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase().replace(/\s+/g, '') })} className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" placeholder="budi_lab" />
-              <p className="text-[10px] text-muted mt-1">Akan menjadi: @{form.username || '...'}</p>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-muted mb-1">NIP</label>
-              <input value={form.nip || ''} onChange={(e) => setForm({ ...form, nip: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" placeholder="Nomor Induk Pegawai" />
-            </div>
+            <FormField label="Nama pengguna" required error={errors.username} hint="Dipakai untuk masuk ke aplikasi.">
+              <input required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase().replace(/\s+/g, '') })} className={inputClass} placeholder="budi_lab" />
+            </FormField>
+            <FormField label="NIP">
+              <input value={form.nip || ''} onChange={(e) => setForm({ ...form, nip: e.target.value })} className={inputClass} placeholder="Nomor Induk Pegawai" />
+            </FormField>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-muted mb-1">Role *</label>
-            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-              <option value="petugas">Petugas Lab</option>
+          <FormField label="Peran" required>
+            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={`${inputClass} bg-white`}>
+              <option value="petugas">Petugas lab</option>
             </select>
-          </div>
-          {!editItem && (
-            <p className="text-xs text-amber-700 bg-amber-50 p-3 rounded-xl border border-amber-200 font-medium leading-relaxed">
-              ℹ️ Setelah deploy ke Supabase, petugas akan menerima email undangan untuk membuat password sendiri.
-            </p>
-          )}
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 pt-3 border-t border-gray-100">
-            <Button variant="secondary" icon={IconX} onClick={() => setModal(false)} className="w-full sm:w-auto justify-center">
+          </FormField>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 pt-3 border-t border-gray-200">
+            <Button variant="secondary" onClick={() => setModal(false)} disabled={saving} className="w-full sm:w-auto justify-center">
               Batal
             </Button>
-            <Button type="submit" icon={IconCheck} className="w-full sm:w-auto justify-center">
-              Simpan Petugas
+            <Button type="submit" disabled={saving} className="w-full sm:w-auto justify-center">
+              {saving ? 'Menyimpan...' : (editItem ? 'Simpan perubahan' : 'Simpan petugas')}
             </Button>
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleExecuteDelete}
+        title="Hapus pengguna?"
+        message={`Apakah Anda yakin ingin menghapus ${deleteTarget?.nama}?\n\nTindakan ini tidak dapat dibatalkan.`}
+        confirmLabel="Hapus pengguna"
+      />
+
+      <ConfirmDialog
+        isOpen={blockSelf}
+        onClose={() => setBlockSelf(false)}
+        onConfirm={() => setBlockSelf(false)}
+        title="Tidak dapat menghapus akun sendiri"
+        message="Anda sedang masuk dengan akun ini. Minta admin lain jika akun perlu dihapus."
+        confirmLabel="Tutup"
+        confirmVariant="primary"
+      />
     </div>
   );
 }
