@@ -7,6 +7,7 @@ import Badge from '../components/Badge';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
+import PageHeader from '../components/PageHeader';
 import {
   IconAlertTriangle,
   IconAlertOctagon,
@@ -185,16 +186,10 @@ export default function RealtimeCardPage() {
   return (
     <div className="space-y-4 sm:space-y-5">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg sm:text-xl font-bold text-main flex items-center gap-2">
-            <span>Realtime Card</span>
-          </h2>
-          <p className="text-xs sm:text-sm text-muted mt-0.5">
-            Melihat seluruh aktivitas peminjaman dan pengembalian alat secara realtime.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Aktivitas Kartu Secara Realtime"
+        description="Melihat seluruh aktivitas peminjaman dan pengembalian alat lab secara realtime."
+      />
 
       {/* Success Notification */}
       {toastMessage && (

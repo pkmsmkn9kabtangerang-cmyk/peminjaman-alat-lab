@@ -113,21 +113,21 @@ export default function InventarisPage() {
   const columns = [
     {
       key: 'nama',
-      label: 'Nama alat',
+      label: 'Nama Alat',
       sortable: true,
-      render: (row) => <p className="font-medium text-main">{row.nama}</p>,
+      render: (row) => <p className="font-medium text-[13px] lg:text-main">{row.nama}</p>,
     },
     {
       key: 'kode',
-      label: 'Kode barang',
+      label: 'Kode Alat',
       sortable: true,
-      render: (row) => <p className="text-muted">{row.kode}</p>,
+      render: (row) => <p className="text-[13px] lg:text-main ">{row.kode}</p>,
     },
     {
       key: 'kategori',
       label: 'Kategori',
       sortable: true,
-      render: (row) => <span className="capitalize text-muted">{row.kategori}</span>,
+      render: (row) => <span className="capitalize text-[14px] lg:text-main">{row.kategori}</span>,
     },
     {
       key: 'jumlah_total',
@@ -170,11 +170,11 @@ export default function InventarisPage() {
       <DataTable
         columns={columns}
         data={alat}
-        searchPlaceholder="Cari nama atau kode barang..."
+        searchPlaceholder="Cari Alat..."
         searchKeys={['nama', 'kode', 'uid_rfid', 'kategori']}
         emptyMessage="Belum ada barang"
         emptyDescription="Barang yang ditambahkan akan muncul di sini."
-        actionButton={<Button icon={IconPlus} onClick={openAdd}>Tambah barang</Button>}
+        actionButton={<Button icon={IconPlus} onClick={openAdd}>Tambah Alat</Button>}
       />
 
       <datalist id="kategori-list">

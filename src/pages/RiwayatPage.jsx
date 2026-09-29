@@ -7,11 +7,11 @@ import Badge from '../components/Badge';
 import Button from '../components/Button';
 import DataTable from '../components/DataTable';
 import FilterDropdown from '../components/FilterDropdown';
+import PageHeader from '../components/PageHeader';
 import {
   IconClock,
   IconCalendarEvent,
   IconTrash,
-  IconHistory,
   IconAlertTriangle,
   IconAlertOctagon,
   IconShieldExclamation,
@@ -95,37 +95,37 @@ export default function RiwayatPage() {
       key: 'waktu_pinjam',
       label: 'Waktu Pinjam',
       sortable: true,
-      render: (row) => <span className="text-xs text-muted whitespace-nowrap">{FMT(row.waktu_pinjam)}</span>,
+      render: (row) => <span className="font-medium text-[13px] lg:text-main">{FMT(row.waktu_pinjam)}</span>,
     },
     {
       key: 'waktu_kembali',
       label: 'Waktu Kembali',
       sortable: true,
-      render: (row) => <span className="text-xs text-muted whitespace-nowrap">{FMT(row.waktu_kembali)}</span>,
+      render: (row) => <span className="font-medium text-[13px] lg:text-main">{FMT(row.waktu_kembali)}</span>,
     },
     {
       key: 'pemegang',
       label: 'Pemegang',
       sortable: true,
-      render: (row) => <span className="text-xs font-semibold text-main">{row.pemegang}</span>,
+      render: (row) => <span className="font-medium text-[13px] lg:text-main">{row.pemegang}</span>,
     },
     {
       key: 'kelas',
       label: 'Kelas',
       sortable: true,
-      render: (row) => <span className="text-xs text-main font-medium">{row.kelas}</span>,
+      render: (row) => <span className="text-[13px] lg:text-main font-medium">{row.kelas}</span>,
     },
     {
       key: 'uid_kartu',
       label: 'UID Kartu',
       sortable: true,
-      render: (row) => <span className="text-[10px] font-mono bg-gray-100 px-2 py-1 rounded text-gray-700">{row.uid_kartu}</span>,
+      render: (row) => <span className="text-[13px] lg:text-main text-gray-700">{row.uid_kartu}</span>,
     },
     {
       key: 'nama_alat',
       label: 'Alat',
       sortable: true,
-      render: (row) => <span className="text-xs font-medium text-main">{row.nama_alat}</span>,
+      render: (row) => <span className="font-medium text-[13px] lg:text-main">{row.nama_alat}</span>,
     },
     {
       key: 'status_pinjam',
@@ -150,17 +150,10 @@ export default function RiwayatPage() {
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg sm:text-xl font-bold text-main flex items-center gap-2">
-            <span>Riwayat Peminjaman</span>
-          </h2>
-          <p className="text-xs sm:text-sm text-muted mt-0.5">
-            Seluruh riwayat catatan peminjaman dan pengembalian alat lab.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Riwayat Peminjaman"
+        description="Seluruh riwayat catatan peminjaman dan pengembalian alat lab."
+      />
 
       {/* Success Notification */}
       {toastMessage && (

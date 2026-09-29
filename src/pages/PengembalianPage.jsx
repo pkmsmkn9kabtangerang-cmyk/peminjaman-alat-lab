@@ -7,6 +7,7 @@ import Button from '../components/Button';
 import Badge from '../components/Badge';
 import FilterDropdown from '../components/FilterDropdown';
 import { IconCheck, IconCornerDownLeft, IconUsers, IconBox } from '@tabler/icons-react';
+import PageHeader from '../components/PageHeader';
 
 const FMT = (iso) => iso
   ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
@@ -72,11 +73,10 @@ export default function PengembalianPage() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div>
-        <h2 className="text-lg font-bold text-main">Pengembalian Manual</h2>
-        <p className="text-xs text-muted">Pencatatan pengembalian alat lab tanpa scan RFID.</p>
-      </div>
+      <PageHeader
+        title="Pengembalian"
+        description="Catat pengembalian alat secara manual jika kartu Sedang bermasalah, rusak atau hilang."
+      />
 
       {/* Alert Messages */}
       {success && (
@@ -89,38 +89,34 @@ export default function PengembalianPage() {
       )}
 
       {/* Form Card */}
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 shadow-sm">
-        <div className="p-5 border-b border-gray-100 bg-gray-50/50 rounded-t-xl">
-          <h3 className="font-semibold text-sm text-gray-800">Form Pengembalian</h3>
-          <p className="text-xs text-gray-500 mt-0.5">Pilih kelas terlebih dahulu, lalu pilih alat yang dikembalikan</p>
-        </div>
+      <form onSubmit={handleSubmit} className="bg-white border border-main">
+        <div className="px-5 py-4 border-b border-main">
+  <h2 className="font-semibold text-base text-main">Form pengembalian</h2>
+  <p className="text-[15px] text-muted mt-0.5">
+    Pilih kelas terlebih dahulu, lalu pilih alat yang ingin dikembalikan.
+  </p>
+</div>
 
-        <div className="p-5 lg:p-6">
+        <div className="p-5 space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
             {/* ── Kolom Kiri: Pilih Kartu ── */}
             <div className="space-y-3">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <IconUsers size={14} className="text-blue-600" />
-                </div>
-                <span className="font-semibold text-sm text-gray-800">Pilih Kelas / Kartu RFID</span>
-              </div>
-
+              <p className="font-medium text-[15px] text-main">Kelas peminjam *</p>
               <FilterDropdown
                 icon={IconUsers}
                 value={selectedKartuId}
                 onChange={(v) => setSelectedKartuId(v)}
-                options={[{ value: '', label: '— Pilih Kelas Peminjam —' }, ...kartuOptions]}
-                placeholder="— Pilih Kelas Peminjam —"
+                options={[{ value: '', label: 'Pilih Kelas Peminjam' }, ...kartuOptions]}
+                placeholder="Pilih Kelas Peminjam"
                 className="w-full"
               />
 
               {/* Info kartu terpilih */}
               {selectedKartuObj && (
-                <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs">
-                  <p className="font-bold text-blue-800">{selectedKartuObj.kelas}</p>
-                  <p className="text-blue-600 mt-0.5">{selectedKartuObj.nama_pemegang} · <span className="font-mono">{selectedKartuObj.uid_kartu}</span></p>
+                <div className="border border-gray-200 px-3 py-3 text-[15px]">
+                  <p className="font-bold">{selectedKartuObj.kelas}</p>
+                  <p className="mt-0.5">{selectedKartuObj.nama_pemegang} · <span className="font-mono">{selectedKartuObj.uid_kartu}</span></p>
                 </div>
               )}
             </div>
@@ -128,9 +124,6 @@ export default function PengembalianPage() {
             {/* ── Kolom Kanan: Daftar Pinjaman Aktif ── */}
             <div className="space-y-3">
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center">
-                  <IconBox size={14} className="text-amber-600" />
-                </div>
                 <span className="font-semibold text-sm text-gray-800">
                   Pilih Alat yang Dikembalikan
                   {selectedKartuId && (
@@ -186,11 +179,10 @@ export default function PengembalianPage() {
           <Button
             type="submit"
             variant="success"
-            icon={IconCornerDownLeft}
             className="w-full lg:w-auto lg:min-w-[240px] justify-center py-2.5"
             disabled={!selectedKartuId || !selectedAlat}
           >
-            Proses Pengembalian Manual
+            Proses Pengembalian
           </Button>
         </div>
       </form>

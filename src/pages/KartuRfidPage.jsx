@@ -179,13 +179,13 @@ export default function KartuRfidPage() {
     <div className="space-y-5">
       <PageHeader
         title="Kartu RFID"
-        description="Daftarkan kartu kelas. Kartu yang masih meminjam alat tidak dapat dihapus."
+        description="Tambah, Edit, Hapus dan Blokir Kartu RFID"
       />
 
       <DataTable
         columns={columns}
         data={kartu}
-        searchPlaceholder="Cari kelas atau nama pemegang..."
+        searchPlaceholder="Cari Kelas..."
         searchKeys={['kelas', 'nama_pemegang', 'uid_kartu']}
         emptyMessage="Belum ada kartu RFID"
         emptyDescription="Kartu yang didaftarkan akan muncul di sini."

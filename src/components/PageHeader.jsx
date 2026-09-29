@@ -4,7 +4,7 @@ export default function PageHeader({ title, description, action }) {
       <div className="min-w-0">
         <h1 className="text-xl font-semibold text-main tracking-tight">{title}</h1>
         {description && (
-          <p className="text-[15px] text-muted mt-1 leading-relaxed max-w-2xl">{description}</p>
+          <p className="text-[15px] text-muted mt-1 leading-relaxed max-w-4x mb-5 lg:mb-3">{description}</p>
         )}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}

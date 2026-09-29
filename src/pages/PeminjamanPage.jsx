@@ -5,7 +5,7 @@ import Button from '../components/Button';
 import FilterDropdown from '../components/FilterDropdown';
 import PageHeader from '../components/PageHeader';
 import { showFeedback } from '../lib/feedback';
-import { IconPlus, IconMinus } from '@tabler/icons-react';
+import { IconPlus, IconMinus, IconUsers } from '@tabler/icons-react';
 
 export default function PeminjamanPage() {
   const [kartuList, setKartuList]   = useState([]);
@@ -76,13 +76,13 @@ export default function PeminjamanPage() {
     <div className="space-y-5">
       <PageHeader
         title="Peminjaman"
-        description="Catat peminjaman alat secara manual jika pembaca kartu sedang tidak dipakai."
+        description="Catat peminjaman alat secara manual jika kartu Sedang bermasalah, rusak atau hilang."
       />
 
-      <form onSubmit={handleSubmit} className="bg-white border border-main max-w-4xl">
+      <form onSubmit={handleSubmit} className="bg-white border border-main max-w-4xl lg:max-w-full">
         <div className="px-5 py-4 border-b border-main">
           <h2 className="font-semibold text-base text-main">Form peminjaman</h2>
-          <p className="text-[15px] text-muted mt-0.5">Kolom bertanda * wajib diisi.</p>
+          <p className="text-[15px] text-muted mt-0.5">Pilih kelas, alat, lalu jumlah unit yang akan dipinjam.</p>
         </div>
 
         <div className="p-5 space-y-6">
@@ -91,9 +91,11 @@ export default function PeminjamanPage() {
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
             <div className="space-y-3">
               <p className="font-medium text-[15px] text-main">Kelas peminjam *</p>
               <FilterDropdown
+              icon={IconUsers}
                 value={selectedKartu?.uid_kartu ?? ''}
                 onChange={(uid) => {
                   const found = kartuList.find((k) => k.uid_kartu === uid);

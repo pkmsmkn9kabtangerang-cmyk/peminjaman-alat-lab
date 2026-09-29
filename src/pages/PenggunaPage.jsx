@@ -138,7 +138,7 @@ export default function PenggunaPage() {
     <div className="space-y-5">
       <PageHeader
         title="Pengguna"
-        description="Kelola akun petugas yang dapat masuk ke sistem."
+        description="Tambah, Edit & Hapus akun petugas lab"
       />
 
       <DataTable
