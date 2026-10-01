@@ -235,3 +235,8 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.tap_log;
   END IF;
 END $$;
+
+-- Catatan Update: 
+-- Kolom 'username' sudah tersedia di tabel profiles.
+-- RLS profiles, transaksi, tap_log, dan alat sudah berjalan optimal.
+-- Tidak ada perubahan schema tabel yang diperlukan.

@@ -1,4 +1,4 @@
-﻿// supabase/functions/rfid-tap/index.js
+// supabase/functions/rfid-tap/index.js
 // Edge Function: Memproses tap RFID dari ESP32 / Simulator
 // Di-invoke oleh: firmware ESP32 atau callRfidTap() di frontend saat Supabase terkonfigurasi.
 
@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
 
     if (kartu) {
       if (!kartu.aktif) {
-        await addTapLog(supabase, uid, null, "kartu", null, "ditolak", "kartu_nonaktif", kartu.kelas, null);
+        await addTapLog(supabase, uid, null, "kartu", "otomatis", "ditolak", "kartu_nonaktif", kartu.kelas, null);
         return json({ ok: false, error: "kartu_nonaktif", type: "kartu" });
       }
 
@@ -86,13 +86,13 @@ Deno.serve(async (req) => {
       if (currentSession) {
         if (currentSession.uid_kartu === uid) {
           clearSession(uid);
-          await addTapLog(supabase, uid, null, "kartu", "selesai", "berhasil", null, kartu.kelas, null);
+          await addTapLog(supabase, uid, null, "kartu", "otomatis", "berhasil", null, kartu.kelas, null);
           return json({
             ok: true, type: "kartu", action: "selesai", jenis: "selesai",
             kelas: kartu.kelas, message: `Sesi ${kartu.kelas} selesai.`,
           });
         } else {
-          await addTapLog(supabase, uid, null, "kartu", null, "ditolak", "sesi_kartu_lain_aktif", kartu.kelas, null);
+          await addTapLog(supabase, uid, null, "kartu", "otomatis", "ditolak", "sesi_kartu_lain_aktif", kartu.kelas, null);
           return json({
             ok: false, error: "sesi_kartu_lain_aktif", type: "kartu",
             activeCard: currentSession,
@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
 
       const jenis = (transaksiAktif && transaksiAktif.length > 0) ? "kembali" : "pinjam";
       setSession(uid, jenis, kartu.kelas);
-      await addTapLog(supabase, uid, null, "kartu", jenis, "berhasil", null, kartu.kelas, null);
+      await addTapLog(supabase, uid, null, "kartu", "otomatis", "berhasil", null, kartu.kelas, null);
       return json({ ok: true, type: "kartu", action: "mulai", jenis, kelas: kartu.kelas });
     }
 
@@ -123,13 +123,13 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!alat) {
-      await addTapLog(supabase, null, uid, "alat", null, "ditolak", "uid_tidak_dikenal", null, null);
+      await addTapLog(supabase, null, uid, "alat", "otomatis", "ditolak", "uid_tidak_dikenal", null, null);
       return json({ ok: false, error: "uid_tidak_dikenal", type: "alat" });
     }
 
     const activeSessions = getActiveSessions();
     if (activeSessions.length === 0) {
-      await addTapLog(supabase, null, uid, "alat", null, "ditolak", "sesi_tidak_ada", null, alat.nama);
+      await addTapLog(supabase, null, uid, "alat", "otomatis", "ditolak", "sesi_tidak_ada", null, alat.nama);
       return json({ ok: false, error: "sesi_tidak_ada", type: "alat" });
     }
 
@@ -159,7 +159,7 @@ Deno.serve(async (req) => {
       jenis = "kembali";
     } else {
       if (alat.stok_tersedia <= 0) {
-        await addTapLog(supabase, sess.uid_kartu, uid, "alat", null, "ditolak", "stok_habis", kelas, alat.nama);
+        await addTapLog(supabase, sess.uid_kartu, uid, "alat", "otomatis", "ditolak", "stok_habis", kelas, alat.nama);
         return json({ ok: false, error: "stok_habis", type: "alat" });
       }
       const trxId = "TRX-" + Date.now();
@@ -178,7 +178,7 @@ Deno.serve(async (req) => {
     }
 
     extendSession(sess.uid_kartu);
-    await addTapLog(supabase, sess.uid_kartu, uid, "alat", jenis, "berhasil", null, kelas, alat.nama);
+    await addTapLog(supabase, sess.uid_kartu, uid, jenis, "otomatis", "berhasil", null, kelas, alat.nama);
     return json({ ok: true, type: "alat", jenis, alat: alat.nama, kelas });
 
   } catch (err) {
@@ -188,11 +188,10 @@ Deno.serve(async (req) => {
 });
 
 async function addTapLog(supabase, uid_kartu, uid_alat, jenis_tap, jenis_terdeteksi, status, error_code, kelas, nama_alat) {
-  const deteksi = jenis_terdeteksi === "manual" ? "manual" : "otomatis";
   await supabase.from("tap_log").insert({
     id: "LOG-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
     uid_kartu, uid_alat, jenis_tap,
-    jenis_terdeteksi: deteksi,
+    jenis_terdeteksi,
     kelas, nama_alat, status, error_code,
     is_read: false,
     waktu_tap: new Date().toISOString(),

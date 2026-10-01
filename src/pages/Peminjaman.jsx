@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { dbService } from '../services/store';
 import Badge from '../components/Badge';
 import Button from '../components/Button';
-import FilterDropdown from '../components/FilterDropdown';
 import PageHeader from '../components/PageHeader';
+import FilterDropdown from '../components/FilterDropdown';
 import { showFeedback } from '../lib/feedback';
-import { IconPlus, IconMinus, IconUsers } from '@tabler/icons-react';
+import { IconPlus, IconMinus, IconUsers, IconTools } from '@tabler/icons-react';
 
 export default function PeminjamanPage() {
   const [kartuList, setKartuList]   = useState([]);
@@ -38,6 +38,7 @@ export default function PeminjamanPage() {
     setFieldError('');
     if (!selectedKartu || !selectedAlatId) {
       setFieldError('Pilih kelas dan alat terlebih dahulu.');
+      showFeedback({ type: 'warning', title: 'Data tidak valid', message: 'Pilih kelas dan alat terlebih dahulu.' });
       return;
     }
     setSaving(true);
@@ -75,14 +76,14 @@ export default function PeminjamanPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Peminjaman"
+        title="Peminjaman Manual"
         description="Catat peminjaman alat secara manual jika kartu Sedang bermasalah, rusak atau hilang."
       />
 
       <form onSubmit={handleSubmit} className="bg-white border border-main max-w-4xl lg:max-w-full">
-        <div className="px-5 py-4 border-b border-main">
-          <h2 className="font-semibold text-base text-main">Form peminjaman</h2>
-          <p className="text-[15px] text-muted mt-0.5">Pilih kelas, alat, lalu jumlah unit yang akan dipinjam.</p>
+        <div className="px-5 py-4 border-b border-gray-200 bg-gray-50">
+          <h2 className="font-bold text-lg text-gray-800">Form Peminjaman Manual</h2>
+          <p className="text-sm text-gray-600 mt-1">Gunakan formulir ini jika kartu tidak bisa di-tap (bermasalah/hilang).</p>
         </div>
 
         <div className="p-5 space-y-6">
@@ -93,72 +94,76 @@ export default function PeminjamanPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             
             <div className="space-y-3">
-              <p className="font-medium text-[15px] text-main">Kelas peminjam *</p>
+              <p className="font-bold text-base text-gray-800">1. Siapa yang meminjam? *</p>
               <FilterDropdown
-              icon={IconUsers}
+                icon={IconUsers}
                 value={selectedKartu?.uid_kartu ?? ''}
                 onChange={(uid) => {
                   const found = kartuList.find((k) => k.uid_kartu === uid);
                   setSelectedKartu(found ?? null);
                 }}
-                options={[{ value: '', label: 'Pilih kelas' }, ...kartuOptions]}
-                placeholder="Pilih kelas"
+                options={kartuOptions}
+                placeholder="Pilih Peminjam"
+                size="lg"
                 className="w-full"
+                searchable={true}
               />
+
               {selectedKartu && (
-                <div className="border border-gray-200 px-3 py-3 text-[15px]">
-                  <p className="font-semibold">{selectedKartu.kelas}</p>
-                  <p className="text-muted mt-0.5">{selectedKartu.nama_pemegang || 'Pemegang belum diisi'}</p>
+                <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                  <p className="font-bold text-blue-900 text-lg">{selectedKartu.kelas}</p>
+                  <p className="text-blue-700 mt-1">{selectedKartu.nama_pemegang || 'Nama pemegang belum diisi'}</p>
                 </div>
               )}
             </div>
 
             <div className="space-y-3">
-              <p className="font-medium text-[15px] text-main">Alat *</p>
+              <p className="font-bold text-base text-gray-800">2. Alat apa yang dipinjam? *</p>
               <FilterDropdown
+                icon={IconTools}
                 value={selectedAlatId}
-                onChange={(v) => { setSelectedAlatId(v); setJumlah(1); }}
-                options={[{ value: '', label: 'Pilih alat' }, ...alatOptions]}
-                placeholder="Pilih alat"
+                onChange={(id) => {
+                  setSelectedAlatId(id);
+                  setJumlah(1);
+                }}
+                options={alatOptions}
+                placeholder="Pilih Alat Laboratorium"
+                size="lg"
                 className="w-full"
+                searchable={true}
               />
+
               {selectedAlat && (
-                <div className="border border-gray-200 px-3 py-3 text-[15px] space-y-2">
+                <div className="mt-3 p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-muted">Stok tersedia</span>
-                    <span className={`font-semibold text-lg ${selectedAlat.stok_tersedia === 0 ? 'text-red-700' : 'text-main'}`}>
-                      {selectedAlat.stok_tersedia} / {selectedAlat.jumlah_total}
+                    <span className="text-gray-600 font-medium">Sisa stok saat ini</span>
+                    <span className={`font-bold text-xl ${selectedAlat.stok_tersedia === 0 ? 'text-red-700' : 'text-gray-900'}`}>
+                      {selectedAlat.stok_tersedia}
                     </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge status={selectedAlat.stok_tersedia > 0 ? 'tersedia' : 'habis'} />
-                    {selectedAlat.jumlah_rusak > 0 && (
-                      <span className="text-orange-800">{selectedAlat.jumlah_rusak} unit rusak</span>
-                    )}
                   </div>
                 </div>
               )}
 
-              <div>
-                <p className="font-medium text-[15px] text-main mb-2">Jumlah unit</p>
-                <div className="flex items-center gap-3">
+              <div className="mt-4">
+                <p className="font-bold text-base text-gray-800 mb-3">3. Berapa Jumlahnya?</p>
+                <div className="flex items-center gap-4">
                   <button
                     type="button"
                     onClick={() => setJumlah((j) => Math.max(1, j - 1))}
-                    className="w-11 h-11 border border-gray-300 hover:bg-gray-50 flex items-center justify-center"
+                    className="w-12 h-12 rounded-xl border border-gray-300 hover:bg-gray-100 flex items-center justify-center bg-white"
                     aria-label="Kurangi"
                   >
-                    <IconMinus size={16} />
+                    <IconMinus size={20} />
                   </button>
-                  <span className="w-10 text-center font-semibold text-lg">{jumlah}</span>
+                  <span className="w-12 text-center font-bold text-2xl">{jumlah}</span>
                   <button
                     type="button"
                     onClick={() => setJumlah((j) => Math.min(selectedAlat?.stok_tersedia ?? 1, j + 1))}
-                    className="w-11 h-11 border border-gray-300 hover:bg-gray-50 flex items-center justify-center disabled:opacity-40"
+                    className="w-12 h-12 rounded-xl border border-gray-300 hover:bg-gray-100 flex items-center justify-center disabled:opacity-40 bg-white"
                     disabled={!selectedAlat}
                     aria-label="Tambah"
                   >
-                    <IconPlus size={16} />
+                    <IconPlus size={20} />
                   </button>
                 </div>
               </div>
@@ -166,16 +171,16 @@ export default function PeminjamanPage() {
           </div>
 
           {selectedKartu && selectedAlat && (
-            <div className="border border-gray-200 px-4 py-3 text-[15px] bg-gray-50">
-              <p className="font-semibold mb-2">Ringkasan</p>
-              <p>{selectedKartu.kelas} meminjam {jumlah} unit {selectedAlat.nama}.</p>
+            <div className="border-2 border-blue-200 p-4 rounded-xl text-base bg-blue-50 mt-6">
+              <p className="font-bold text-blue-900 mb-1">Cek Kembali Sebelum Simpan</p>
+              <p className="text-blue-800">Kelas <b>{selectedKartu.kelas}</b> akan meminjam <b>{jumlah} unit {selectedAlat.nama}</b>.</p>
             </div>
           )}
         </div>
 
         <div className="px-5 pb-5">
-          <Button type="submit" disabled={saving} className="w-full lg:w-auto justify-center">
-            {saving ? 'Menyimpan...' : 'Proses peminjaman'}
+          <Button type="submit" disabled={saving} className="w-full lg:w-auto justify-center h-12 text-base font-bold">
+            {saving ? 'Menyimpan...' : 'Simpan Peminjaman Sekarang'}
           </Button>
         </div>
       </form>

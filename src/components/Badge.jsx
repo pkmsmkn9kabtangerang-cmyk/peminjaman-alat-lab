@@ -45,8 +45,11 @@ export default function Badge({ status, className = '' }) {
 
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-sm font-medium ${variant} ${className}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm font-semibold border shadow-sm ${variant} ${className}`}
     >
+      <svg className="w-1.5 h-1.5 fill-current" viewBox="0 0 8 8">
+        <circle cx="4" cy="4" r="3" />
+      </svg>
       {label}
     </span>
   );

@@ -51,7 +51,10 @@ export default function KartuRfidPage() {
     const used = current.some((k) => k.uid_kartu === form.uid_kartu.trim() && k.uid_kartu !== editItem?.uid_kartu);
     if (used) next.uid_kartu = 'Nomor kartu tersebut sudah digunakan.';
     setErrors(next);
-    if (Object.keys(next).length) return;
+    if (Object.keys(next).length) {
+      showFeedback({ type: 'warning', title: 'Data tidak valid', message: Object.values(next)[0] });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -124,7 +127,7 @@ export default function KartuRfidPage() {
       key: 'pemegang',
       label: 'Pemegang',
       sortable: true,
-      render: (row) => <span>{row.nama_pemegang || '—'}</span>,
+      render: (row) => <span className='font-medium text-main'>{row.nama_pemegang || '—'}</span>,
     },
     {
       key: 'pinjaman_aktif',
@@ -178,7 +181,7 @@ export default function KartuRfidPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Kartu RFID"
+        title="Kelola Kartu"
         description="Tambah, Edit, Hapus dan Blokir Kartu RFID"
       />
 
@@ -207,7 +210,7 @@ export default function KartuRfidPage() {
             label="Nomor kartu"
             required
             error={errors.uid_kartu}
-            hint="Nomor teknis kartu. Biasanya sudah terisi otomatis."
+            hint="Otomatis teracak saat menambah Kartu (bisa edit sendiri)"
           >
             <input
               required

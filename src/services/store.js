@@ -240,7 +240,7 @@ export const dbService = {
     if (kartu) {
       // --- UID adalah kartu ---
       if (!kartu.aktif) {
-        dbService._addTapLog(uid, null, 'kartu', null, 'ditolak', 'kartu_nonaktif', kartu.kelas, null);
+        dbService._addTapLog(uid, null, 'kartu', 'otomatis', 'ditolak', 'kartu_nonaktif', kartu.kelas, null);
         return { ok: false, error: 'kartu_nonaktif', type: 'kartu' };
       }
 
@@ -252,7 +252,7 @@ export const dbService = {
         // Jika sesi aktif adalah milik kartu yang sama -> Pengguna men-tap kartu lagi untuk mengakhiri sesi
         if (currentActiveSession.uid_kartu === uid) {
           clearSession(uid);
-          dbService._addTapLog(uid, null, 'kartu', 'selesai', 'berhasil', null, kartu.kelas, null);
+          dbService._addTapLog(uid, null, 'kartu', 'otomatis', 'berhasil', null, kartu.kelas, null);
           return {
             ok: true,
             type: 'kartu',
@@ -264,7 +264,7 @@ export const dbService = {
         } else {
           // Kartu lain (User 2) men-tap saat sesi User 1 masih aktif -> Tolak!
           const activeKelas = currentActiveSession.kelas || currentActiveSession.uid_kartu;
-          dbService._addTapLog(uid, null, 'kartu', null, 'ditolak', 'sesi_kartu_lain_aktif', kartu.kelas, null);
+          dbService._addTapLog(uid, null, 'kartu', 'otomatis', 'ditolak', 'sesi_kartu_lain_aktif', kartu.kelas, null);
           return {
             ok: false,
             error: 'sesi_kartu_lain_aktif',
@@ -280,7 +280,7 @@ export const dbService = {
       const hasAktif  = transaksi.some((t) => t.uid_kartu === uid && t.status === 'dipinjam');
       const jenis     = hasAktif ? 'kembali' : 'pinjam';
       setSession(uid, jenis, kartu.kelas);
-      dbService._addTapLog(uid, null, 'kartu', jenis, 'berhasil', null, kartu.kelas, null);
+      dbService._addTapLog(uid, null, 'kartu', 'otomatis', 'berhasil', null, kartu.kelas, null);
       return { ok: true, type: 'kartu', action: 'mulai', jenis, kelas: kartu.kelas };
     }
 
@@ -289,14 +289,14 @@ export const dbService = {
     const alat      = alatList.find((a) => a.uid_rfid === uid);
 
     if (!alat) {
-      dbService._addTapLog(null, uid, 'alat', null, 'ditolak', 'uid_tidak_dikenal', null, null);
+      dbService._addTapLog(null, uid, 'alat', 'otomatis', 'ditolak', 'uid_tidak_dikenal', null, null);
       return { ok: false, error: 'uid_tidak_dikenal', type: 'alat' };
     }
 
     // Cari sesi kartu aktif (cek semua sesi — simulasi 1 device)
     const activeSessions = dbService.getActiveSessions();
     if (activeSessions.length === 0) {
-      dbService._addTapLog(null, uid, 'alat', null, 'ditolak', 'sesi_tidak_ada', null, alat.nama);
+      dbService._addTapLog(null, uid, 'alat', 'otomatis', 'ditolak', 'sesi_tidak_ada', null, alat.nama);
       return { ok: false, error: 'sesi_tidak_ada', type: 'alat' };
     }
 
@@ -322,7 +322,7 @@ export const dbService = {
     } else {
       // Pinjam — cek stok
       if (alat.stok_tersedia <= 0) {
-        dbService._addTapLog(sess.uid_kartu, uid, 'alat', null, 'ditolak', 'stok_habis', kartuData?.kelas, alat.nama);
+        dbService._addTapLog(sess.uid_kartu, uid, 'alat', 'otomatis', 'ditolak', 'stok_habis', kartuData?.kelas, alat.nama);
         return { ok: false, error: 'stok_habis', type: 'alat' };
       }
       const newTrx = {
@@ -347,7 +347,7 @@ export const dbService = {
     }
 
     extendSession(sess.uid_kartu);
-    dbService._addTapLog(sess.uid_kartu, uid, 'alat', jenis, 'berhasil', null, kartuData?.kelas, alat.nama);
+    dbService._addTapLog(sess.uid_kartu, uid, jenis, 'otomatis', 'berhasil', null, kartuData?.kelas, alat.nama);
     return { ok: true, type: 'alat', jenis, alat: alat.nama, kelas: kartuData?.kelas };
   },
 
@@ -394,12 +394,11 @@ export const dbService = {
 
   // ── Private helper: tambah tap_log ───────────────────────────
   _addTapLog: (uid_kartu, uid_alat, jenis_tap, jenis_terdeteksi, status, error_code, kelas, nama_alat) => {
-    const deteksi = jenis_terdeteksi === 'manual' ? 'manual' : 'otomatis';
     const log = {
       id: 'LOG-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
       uid_kartu, uid_alat,
       jenis_tap,
-      jenis_terdeteksi: deteksi,
+      jenis_terdeteksi,
       kelas, nama_alat,
       status,
       error_code,

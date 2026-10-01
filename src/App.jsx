@@ -4,17 +4,17 @@ import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { getErrorMessage } from './lib/handleError';
 import Sidebar from './components/Sidebar';
 import NotificationToast from './components/NotificationToast';
-import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
-import InventarisPage from './pages/InventarisPage';
-import ListAlatPage from './pages/ListAlatPage';
-import KartuRfidPage from './pages/KartuRfidPage';
-import RealtimeCardPage from './pages/RealtimeCardPage';
-import PeminjamanPage from './pages/PeminjamanPage';
-import PengembalianPage from './pages/PengembalianPage';
-import RiwayatPage from './pages/RiwayatPage';
-import PenggunaPage from './pages/PenggunaPage';
-import SimulasiIotPage from './pages/SimulasiIotPage';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import KelolaAlat from './pages/KelolaAlat';
+import DaftarAlat from './pages/DaftarAlat';
+import KelolaKartu from './pages/KelolaKartu';
+import AktivitasKartu from './pages/AktivitasKartu';
+import Peminjaman from './pages/Peminjaman';
+import Pengembalian from './pages/Pengembalian';
+import Riwayat from './pages/Riwayat';
+import KelolaPetugas from './pages/KelolaPetugas';
+import SimulasiKartu from './pages/SimulasiKartu';
 import { IconBell, IconX, IconCheck, IconAlertTriangle } from '@tabler/icons-react';
 
 const PAGE_TITLES = {
@@ -236,29 +236,14 @@ export default function App() {
       />
 
       <main className="flex-1 md:ml-[232px] min-h-screen flex flex-col min-w-0">
-        <header className="min-h-14 bg-surface border-b border-main px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-3 min-w-0">
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="md:hidden p-2 -ml-2 text-gray-700 hover:bg-gray-100 rounded min-h-11 min-w-11"
-              aria-label="Buka menu"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <h2 className="text-lg font-semibold text-main truncate">
-              {PAGE_TITLES[currentTab] ?? currentTab}
-            </h2>
-          </div>
-
+        <header className="min-h-14 md:min-h-16 bg-surface border-b border-main px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
+          <div className="flex items-center gap-3 min-w-0"></div>
           <button
             id="btn-bell-notifikasi"
             onClick={() => handleTabChange('realtime_card')}
             className="relative px-3 py-2 text-[15px] font-medium text-gray-700 hover:bg-gray-100 rounded min-h-11 inline-flex items-center gap-2"
           >
-            <IconBell size={18} />
-            <span className="hidden sm:inline">Aktivitas RFID</span>
+            <IconBell size={22} />
             {unreadCount > 0 && (
               <span className="bg-red-700 text-white text-xs font-semibold rounded-full min-w-5 h-5 px-1 flex items-center justify-center">
                 {unreadCount > 9 ? '9+' : unreadCount}
@@ -269,17 +254,17 @@ export default function App() {
 
         <div className="p-4 sm:p-6 flex-1 min-w-0">
           <div className={currentTab === 'dashboard' ? 'block' : 'hidden'}>
-            <DashboardPage setCurrentTab={handleTabChange} user={currentUser} />
+            <Dashboard setCurrentTab={handleTabChange} user={currentUser} />
           </div>
-          {currentTab === 'realtime_card' && <RealtimeCardPage />}
-          {currentTab === 'peminjaman'    && <PeminjamanPage />}
-          {currentTab === 'pengembalian'  && <PengembalianPage />}
-          {currentTab === 'riwayat'       && <RiwayatPage />}
-          {currentTab === 'list_alat'     && <ListAlatPage />}
-          {currentTab === 'inventaris'    && <InventarisPage />}
-          {currentTab === 'kartu_rfid'    && <KartuRfidPage />}
-          {currentTab === 'pengguna'      && <PenggunaPage />}
-          {currentTab === 'simulasi_iot'  && <SimulasiIotPage />}
+          {currentTab === 'realtime_card' && <AktivitasKartu />}
+          {currentTab === 'peminjaman'    && <Peminjaman />}
+          {currentTab === 'pengembalian'  && <Pengembalian />}
+          {currentTab === 'riwayat'       && <Riwayat />}
+          {currentTab === 'list_alat'     && <DaftarAlat />}
+          {currentTab === 'inventaris'    && <KelolaAlat />}
+          {currentTab === 'kartu_rfid'    && <KelolaKartu />}
+          {currentTab === 'pengguna'      && <KelolaPetugas />}
+          {currentTab === 'simulasi_iot'  && <SimulasiKartu />}
         </div>
       </main>
     </div>

@@ -10,13 +10,10 @@ import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
 import {
   IconAlertTriangle,
-  IconAlertOctagon,
-  IconShieldExclamation,
   IconTrash,
-  IconCheck,
-  IconCopy,
   IconX,
   IconCircleCheck,
+  IconAlertCircle,
 } from '@tabler/icons-react';
 
 const FORMAT_WIB = (iso) => {
@@ -36,10 +33,12 @@ export default function RealtimeCardPage() {
   const [newIds, setNewIds]       = useState(new Set());
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearInput, setClearInput]         = useState('');
-  const [copied, setCopied]                 = useState(false);
-  const [toastMessage, setToastMessage]     = useState('');
+  const [toast, setToast]                   = useState(null);
   const CONFIRM_TEXT = 'hapus semua log';
   const prevLen = useRef(taps.length);
+
+  const user = dbService.getCurrentUser();
+  const isAdmin = user?.role === 'admin';
 
   const reload = () => {
     const logs = dbService.getTapLog();
@@ -88,18 +87,31 @@ export default function RealtimeCardPage() {
 
   const handleClearAll = () => {
     if (clearInput.toLowerCase() !== CONFIRM_TEXT) return;
+    if (taps.length === 0) {
+      setShowClearModal(false);
+      setClearInput('');
+      setToast({
+        type: 'warning',
+        message: 'Tidak ada data aktivitas tap RFID untuk dihapus (log sudah kosong).',
+      });
+      setTimeout(() => setToast(null), 4500);
+      return;
+    }
     dbService.saveTapLog([]);
     setShowClearModal(false);
     setClearInput('');
     reload();
-    setToastMessage('Semua log aktivitas tap RFID hari ini berhasil dibersihkan.');
-    setTimeout(() => setToastMessage(''), 4500);
+    setToast({
+      type: 'success',
+      message: 'Semua log aktivitas tap RFID hari ini berhasil dibersihkan.',
+    });
+    setTimeout(() => setToast(null), 4500);
   };
 
   const columns = [
     {
       key: 'uid_kartu',
-      label: 'Kartu ID',
+      label: 'ID Kartu',
       render: (row) => (
         <div className="flex items-center gap-2">
           {row._isNew && (
@@ -109,7 +121,7 @@ export default function RealtimeCardPage() {
             </span>
           )}
           <span
-            className={`text-xs font-mono px-2 py-0.5 rounded ${
+            className={`font-medium text-[13px] lg:text-main px-2 py-0.5 rounded ${
               row._isNew
                 ? 'bg-emerald-100 text-emerald-900 font-bold border border-emerald-300'
                 : 'bg-gray-100 text-gray-700 font-medium'
@@ -124,13 +136,13 @@ export default function RealtimeCardPage() {
       key: 'nama_pemegang',
       label: 'Pemegang',
       sortable: true,
-      render: (row) => <span className="font-semibold text-main text-xs">{row.nama_pemegang || '—'}</span>,
+      render: (row) => <span className="font-semibold text-main">{row.nama_pemegang || '—'}</span>,
     },
     {
       key: 'kelas',
       label: 'Kelas',
       sortable: true,
-      render: (row) => <span className="text-xs font-semibold text-main">{row.kelas ?? '—'}</span>,
+      render: (row) => <span className="text-main">{row.kelas ?? '—'}</span>,
     },
     {
       key: 'jenis_tap',
@@ -141,21 +153,25 @@ export default function RealtimeCardPage() {
       key: 'nama_alat',
       label: 'Alat',
       sortable: true,
-      render: (row) => <span className="text-xs text-main">{row.nama_alat ?? '—'}</span>,
+      render: (row) => <span className="font-semibold text-main">{row.nama_alat ?? '—'}</span>,
     },
     {
-  key: 'status_alat',
-  label: 'Status Alat',
-  render: (row) =>
-    row.status === 'dipinjam' || row.status === 'dikembalikan'
-      ? <Badge status={row.status} />
-      : <span className="text-[11px] text-gray-400">—</span>,
-},
+      key: 'status_alat',
+      label: 'Status Alat',
+      render: (row) => {
+        let st = '';
+        if (row.status === 'berhasil') {
+          if (row.jenis_tap === 'pinjam') st = 'dipinjam';
+          if (row.jenis_tap === 'kembali') st = 'dikembalikan';
+        }
+        return st ? <Badge status={st} /> : <span className="text-[11px] text-gray-400">—</span>;
+      },
+    },
     {
       key: 'waktu_tap',
       label: 'Waktu',
       sortable: true,
-      render: (row) => <span className="text-xs font-mono text-muted whitespace-nowrap">{FORMAT_WIB(row.waktu_tap)}</span>,
+      render: (row) => <span className="font-medium text-[13px] lg:text-main">{FORMAT_WIB(row.waktu_tap)}</span>,
     },
     {
       key: 'jenis_terdeteksi',
@@ -188,19 +204,33 @@ export default function RealtimeCardPage() {
       {/* Page Header */}
       <PageHeader
         title="Aktivitas Kartu Secara Realtime"
-        description="Melihat seluruh aktivitas peminjaman dan pengembalian alat lab secara realtime."
+        description="Data aktivitas realtime ini hanya tampil dalam 24 jam terakhir"
       />
 
-      {/* Success Notification */}
-      {toastMessage && (
-        <div className="flex items-center justify-between p-3.5 bg-emerald-50 border border-emerald-200/90 rounded-xl text-emerald-800 text-xs sm:text-sm shadow-xs animate-fadeIn">
+      {/* Notification Toast */}
+      {toast && (
+        <div
+          className={`flex items-center justify-between p-3.5 rounded-xl border text-xs sm:text-sm shadow-xs animate-fadeIn ${
+            toast.type === 'warning'
+              ? 'bg-amber-50 border-amber-300 text-amber-900'
+              : 'bg-emerald-50 border-emerald-200/90 text-emerald-800'
+          }`}
+        >
           <div className="flex items-center gap-2.5">
-            <IconCircleCheck size={18} className="text-emerald-600 shrink-0" />
-            <span className="font-medium">{toastMessage}</span>
+            {toast.type === 'warning' ? (
+              <IconAlertCircle size={18} className="text-amber-600 shrink-0" />
+            ) : (
+              <IconCircleCheck size={18} className="text-emerald-600 shrink-0" />
+            )}
+            <span className="font-medium">{toast.message}</span>
           </div>
           <button
-            onClick={() => setToastMessage('')}
-            className="p-1 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100 rounded-md transition"
+            onClick={() => setToast(null)}
+            className={`p-1 rounded-md transition ${
+              toast.type === 'warning'
+                ? 'text-amber-600 hover:text-amber-800 hover:bg-amber-100'
+                : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100'
+            }`}
             aria-label="Tutup notifikasi"
           >
             <IconX size={14} />
@@ -216,14 +246,26 @@ export default function RealtimeCardPage() {
         searchKeys={['kelas', 'uid_kartu', 'nama_alat', 'jenis_terdeteksi', 'jenis_tap', 'nama_pemegang']}
         emptyMessage="Belum ada aktivitas tap RFID untuk hari ini"
         actionButton={
-          <Button
-            variant="danger-soft"
-            icon={IconTrash}
-            onClick={() => setShowClearModal(true)}
-            className="w-full md:w-auto justify-center whitespace-nowrap"
-          >
-            Hapus Semua Aktivitas
-          </Button>
+          isAdmin && (
+            <Button
+              variant="danger-soft"
+              icon={IconTrash}
+              onClick={() => {
+                if (taps.length === 0) {
+                  setToast({
+                    type: 'warning',
+                    message: 'Tidak ada data log aktivitas RFID untuk dihapus (log masih kosong).',
+                  });
+                  setTimeout(() => setToast(null), 4500);
+                  return;
+                }
+                setShowClearModal(true);
+              }}
+              className="w-full md:w-auto justify-center whitespace-nowrap"
+            >
+              Hapus Semua Aktivitas
+            </Button>
+          )
         }
       />
 
@@ -231,112 +273,65 @@ export default function RealtimeCardPage() {
         Menampilkan {filteredData.length} tap log hari ini
       </p>
 
-      {/* Modal Konfirmasi Hapus Semua - SaaS Grade */}
+      {/* Modal Konfirmasi Hapus Semua - Gaptek Friendly */}
       <Modal
         isOpen={showClearModal}
         onClose={() => {
           setShowClearModal(false);
           setClearInput('');
-          setCopied(false);
         }}
-        title="Hapus Semua Log Tap RFID"
-        subtitle="Konfirmasi pembersihan seluruh catatan aktivitas tap kartu RFID hari ini"
-        icon={IconAlertTriangle}
-        iconVariant="danger"
+        title="Hapus Semua Log"
+        subtitle="Yakin ingin menghapus semua data?"
         maxWidth="max-w-md"
       >
         <div className="space-y-4">
-          {/* Warning Banner */}
-          <div className="flex items-start gap-3 p-3.5 bg-red-50/80 border border-red-200/90 rounded-xl">
-            <div className="p-1.5 bg-red-100 text-red-600 rounded-lg shrink-0 mt-0.5">
-              <IconAlertOctagon size={18} />
+          {taps.length === 0 ? (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs sm:text-sm">
+              Saat ini data aktivitas log RFID kosong. Tidak ada data yang dapat dihapus.
             </div>
-            <div className="min-w-0">
-              <h4 className="text-xs sm:text-sm font-bold text-red-900">
-                Peringatan: Tindakan Tidak Dapat Dibatalkan!
+          ) : (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+              <h4 className="text-sm font-bold text-red-900 mb-1">
+                Peringatan Penting
               </h4>
-              <p className="text-[11px] sm:text-xs text-red-700 mt-0.5 leading-relaxed">
-                Seluruh data riwayat tap RFID hari ini akan dibersihkan secara permanen dari penyimpanan.
+              <p className="text-xs text-red-700 leading-relaxed">
+                Semua data aktivitas RFID ({taps.length} log) akan dihapus selamanya dan tidak bisa dikembalikan.
               </p>
             </div>
+          )}
+
+          <div className="space-y-2 mt-4">
+            <label className="text-sm font-semibold text-gray-700 block">
+              Untuk melanjutkan, ketik tulisan ini: <span className="font-bold text-red-600 bg-gray-100 px-2 py-1 rounded select-all">{CONFIRM_TEXT}</span>
+            </label>
+            
+            <input
+              type="text"
+              value={clearInput}
+              onChange={(e) => setClearInput(e.target.value)}
+              placeholder={`Ketik: ${CONFIRM_TEXT}`}
+              disabled={taps.length === 0}
+              className="w-full px-4 h-12 rounded-xl border border-gray-300 text-base focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              autoComplete="off"
+            />
           </div>
 
-          {/* Confirmation Input Section */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <label className="font-semibold text-gray-700">
-                Ketik kalimat konfirmasi berikut:
-              </label>
-              <span className="text-[11px] text-gray-400 font-medium">Harus sama</span>
-            </div>
-
-            {/* Confirmation Key Codebox with Copy Button */}
-            <div className="p-2.5 bg-gray-50 border border-gray-200/90 rounded-xl flex items-center justify-between gap-2">
-              <code className="text-xs sm:text-sm font-mono font-bold text-red-600 select-all tracking-wide">
-                {CONFIRM_TEXT}
-              </code>
-              <button
-                type="button"
-                onClick={() => {
-                  setClearInput(CONFIRM_TEXT);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }}
-                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-600 hover:text-blue-700 bg-white hover:bg-blue-50 px-2.5 py-1 rounded-lg border border-gray-200/90 shadow-2xs transition active:scale-95 shrink-0"
-                title="Salin dan isi otomatis"
-              >
-                {copied ? <IconCheck size={13} className="text-emerald-600" /> : <IconCopy size={13} />}
-                <span>{copied ? 'Tersalin' : 'Salin Teks'}</span>
-              </button>
-            </div>
-
-            {/* Input with icon and feedback */}
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                <IconShieldExclamation size={16} />
-              </div>
-              <input
-                type="text"
-                value={clearInput}
-                onChange={(e) => setClearInput(e.target.value)}
-                placeholder={`Ketik "${CONFIRM_TEXT}"`}
-                className={`w-full pl-9 pr-9 h-10 rounded-xl border text-xs sm:text-sm transition-all focus:outline-none font-medium ${
-                  clearInput.toLowerCase() === CONFIRM_TEXT
-                    ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/20 text-emerald-900'
-                    : clearInput.length > 0
-                    ? 'border-red-400 ring-2 ring-red-500/10 bg-white text-gray-900'
-                    : 'border-gray-300/90 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 bg-white text-gray-900'
-                }`}
-                autoComplete="off"
-              />
-              {clearInput.toLowerCase() === CONFIRM_TEXT && (
-                <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-emerald-600 pointer-events-none">
-                  <IconCheck size={16} />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Action Buttons: Responsive 320px mobile to laptop */}
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 pt-3 border-t border-gray-100">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-5 border-t border-gray-100 mt-5">
             <Button
               variant="secondary"
-              icon={IconX}
               onClick={() => {
                 setShowClearModal(false);
                 setClearInput('');
-                setCopied(false);
               }}
-              className="w-full sm:w-auto justify-center"
+              className="w-full sm:w-auto justify-center h-11"
             >
               Batal
             </Button>
             <Button
               variant="danger"
-              icon={IconTrash}
-              disabled={clearInput.toLowerCase() !== CONFIRM_TEXT}
+              disabled={taps.length === 0 || clearInput.toLowerCase() !== CONFIRM_TEXT}
               onClick={handleClearAll}
-              className="w-full sm:w-auto justify-center shadow-xs shadow-red-500/20"
+              className="w-full sm:w-auto justify-center h-11"
             >
               Hapus Semua Log
             </Button>

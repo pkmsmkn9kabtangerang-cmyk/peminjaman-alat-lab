@@ -7,7 +7,7 @@ import PageHeader from '../components/PageHeader';
 import ConfirmDialog from '../components/ConfirmDialog';
 import FormField, { inputClass } from '../components/FormField';
 import { showFeedback, friendlyError } from '../lib/feedback';
-import { IconPlus } from '@tabler/icons-react';
+import { IconPlus, IconShieldCheck, IconChevronDown } from '@tabler/icons-react';
 
 const EMPTY_FORM = { uid: '', nama: '', username: '', nip: '', role: 'petugas', aktif: true };
 
@@ -43,7 +43,10 @@ export default function PenggunaPage() {
     if (!form.nama?.trim()) next.nama = 'Nama lengkap wajib diisi.';
     if (!form.username?.trim()) next.username = 'Nama pengguna wajib diisi.';
     setErrors(next);
-    if (Object.keys(next).length) return;
+    if (Object.keys(next).length) {
+      showFeedback({ type: 'warning', title: 'Data tidak valid', message: Object.values(next)[0] });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -174,9 +177,21 @@ export default function PenggunaPage() {
             </FormField>
           </div>
           <FormField label="Peran" required>
-            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={`${inputClass} bg-white`}>
-              <option value="petugas">Petugas lab</option>
-            </select>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                <IconShieldCheck size={18} />
+              </div>
+              <select
+                value={form.role}
+                onChange={(e) => setForm({ ...form, role: e.target.value })}
+                className={`${inputClass} pl-9 pr-8 bg-white appearance-none cursor-pointer`}
+              >
+                <option value="petugas">Petugas lab</option>
+              </select>
+              <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-gray-400">
+                <IconChevronDown size={16} />
+              </div>
+            </div>
           </FormField>
           <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 pt-3 border-t border-gray-200">
             <Button variant="secondary" onClick={() => setModal(false)} disabled={saving} className="w-full sm:w-auto justify-center">

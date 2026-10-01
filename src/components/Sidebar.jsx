@@ -1,6 +1,6 @@
 import {
   IconLayoutDashboard,
-  IconBox,
+  IconTools,
   IconListDetails,
   IconIdBadge2,
   IconHandStop,
@@ -22,32 +22,27 @@ const MENU_SECTIONS = [
     ],
   },
   {
-    title: 'Peminjaman',
-    items: [
-      { id: 'peminjaman', label: 'Peminjaman', icon: IconHandStop, roles: ['admin', 'petugas'] },
-      { id: 'pengembalian', label: 'Pengembalian', icon: IconCornerDownLeft, roles: ['admin', 'petugas'] },
-      { id: 'riwayat', label: 'Riwayat', icon: IconHistory, roles: ['admin', 'petugas'] },
-    ],
-  },
-  {
-    title: 'Inventaris',
-    items: [
-      { id: 'list_alat', label: 'Daftar Alat', icon: IconListDetails, roles: ['admin', 'petugas'] },
-      { id: 'inventaris', label: 'Inventaris', icon: IconBox, roles: ['admin'] },
-    ],
-  },
-  {
     title: 'RFID',
     items: [
-      { id: 'realtime_card', label: 'Aktivitas RFID', icon: IconCreditCard, roles: ['admin', 'petugas'] },
-      { id: 'kartu_rfid', label: 'Kartu RFID', icon: IconIdBadge2, roles: ['admin'] },
+      { id: 'realtime_card', label: 'Aktivitas Kartu', icon: IconCreditCard, roles: ['admin', 'petugas'] },
+      { id: 'kartu_rfid', label: 'Kelola Kartu', icon: IconIdBadge2, roles: ['admin'] },
+      { id: 'riwayat', label: 'Riwayat ', icon: IconHistory, roles: ['admin', 'petugas'] },
       { id: 'simulasi_iot', label: 'Simulasi Kartu', icon: IconCpu, roles: ['admin', 'petugas'] },
     ],
   },
   {
-    title: 'Pengguna',
+    title: 'Inventaris & Pengguna',
     items: [
-      { id: 'pengguna', label: 'Pengguna', icon: IconUsers, roles: ['admin'] },
+      { id: 'list_alat', label: 'Daftar Alat', icon: IconListDetails, roles: ['admin', 'petugas'] },
+      { id: 'inventaris', label: 'Kelola Alat', icon: IconTools, roles: ['admin'] },
+      { id: 'pengguna', label: 'Kelola Petugas', icon: IconUsers, roles: ['admin'] },
+    ],
+  },
+  {
+    title: 'Peminjaman',
+    items: [
+      { id: 'peminjaman', label: 'Peminjaman', icon: IconHandStop, roles: ['admin', 'petugas'] },
+      { id: 'pengembalian', label: 'Pengembalian', icon: IconCornerDownLeft, roles: ['admin', 'petugas'] },
     ],
   },
 ];

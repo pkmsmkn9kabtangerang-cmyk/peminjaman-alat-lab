@@ -13,7 +13,7 @@ const EMPTY_FORM = {
   id: '', kode: '', nama: '', kategori: 'elektronik', uid_rfid: '', jumlah_total: 1, jumlah_rusak: 0,
 };
 
-export default function InventarisPage() {
+export default function KelolaAlat() {
   const [alat, setAlat]         = useState(() => dbService.getAlat());
   const [modal, setModal]       = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -46,15 +46,15 @@ export default function InventarisPage() {
   const validate = () => {
     const next = {};
     if (!form.nama?.trim()) next.nama = 'Nama alat wajib diisi.';
-    if (!form.kode?.trim()) next.kode = 'Kode barang wajib diisi.';
-    if (!form.uid_rfid?.trim()) next.uid_rfid = 'Kode stiker kartu alat wajib diisi.';
+    // if (!form.kode?.trim()) next.kode = 'Kode alat wajib diisi.';
+    if (!form.uid_rfid?.trim()) next.uid_rfid = 'Kode kartu alat wajib diisi.';
     if (!form.kategori?.trim()) next.kategori = 'Kategori wajib diisi.';
     if (!String(form.jumlah_total).trim() || Number(form.jumlah_total) < 1) {
       next.jumlah_total = 'Jumlah unit minimal 1.';
     }
     const current = dbService.getAlat();
     const kodeUsed = current.some((a) => a.kode === form.kode.trim() && a.id !== editItem?.id);
-    if (kodeUsed) next.kode = 'Kode barang tersebut sudah digunakan.';
+    if (kodeUsed) next.kode = 'Kode alat tersebut sudah digunakan.';
     return next;
   };
 
@@ -62,7 +62,10 @@ export default function InventarisPage() {
     e.preventDefault();
     const next = validate();
     setErrors(next);
-    if (Object.keys(next).length) return;
+    if (Object.keys(next).length) {
+      showFeedback({ type: 'warning', title: 'Data tidak valid', message: Object.values(next)[0] });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -81,7 +84,7 @@ export default function InventarisPage() {
         };
         current.unshift(newItem);
         dbService.saveAlat(current);
-        showFeedback({ type: 'success', title: 'Barang berhasil ditambahkan.' });
+        showFeedback({ type: 'success', title: 'alat berhasil ditambahkan.' });
       }
       setModal(false);
       reload();
@@ -89,7 +92,7 @@ export default function InventarisPage() {
       console.error(err);
       showFeedback({
         type: 'error',
-        title: editItem ? 'Perubahan gagal disimpan.' : 'Barang gagal ditambahkan.',
+        title: editItem ? 'Perubahan gagal disimpan.' : 'alat gagal ditambahkan.',
         message: friendlyError(err, 'Silakan periksa data, lalu coba lagi.'),
       });
     } finally {
@@ -101,12 +104,12 @@ export default function InventarisPage() {
     if (!deleteTarget) return;
     try {
       dbService.saveAlat(dbService.getAlat().filter((a) => a.id !== deleteTarget.id));
-      showFeedback({ type: 'success', title: 'Barang berhasil dihapus.' });
+      showFeedback({ type: 'success', title: 'alat berhasil dihapus.' });
       setDeleteTarget(null);
       reload();
     } catch (err) {
       console.error(err);
-      showFeedback({ type: 'error', title: 'Barang gagal dihapus.', message: friendlyError(err) });
+      showFeedback({ type: 'error', title: 'alat gagal dihapus.', message: friendlyError(err) });
     }
   };
 
@@ -115,19 +118,19 @@ export default function InventarisPage() {
       key: 'nama',
       label: 'Nama Alat',
       sortable: true,
-      render: (row) => <p className="font-medium text-[13px] lg:text-main">{row.nama}</p>,
+      render: (row) => <p className="font-medium text-main">{row.nama}</p>,
     },
     {
       key: 'kode',
       label: 'Kode Alat',
       sortable: true,
-      render: (row) => <p className="text-[13px] lg:text-main ">{row.kode}</p>,
+      render: (row) => <p className="text-main ">{row.kode}</p>,
     },
     {
       key: 'kategori',
       label: 'Kategori',
       sortable: true,
-      render: (row) => <span className="capitalize text-[14px] lg:text-main">{row.kategori}</span>,
+      render: (row) => <span className="capitalize text-main">{row.kategori}</span>,
     },
     {
       key: 'jumlah_total',
@@ -146,7 +149,7 @@ export default function InventarisPage() {
     },
     {
       key: 'aksi',
-      label: 'Tindakan',
+      label: '',
       render: (row) => (
         <div className="flex items-center gap-1 justify-end">
           <button type="button" onClick={() => openEdit(row)} className="table-action table-action-edit">
@@ -163,8 +166,8 @@ export default function InventarisPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Inventaris"
-        description="Tambah, ubah, atau hapus data barang laboratorium."
+        title="Kelola Alat"
+        description="Tambah, ubah, atau hapus data alat laboratorium."
       />
 
       <DataTable
@@ -172,8 +175,8 @@ export default function InventarisPage() {
         data={alat}
         searchPlaceholder="Cari Alat..."
         searchKeys={['nama', 'kode', 'uid_rfid', 'kategori']}
-        emptyMessage="Belum ada barang"
-        emptyDescription="Barang yang ditambahkan akan muncul di sini."
+        emptyMessage="Belum ada alat"
+        emptyDescription="alat yang ditambahkan akan muncul di sini."
         actionButton={<Button icon={IconPlus} onClick={openAdd}>Tambah Alat</Button>}
       />
 
@@ -190,17 +193,14 @@ export default function InventarisPage() {
       <Modal
         isOpen={modal}
         onClose={() => !saving && setModal(false)}
-        title={editItem ? 'Ubah barang' : 'Tambah barang'}
-        subtitle={editItem ? 'Perbarui data barang, lalu simpan.' : 'Isi data barang baru. Kolom bertanda * wajib diisi.'}
+        title={editItem ? 'Ubah alat' : 'Tambah alat'}
+        subtitle={editItem ? 'Perbarui data alat, lalu simpan.' : 'Isi data alat baru. Kolom bertanda * wajib diisi.'}
       >
         <form onSubmit={handleSave} className="space-y-4">
           <FormField label="Nama alat" required error={errors.nama}>
             <input required value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} className={inputClass} placeholder="Contoh: Multimeter Digital" />
           </FormField>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormField label="Kode barang" required error={errors.kode}>
-              <input required value={form.kode} onChange={(e) => setForm({ ...form, kode: e.target.value })} className={inputClass} placeholder="MM-001" />
-            </FormField>
+          <div className="grid grid-cols-1">
             <FormField label="Kode stiker alat" required hint="Kode pada stiker yang menempel di alat." error={errors.uid_rfid}>
               <input required value={form.uid_rfid} onChange={(e) => setForm({ ...form, uid_rfid: e.target.value })} className={inputClass} placeholder="STK-ALT-001" />
             </FormField>
@@ -215,6 +215,15 @@ export default function InventarisPage() {
                 className={inputClass}
                 placeholder="Pilih atau ketik kategori"
               />
+              <datalist id="kategori-list">
+                <option value="Umum" />
+                <option value="Elektronika" />
+                <option value="Jaringan" />
+                <option value="Komputer" />
+                {alat && Array.from(new Set(alat.map(a => a.kategori))).filter(k => k && !['Umum', 'Elektronika', 'Jaringan', 'Komputer'].includes(k)).map(k => (
+                  <option key={k} value={k} />
+                ))}
+              </datalist>
             </FormField>
             <FormField label="Total unit" required error={errors.jumlah_total}>
               <input
@@ -249,7 +258,7 @@ export default function InventarisPage() {
               Batal
             </Button>
             <Button type="submit" disabled={saving} className="w-full sm:w-auto justify-center">
-              {saving ? 'Menyimpan...' : (editItem ? 'Simpan perubahan' : 'Simpan barang')}
+              {saving ? 'Menyimpan...' : (editItem ? 'Simpan perubahan' : 'Simpan alat')}
             </Button>
           </div>
         </form>
@@ -259,9 +268,9 @@ export default function InventarisPage() {
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleExecuteDelete}
-        title="Hapus barang?"
+        title="Hapus alat?"
         message={`Apakah Anda yakin ingin menghapus ${deleteTarget?.nama}?\n\nTindakan ini tidak dapat dibatalkan.`}
-        confirmLabel="Hapus barang"
+        confirmLabel="Hapus alat"
       />
     </div>
   );

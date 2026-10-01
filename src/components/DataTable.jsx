@@ -187,20 +187,25 @@ export default function DataTable({
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 text-[15px] border-t border-main bg-white text-gray-700">
         <div className="flex items-center justify-between sm:justify-start w-full sm:w-auto gap-2">
           <span className="text-muted">Baris per halaman</span>
-          <select
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(Number(e.target.value));
-              setPage(1);
-            }}
-            className="bg-white border border-gray-300 px-2 py-1.5 rounded font-medium text-gray-800 text-[15px] min-h-10 focus:outline-none focus:ring-2 focus:ring-blue-700/20 focus:border-blue-700"
-          >
-            {[5, 10, 15, 20, 25].map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
+          <div className="relative inline-flex items-center">
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+              className="bg-white border border-gray-300 pl-3 pr-7 py-1.5 rounded font-medium text-gray-800 text-[15px] min-h-10 focus:outline-none focus:ring-2 focus:ring-blue-700/20 focus:border-blue-700 appearance-none cursor-pointer"
+            >
+              {[5, 10, 15, 20, 25].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+            <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-gray-500">
+              <IconChevronDown size={14} />
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3">

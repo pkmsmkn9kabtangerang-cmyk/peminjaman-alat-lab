@@ -38,13 +38,13 @@ export default function ListBarangPage() {
       key: 'nama',
       label: 'Nama Alat',
       sortable: true,
-      render: (row) => <p className="font-medium text-[13px] lg:text-main">{row.nama}</p>,
+      render: (row) => <p className="font-semibold text-main">{row.nama}</p>,
     },
     {
       key: 'kode',
       label: 'Kode Alat',
       sortable: true,
-      render: (row) => <p className="text-[13px] lg:text-main">{row.kode}</p>,
+      render: (row) => <p className="">{row.kode}</p>,
     },
     {
       key: 'stok_tersedia',
@@ -69,14 +69,14 @@ export default function ListBarangPage() {
       key: 'kategori',
       label: 'Kategori',
       sortable: true,
-      render: (row) => <span className="text-[14px] lg:text-main capitalize">{row.kategori}</span>,
+      render: (row) => <span className="text-main capitalize">{row.kategori}</span>,
     },
   ];
 
   return (
     <div className="space-y-5">
       <PageHeader
-        title="List Alat"
+        title="Daftar Alat"
         description="Pantau ketersediaan alat lab secara realtime."
       />
 

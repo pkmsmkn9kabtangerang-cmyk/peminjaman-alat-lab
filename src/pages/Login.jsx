@@ -18,33 +18,29 @@ export default function LoginPage({ onLoginSuccess }) {
     setError('');
     setLoading(true);
 
-    // Trik Autentikasi Supabase dengan Username
-    // Saat memakai Supabase asli:
-    const fakeEmail = `${username.toLowerCase()}@sekolah.internal`;
-    
-    // const { data, error } = await supabase.auth.signInWithPassword({
-    //   email: fakeEmail,
-    //   password: password,
-    // });
-
-    // Mode demo: cek dari local store
     const users = dbService.getUsers();
-    const found = users.find((u) => u.email.toLowerCase() === fakeEmail);
     
-    if (!found) {
-      // Fallback untuk akun demo lama jika ada
-      const fallback = users.find(u => u.email.toLowerCase() === `${username.toLowerCase()}@smk.sch.id`);
-      if (fallback) {
-        onLoginSuccess(fallback);
-        setLoading(false);
-        return;
-      }
-      setError('Username tidak terdaftar atau password salah.');
+    // Cari user berdasarkan username atau awal email
+    const foundUser = users.find(u => {
+      const emailPrefix = u.email.split('@')[0].toLowerCase();
+      return emailPrefix === username.toLowerCase() || u.username === username.toLowerCase();
+    });
+
+    if (!foundUser) {
+      setError('Nama Pengguna tidak terdaftar atau salah.');
       setLoading(false);
       return;
     }
 
-    onLoginSuccess(found);
+    // Untuk keperluan demo/gaptek, password minimal 6 karakter.
+    // Di aplikasi nyata ini akan dicek ke database.
+    if (password.length < 6) {
+      setError('Password salah. (Contoh: petugas123)');
+      setLoading(false);
+      return;
+    }
+
+    onLoginSuccess(foundUser);
     setLoading(false);
   };
 
@@ -120,27 +116,27 @@ export default function LoginPage({ onLoginSuccess }) {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label htmlFor="username-login" className="block text-xs font-semibold text-muted mb-1.5">Username</label>
+              <label htmlFor="username-login" className="block text-sm font-bold text-gray-700 mb-2">Nama Pengguna (Username)</label>
               <input
                 id="username-login"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s+/g, ''))}
                 required
-                placeholder="admin"
-                className="w-full px-4 py-3 rounded-xl border border-main text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                placeholder="Contoh: admin"
+                className="w-full px-5 py-4 rounded-xl border border-gray-300 text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
               />
             </div>
-            <div>
-              <label htmlFor="password-login" className="block text-xs font-semibold text-muted mb-1.5">Password</label>
+            <div className="mt-5">
+              <label htmlFor="password-login" className="block text-sm font-bold text-gray-700 mb-2">Kata Sandi (Password)</label>
               <input
                 id="password-login"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl border border-main text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                placeholder="Masukkan kata sandi"
+                className="w-full px-5 py-4 rounded-xl border border-gray-300 text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
               />
             </div>
 
@@ -148,31 +144,31 @@ export default function LoginPage({ onLoginSuccess }) {
               id="btn-login-submit"
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded-xl text-sm transition-colors disabled:opacity-60"
+              className="w-full py-4 mt-6 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-xl text-base transition-colors disabled:opacity-60"
             >
               {loading ? 'Memverifikasi...' : 'Masuk ke Dashboard'}
             </button>
           </form>
 
           {/* Quick Demo */}
-          <div className="border-t border-main pt-6">
-            <p className="text-xs text-center text-muted mb-3">Login Cepat</p>
-            <div className="grid grid-cols-2 gap-3">
+          <div className="border-t border-gray-200 pt-6 mt-8">
+            <p className="text-sm text-center text-gray-500 mb-4">Masuk Otomatis (Hanya untuk Demo)</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <button
                 id="btn-quick-admin"
                 type="button"
                 onClick={() => quickLogin('admin')}
-                className="py-2.5 border border-blue-200 bg-blue-50 rounded-xl text-xs font-semibold text-blue-700 hover:bg-blue-100 transition"
+                className="py-3 border border-blue-200 bg-blue-50 rounded-xl text-sm font-bold text-blue-700 hover:bg-blue-100 transition"
               >
-                🔑 Login Admin
+                Masuk sebagai Admin
               </button>
               <button
                 id="btn-quick-petugas"
                 type="button"
                 onClick={() => quickLogin('petugas')}
-                className="py-2.5 border border-gray-200 bg-gray-50 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"
+                className="py-3 border border-gray-200 bg-gray-50 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-100 transition"
               >
-                👤 Login Petugas
+                Masuk sebagai Petugas
               </button>
             </div>
           </div>

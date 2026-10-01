@@ -353,7 +353,7 @@ export default function DashboardPage({ setCurrentTab, user }) {
       <div className="bg-surface border border-main">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-4 border-b border-main">
           <div>
-            <h2 className="text-lg font-semibold text-main">Barang yang sedang dipinjam</h2>
+            <h2 className="text-lg font-semibold text-main">Alat yang sedang dipinjam</h2>
             <p className="text-[15px] text-muted mt-0.5">
               {activeCards.length === 0
                 ? 'Tidak ada alat yang sedang dipinjam.'
@@ -379,9 +379,9 @@ export default function DashboardPage({ setCurrentTab, user }) {
               <div key={card.uid_kartu} className="px-4 sm:px-5 py-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
                   <div>
-                    <p className="text-base font-semibold text-main">{card.kelas}</p>
+                    <p className="text-base font-semibold text-main">kelas : {card.kelas}</p>
                     {card.nama_pemegang && (
-                      <p className="text-[15px] text-muted">{card.nama_pemegang}</p>
+                      <p className="text-[15px] text-muted">pemegang : {card.nama_pemegang}</p>
                     )}
                   </div>
                   <p className="text-[15px] text-muted">{card.items.length} alat</p>

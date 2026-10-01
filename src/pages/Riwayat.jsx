@@ -9,16 +9,12 @@ import DataTable from '../components/DataTable';
 import FilterDropdown from '../components/FilterDropdown';
 import PageHeader from '../components/PageHeader';
 import {
-  IconClock,
-  IconCalendarEvent,
   IconTrash,
-  IconAlertTriangle,
-  IconAlertOctagon,
-  IconShieldExclamation,
-  IconCheck,
-  IconCopy,
   IconX,
   IconCircleCheck,
+  IconClock,
+  IconCalendar,
+  IconAlertCircle,
 } from '@tabler/icons-react';
 import Modal from '../components/Modal';
 
@@ -46,8 +42,10 @@ export default function RiwayatPage() {
   const [customDate, setCustomDate] = useState('');
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearInput, setClearInput] = useState('');
-  const [copied, setCopied]         = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
+  const [toast, setToast]           = useState(null);
+  
+  const user = dbService.getCurrentUser();
+  const isAdmin = user?.role === 'admin';
 
   const reload = () => {
     setData(dbService.getTransaksi());
@@ -82,12 +80,25 @@ export default function RiwayatPage() {
 
   const handleClearAll = () => {
     if (clearInput.toLowerCase() !== CONFIRM_TEXT) return;
+    if (data.length === 0) {
+      setShowClearModal(false);
+      setClearInput('');
+      setToast({
+        type: 'warning',
+        message: 'Tidak ada data riwayat untuk dihapus (data riwayat sudah kosong).',
+      });
+      setTimeout(() => setToast(null), 4500);
+      return;
+    }
     dbService.saveTransaksi([]);
     setData([]);
     setShowClearModal(false);
     setClearInput('');
-    setToastMessage('Semua riwayat transaksi peminjaman berhasil dihapus secara permanen.');
-    setTimeout(() => setToastMessage(''), 4500);
+    setToast({
+      type: 'success',
+      message: 'Semua riwayat transaksi peminjaman berhasil dihapus secara permanen.',
+    });
+    setTimeout(() => setToast(null), 4500);
   };
 
   const columns = [
@@ -155,16 +166,30 @@ export default function RiwayatPage() {
         description="Seluruh riwayat catatan peminjaman dan pengembalian alat lab."
       />
 
-      {/* Success Notification */}
-      {toastMessage && (
-        <div className="flex items-center justify-between p-3.5 bg-emerald-50 border border-emerald-200/90 rounded-xl text-emerald-800 text-xs sm:text-sm shadow-xs animate-fadeIn">
+      {/* Notification Toast */}
+      {toast && (
+        <div
+          className={`flex items-center justify-between p-3.5 rounded-xl border text-xs sm:text-sm shadow-xs animate-fadeIn ${
+            toast.type === 'warning'
+              ? 'bg-amber-50 border-amber-300 text-amber-900'
+              : 'bg-emerald-50 border-emerald-200/90 text-emerald-800'
+          }`}
+        >
           <div className="flex items-center gap-2.5">
-            <IconCircleCheck size={18} className="text-emerald-600 shrink-0" />
-            <span className="font-medium">{toastMessage}</span>
+            {toast.type === 'warning' ? (
+              <IconAlertCircle size={18} className="text-amber-600 shrink-0" />
+            ) : (
+              <IconCircleCheck size={18} className="text-emerald-600 shrink-0" />
+            )}
+            <span className="font-medium">{toast.message}</span>
           </div>
           <button
-            onClick={() => setToastMessage('')}
-            className="p-1 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100 rounded-md transition"
+            onClick={() => setToast(null)}
+            className={`p-1 rounded-md transition ${
+              toast.type === 'warning'
+                ? 'text-amber-600 hover:text-amber-800 hover:bg-amber-100'
+                : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100'
+            }`}
             aria-label="Tutup notifikasi"
           >
             <IconX size={14} />
@@ -180,145 +205,119 @@ export default function RiwayatPage() {
         searchKeys={['kelas', 'nama_alat', 'uid_kartu', 'pemegang', 'sumber']}
         emptyMessage="Belum ada riwayat Peminjaman Alat"
         actionButton={
-          <Button
-            variant="danger-soft"
-            icon={IconTrash}
-            onClick={() => setShowClearModal(true)}
-            className="w-full md:w-auto justify-center whitespace-nowrap"
-          >
-            Hapus Semua Riwayat
-          </Button>
+          isAdmin && (
+            <Button
+              variant="danger-soft"
+              icon={IconTrash}
+              onClick={() => {
+                if (data.length === 0) {
+                  setToast({
+                    type: 'warning',
+                    message: 'Tidak ada data riwayat peminjaman untuk dihapus (data sudah kosong).',
+                  });
+                  setTimeout(() => setToast(null), 4500);
+                  return;
+                }
+                setShowClearModal(true);
+              }}
+              className="w-full md:w-auto justify-center whitespace-nowrap"
+            >
+              Hapus Semua Riwayat
+            </Button>
+          )
         }
         filters={
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
             <FilterDropdown
               icon={IconClock}
               value={timeFilter}
-              onChange={(v) => { setTimeFilter(v); if (v !== 'custom') setCustomDate(''); }}
+              onChange={(val) => {
+                setTimeFilter(val);
+                if (val !== 'custom') setCustomDate('');
+              }}
               options={TIME_OPTIONS}
               className="w-full sm:w-auto"
             />
+            
             {timeFilter === 'custom' && (
-              <div className="relative w-full sm:w-auto">
-                <IconCalendarEvent size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                <input
-                  type="date"
-                  value={customDate}
-                  onChange={(e) => setCustomDate(e.target.value)}
-                  className="w-full sm:w-auto pl-9 pr-3 h-10 rounded-lg border border-gray-300/90 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white font-medium text-gray-700"
-                />
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+                <span className="text-sm font-medium text-gray-600 sm:ml-2">Pilih Tanggal:</span>
+                <div className="relative w-full sm:w-auto">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                    <IconCalendar size={16} />
+                  </div>
+                  <input
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    className="w-full sm:w-auto pl-9 pr-3 h-10 rounded-lg border border-gray-300 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white font-medium text-gray-700"
+                  />
+                </div>
               </div>
             )}
           </div>
         }
       />
 
-      {/* Modal Hapus Semua - SaaS Grade */}
+      {/* Modal Hapus Semua - Gaptek Friendly */}
       <Modal
         isOpen={showClearModal}
         onClose={() => {
           setShowClearModal(false);
           setClearInput('');
-          setCopied(false);
         }}
         title="Hapus Semua Riwayat"
-        subtitle="Konfirmasi pembersihan permanen seluruh riwayat transaksi"
-        icon={IconAlertTriangle}
-        iconVariant="danger"
+        subtitle="Yakin ingin menghapus semua data?"
         maxWidth="max-w-md"
       >
         <div className="space-y-4">
-          {/* Warning Banner */}
-          <div className="flex items-start gap-3 p-3.5 bg-red-50/80 border border-red-200/90 rounded-xl">
-            <div className="p-1.5 bg-red-100 text-red-600 rounded-lg shrink-0 mt-0.5">
-              <IconAlertOctagon size={18} />
+          {data.length === 0 ? (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs sm:text-sm">
+              Saat ini data riwayat peminjaman kosong. Tidak ada data yang dapat dihapus.
             </div>
-            <div className="min-w-0">
-              <h4 className="text-xs sm:text-sm font-bold text-red-900">
-                Peringatan: Tindakan Tidak Dapat Dibatalkan!
+          ) : (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+              <h4 className="text-sm font-bold text-red-900 mb-1">
+                Peringatan Penting
               </h4>
-              <p className="text-[11px] sm:text-xs text-red-700 mt-0.5 leading-relaxed">
-                Seluruh data riwayat transaksi peminjaman dan pengembalian alat lab akan dihapus permanen dari basis data sistem.
+              <p className="text-xs text-red-700 leading-relaxed">
+                Semua data riwayat peminjaman dan pengembalian ({data.length} data) akan dihapus selamanya dan tidak bisa dikembalikan.
               </p>
             </div>
+          )}
+
+          <div className="space-y-2 mt-4">
+            <label className="text-sm font-semibold text-gray-700 block">
+              Untuk melanjutkan, ketik tulisan ini: <span className="font-bold text-red-600 bg-gray-100 px-2 py-1 rounded select-all">{CONFIRM_TEXT}</span>
+            </label>
+            
+            <input
+              type="text"
+              value={clearInput}
+              onChange={(e) => setClearInput(e.target.value)}
+              placeholder={`Ketik: ${CONFIRM_TEXT}`}
+              disabled={data.length === 0}
+              className="w-full px-4 h-12 rounded-xl border border-gray-300 text-base focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              autoComplete="off"
+            />
           </div>
 
-          {/* Confirmation Input Section */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <label className="font-semibold text-gray-700">
-                Ketik kalimat konfirmasi berikut:
-              </label>
-              <span className="text-[11px] text-gray-400 font-medium">Harus sama</span>
-            </div>
-
-            {/* Confirmation Key Codebox with Copy Button */}
-            <div className="p-2.5 bg-gray-50 border border-gray-200/90 rounded-xl flex items-center justify-between gap-2">
-              <code className="text-xs sm:text-sm font-mono font-bold text-red-600 select-all tracking-wide">
-                {CONFIRM_TEXT}
-              </code>
-              <button
-                type="button"
-                onClick={() => {
-                  setClearInput(CONFIRM_TEXT);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }}
-                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-600 hover:text-blue-700 bg-white hover:bg-blue-50 px-2.5 py-1 rounded-lg border border-gray-200/90 shadow-2xs transition active:scale-95 shrink-0"
-                title="Salin dan isi otomatis"
-              >
-                {copied ? <IconCheck size={13} className="text-emerald-600" /> : <IconCopy size={13} />}
-                <span>{copied ? 'Tersalin' : 'Salin Teks'}</span>
-              </button>
-            </div>
-
-            {/* Input with icon and feedback */}
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                <IconShieldExclamation size={16} />
-              </div>
-              <input
-                type="text"
-                value={clearInput}
-                onChange={(e) => setClearInput(e.target.value)}
-                placeholder={`Ketik "${CONFIRM_TEXT}"`}
-                className={`w-full pl-9 pr-9 h-10 rounded-xl border text-xs sm:text-sm transition-all focus:outline-none font-medium ${
-                  clearInput.toLowerCase() === CONFIRM_TEXT
-                    ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/20 text-emerald-900'
-                    : clearInput.length > 0
-                    ? 'border-red-400 ring-2 ring-red-500/10 bg-white text-gray-900'
-                    : 'border-gray-300/90 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 bg-white text-gray-900'
-                }`}
-                autoComplete="off"
-              />
-              {clearInput.toLowerCase() === CONFIRM_TEXT && (
-                <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-emerald-600 pointer-events-none">
-                  <IconCheck size={16} />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Action Buttons: Responsive 320px mobile to laptop */}
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 pt-3 border-t border-gray-100">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-5 border-t border-gray-100 mt-5">
             <Button
               variant="secondary"
-              icon={IconX}
               onClick={() => {
                 setShowClearModal(false);
                 setClearInput('');
-                setCopied(false);
               }}
-              className="w-full sm:w-auto justify-center"
+              className="w-full sm:w-auto justify-center h-11"
             >
               Batal
             </Button>
             <Button
               variant="danger"
-              icon={IconTrash}
-              disabled={clearInput.toLowerCase() !== CONFIRM_TEXT}
+              disabled={data.length === 0 || clearInput.toLowerCase() !== CONFIRM_TEXT}
               onClick={handleClearAll}
-              className="w-full sm:w-auto justify-center shadow-xs shadow-red-500/20"
+              className="w-full sm:w-auto justify-center h-11"
             >
               Hapus Semua Riwayat
             </Button>

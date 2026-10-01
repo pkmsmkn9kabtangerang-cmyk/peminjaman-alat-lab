@@ -13,6 +13,7 @@ import { IconChevronDown, IconCheck, IconSearch } from '@tabler/icons-react';
  *   placeholder?: string,
  *   className?: string,
  *   searchable?: boolean,
+ *   size?: 'md' | 'lg',
  * }} props
  */
 export default function FilterDropdown({
@@ -23,6 +24,7 @@ export default function FilterDropdown({
   placeholder = 'Pilih...',
   className = '',
   searchable,
+  size = 'md',
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -32,6 +34,7 @@ export default function FilterDropdown({
   const selected = options.find((o) => o.value === value);
   const isFullWidth = className.includes('w-full');
   const isSearchable = searchable !== undefined ? searchable : options.length > 6;
+  const isLg = size === 'lg';
 
   const filteredOptions = isSearchable && search.trim()
     ? options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase()))
@@ -65,24 +68,35 @@ export default function FilterDropdown({
     });
   };
 
+  const buttonSizeClass = isLg
+    ? 'h-12 px-4 text-sm sm:text-base rounded-xl'
+    : 'h-10 px-3.5 sm:px-4 text-xs sm:text-sm rounded-lg';
+
   return (
     <div ref={ref} className={`relative ${className}`}>
       <button
         type="button"
         onClick={handleToggle}
-        className={`flex items-center gap-2.5 px-3.5 sm:px-4 h-10 text-xs sm:text-sm rounded-lg border transition-all font-medium text-left
+        className={`flex items-center gap-2.5 ${buttonSizeClass} border transition-all font-medium text-left
           ${isFullWidth ? 'w-full justify-between' : 'justify-between'}
           ${open
             ? 'border-blue-500 ring-2 ring-blue-500/20 bg-white text-gray-800'
             : 'border-gray-300/90 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
           }`}
       >
-        <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-          {Icon && <Icon size={16} className={`flex-shrink-0 ${open ? 'text-blue-600' : 'text-gray-500'}`} />}
-          <span className="truncate">{selected?.label ?? placeholder}</span>
+        <div className="flex items-center gap-2.5 min-w-0 overflow-hidden">
+          {Icon && (
+            <Icon
+              size={isLg ? 20 : 16}
+              className={`flex-shrink-0 ${open ? 'text-blue-600' : 'text-gray-500'}`}
+            />
+          )}
+          <span className={`truncate ${!selected ? 'text-gray-400 font-normal' : 'text-gray-800 font-medium'}`}>
+            {selected?.label ?? placeholder}
+          </span>
         </div>
         <IconChevronDown
-          size={15}
+          size={isLg ? 18 : 15}
           className={`text-gray-400 flex-shrink-0 ml-1.5 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
         />
       </button>
