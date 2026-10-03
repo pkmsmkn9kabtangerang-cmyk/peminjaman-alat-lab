@@ -44,3 +44,27 @@ secure_password_change = false
 enabled = true
 policy = "per_worker"
 inspector_port = 8083
+
+[functions.rfid-tap]
+entrypoint = "functions/rfid-tap/index.js"
+
+[functions.create-petugas]
+entrypoint = "functions/create-petugas/index.js"
+
+[functions.process-manual]
+entrypoint = "functions/process-manual/index.js"
+
+[functions.manage-alat]
+entrypoint = "functions/manage-alat/index.js"
+
+[functions.manage-kartu]
+entrypoint = "functions/manage-kartu/index.js"
+
+[functions.manage-transaksi]
+entrypoint = "functions/manage-transaksi/index.js"
+
+[functions.manage-pengguna]
+entrypoint = "functions/manage-pengguna/index.js"
+
+[functions.dashboard-stats]
+entrypoint = "functions/dashboard-stats/index.js"

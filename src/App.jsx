@@ -15,7 +15,7 @@ import Pengembalian from './pages/Pengembalian';
 import Riwayat from './pages/Riwayat';
 import KelolaPetugas from './pages/KelolaPetugas';
 import SimulasiKartu from './pages/SimulasiKartu';
-import { IconBell, IconX, IconCheck, IconAlertTriangle } from '@tabler/icons-react';
+import { IconBell, IconX, IconCheck, IconAlertTriangle, IconMenu2 } from '@tabler/icons-react';
 
 const PAGE_TITLES = {
   dashboard:      'Dashboard',
@@ -237,7 +237,16 @@ export default function App() {
 
       <main className="flex-1 md:ml-[232px] min-h-screen flex flex-col min-w-0">
         <header className="min-h-14 md:min-h-16 bg-surface border-b border-main px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-3 min-w-0"></div>
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Hamburger Button (Mobile Only) */}
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="md:hidden p-1.5 -ml-1.5 text-muted hover:text-main hover:bg-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              aria-label="Buka menu navigasi"
+            >
+              <IconMenu2 className="w-6 h-6" />
+            </button>
+          </div>
           <button
             id="btn-bell-notifikasi"
             onClick={() => handleTabChange('realtime_card')}
