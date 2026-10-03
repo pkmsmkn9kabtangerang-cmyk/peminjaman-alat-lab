@@ -207,7 +207,7 @@ export default function App() {
 
   if (!currentUser) {
     return (
-      <LoginPage
+      <Login
         onLoginSuccess={(u) => {
           dbService.setCurrentUser(u);
           setCurrentUser(u);
