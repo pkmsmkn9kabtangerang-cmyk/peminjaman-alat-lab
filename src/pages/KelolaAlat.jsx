@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { dbService } from '../services/store';
 import Modal from '../components/Modal';
 import DataTable from '../components/DataTable';
@@ -7,31 +8,150 @@ import PageHeader from '../components/PageHeader';
 import ConfirmDialog from '../components/ConfirmDialog';
 import FormField, { inputClass } from '../components/FormField';
 import { showFeedback, friendlyError } from '../lib/feedback';
-import { IconPlus } from '@tabler/icons-react';
+import PageNote from '../components/PageNote';
+import { IconPlus, IconRefresh, IconMail } from '@tabler/icons-react';
 
 const EMPTY_FORM = {
-  id: '', kode: '', nama: '', kategori: 'elektronik', uid_rfid: '', jumlah_total: 1, jumlah_rusak: 0,
+  id: '', kode: '', nama: '', kategori: 'elektronik', jumlah_total: 1, jumlah_rusak: 0,
 };
 
+// ── Data access: Supabase jika ada, localStorage jika tidak ──
+async function fetchAlat() {
+  if (isSupabaseConfigured) {
+    const { data, error } = await supabase
+      .from('alat')
+      .select('id, kode, nama, kategori, jumlah_total, jumlah_rusak, created_at')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+  return dbService.getAlat();
+}
+
+async function insertAlat(payload) {
+  if (isSupabaseConfigured) {
+    const { data, error } = await supabase
+      .from('alat')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+  const current = dbService.getAlat();
+  const newItem = {
+    ...payload,
+    stok_tersedia: Number(payload.jumlah_total) - Number(payload.jumlah_rusak),
+    created_at: new Date().toISOString(),
+  };
+  current.unshift(newItem);
+  dbService.saveAlat(current);
+  return newItem;
+}
+
+async function updateAlat(id, payload) {
+  if (isSupabaseConfigured) {
+    const { data, error } = await supabase
+      .from('alat')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+  const current = dbService.getAlat();
+  const updated = current.map((a) =>
+    a.id === id ? { ...a, ...payload, stok_tersedia: Number(payload.jumlah_total) - Number(payload.jumlah_rusak) } : a
+  );
+  dbService.saveAlat(updated);
+}
+
+async function deleteAlat(id) {
+  if (isSupabaseConfigured) {
+    // Cek dulu apakah ada transaksi aktif
+    const { data: activeTrx } = await supabase
+      .from('transaksi')
+      .select('id')
+      .eq('alat_id', id)
+      .eq('status', 'dipinjam')
+      .limit(1);
+
+    if (activeTrx && activeTrx.length > 0) {
+      throw new Error('Alat tidak dapat dihapus karena masih dipinjam.');
+    }
+
+    const { error } = await supabase.from('alat').delete().eq('id', id);
+    if (error) throw error;
+  } else {
+    dbService.saveAlat(dbService.getAlat().filter((a) => a.id !== id));
+  }
+}
+
+async function checkKodeUsed(kode, excludeId) {
+  if (isSupabaseConfigured) {
+    let query = supabase.from('alat').select('id').eq('kode', kode.trim());
+    if (excludeId) query = query.neq('id', excludeId);
+    const { data } = await query.maybeSingle();
+    return !!data;
+  }
+  const current = dbService.getAlat();
+  return current.some((a) => a.kode === kode.trim() && a.id !== excludeId);
+}
+
+async function checkUidUsed(uid_rfid, excludeId) {
+  if (isSupabaseConfigured) {
+    let query = supabase.from('alat').select('id').eq('uid_rfid', uid_rfid.trim());
+    if (excludeId) query = query.neq('id', excludeId);
+    const { data } = await query.maybeSingle();
+    return !!data;
+  }
+  const current = dbService.getAlat();
+  return current.some((a) => a.uid_rfid === uid_rfid.trim() && a.id !== excludeId);
+}
+
 export default function KelolaAlat() {
-  const [alat, setAlat]         = useState(() => dbService.getAlat());
-  const [modal, setModal]       = useState(false);
+  const [alat, setAlat] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
-  const [form, setForm]         = useState(EMPTY_FORM);
-  const [errors, setErrors]     = useState({});
-  const [saving, setSaving]     = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  const reload = () => setAlat(dbService.getAlat());
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchAlat();
+      setAlat(data);
+    } catch (err) {
+      console.error('[KelolaAlat] reload error:', err);
+      showFeedback({ type: 'error', title: 'Gagal memuat data alat.', message: friendlyError(err) });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    reload();
+
+    // Subscribe Realtime jika Supabase terkonfigurasi
+    if (!isSupabaseConfigured) return;
+    const ch = supabase
+      .channel('alat-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alat' }, () => reload())
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [reload]);
 
   const openAdd = () => {
     setEditItem(null);
     setErrors({});
     setForm({
       ...EMPTY_FORM,
-      id:       'ALT-' + Math.floor(100 + Math.random() * 900),
-      kode:     'KD-' + Math.floor(1000 + Math.random() * 9000),
-      uid_rfid: 'STK-' + Math.floor(1000 + Math.random() * 9000),
+      id: 'ALT-' + Math.floor(100 + Math.random() * 900),
+      kode: 'KD-' + Math.floor(1000 + Math.random() * 9000),
     });
     setModal(true);
   };
@@ -43,56 +163,60 @@ export default function KelolaAlat() {
     setModal(true);
   };
 
-  const validate = () => {
+  const validate = async () => {
     const next = {};
     if (!form.nama?.trim()) next.nama = 'Nama alat wajib diisi.';
-    // if (!form.kode?.trim()) next.kode = 'Kode alat wajib diisi.';
-    if (!form.uid_rfid?.trim()) next.uid_rfid = 'Kode kartu alat wajib diisi.';
     if (!form.kategori?.trim()) next.kategori = 'Kategori wajib diisi.';
     if (!String(form.jumlah_total).trim() || Number(form.jumlah_total) < 1) {
       next.jumlah_total = 'Jumlah unit minimal 1.';
     }
-    const current = dbService.getAlat();
-    const kodeUsed = current.some((a) => a.kode === form.kode.trim() && a.id !== editItem?.id);
-    if (kodeUsed) next.kode = 'Kode alat tersebut sudah digunakan.';
+    const rusak = Number(form.jumlah_rusak) || 0;
+    const total = Number(form.jumlah_total) || 0;
+    if (rusak > total) next.jumlah_rusak = 'Jumlah rusak tidak boleh melebihi jumlah total.';
+
+    if (form.kode?.trim()) {
+      const kodeUsed = await checkKodeUsed(form.kode, editItem?.id);
+      if (kodeUsed) next.kode = 'Kode alat tersebut sudah digunakan.';
+    }
     return next;
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
-    const next = validate();
-    setErrors(next);
-    if (Object.keys(next).length) {
-      showFeedback({ type: 'warning', title: 'Data tidak valid', message: Object.values(next)[0] });
-      return;
-    }
-
     setSaving(true);
+    setErrors({});
+
     try {
-      const current = dbService.getAlat();
+      const next = await validate();
+      setErrors(next);
+      if (Object.keys(next).length) {
+        showFeedback({ type: 'warning', title: 'Data tidak valid', message: Object.values(next)[0] });
+        return;
+      }
+
+      const payload = {
+        kode: form.kode?.trim() || null,
+        nama: form.nama.trim(),
+        kategori: form.kategori.trim(),
+        jumlah_total: Number(form.jumlah_total),
+        jumlah_rusak: Number(form.jumlah_rusak) || 0,
+      };
+
       if (editItem) {
-        const updated = current.map((a) => a.id === editItem.id ? { ...a, ...form, jumlah_total: Number(form.jumlah_total), jumlah_rusak: Number(form.jumlah_rusak) } : a);
-        dbService.saveAlat(updated);
+        await updateAlat(editItem.id, payload);
         showFeedback({ type: 'success', title: 'Perubahan berhasil disimpan.' });
       } else {
-        const newItem = {
-          ...form,
-          jumlah_total: Number(form.jumlah_total),
-          jumlah_rusak: Number(form.jumlah_rusak),
-          stok_tersedia: Number(form.jumlah_total) - Number(form.jumlah_rusak),
-          created_at: new Date().toISOString(),
-        };
-        current.unshift(newItem);
-        dbService.saveAlat(current);
-        showFeedback({ type: 'success', title: 'alat berhasil ditambahkan.' });
+        payload.id = form.id;
+        await insertAlat(payload);
+        showFeedback({ type: 'success', title: 'Alat berhasil ditambahkan.' });
       }
       setModal(false);
       reload();
     } catch (err) {
-      console.error(err);
+      console.error('[KelolaAlat] save error:', err);
       showFeedback({
         type: 'error',
-        title: editItem ? 'Perubahan gagal disimpan.' : 'alat gagal ditambahkan.',
+        title: editItem ? 'Perubahan gagal disimpan.' : 'Alat gagal ditambahkan.',
         message: friendlyError(err, 'Silakan periksa data, lalu coba lagi.'),
       });
     } finally {
@@ -100,16 +224,16 @@ export default function KelolaAlat() {
     }
   };
 
-  const handleExecuteDelete = () => {
+  const handleExecuteDelete = async () => {
     if (!deleteTarget) return;
     try {
-      dbService.saveAlat(dbService.getAlat().filter((a) => a.id !== deleteTarget.id));
-      showFeedback({ type: 'success', title: 'alat berhasil dihapus.' });
+      await deleteAlat(deleteTarget.id);
+      showFeedback({ type: 'success', title: 'Alat berhasil dihapus.' });
       setDeleteTarget(null);
       reload();
     } catch (err) {
-      console.error(err);
-      showFeedback({ type: 'error', title: 'alat gagal dihapus.', message: friendlyError(err) });
+      console.error('[KelolaAlat] delete error:', err);
+      showFeedback({ type: 'error', title: 'Alat gagal dihapus.', message: friendlyError(err) });
     }
   };
 
@@ -124,7 +248,7 @@ export default function KelolaAlat() {
       key: 'kode',
       label: 'Kode Alat',
       sortable: true,
-      render: (row) => <p className="text-main ">{row.kode}</p>,
+      render: (row) => <p className="text-main">{row.kode || '—'}</p>,
     },
     {
       key: 'kategori',
@@ -170,14 +294,31 @@ export default function KelolaAlat() {
         description="Tambah, ubah, atau hapus data alat laboratorium."
       />
 
+      <PageNote title="Informasi Penting" icon={IconMail}>
+        Alat yang didaftarkan di sini akan langsung sinkron dengan ketersediaan stok secara realtime. Pastikan kode alat unik untuk setiap jenis barang agar tidak terjadi tumpang tindih data saat peminjaman.
+      </PageNote>
+
       <DataTable
         columns={columns}
         data={alat}
+        loading={loading}
         searchPlaceholder="Cari Alat..."
-        searchKeys={['nama', 'kode', 'uid_rfid', 'kategori']}
+        searchKeys={['nama', 'kode', 'kategori']}
         emptyMessage="Belum ada alat"
-        emptyDescription="alat yang ditambahkan akan muncul di sini."
-        actionButton={<Button icon={IconPlus} onClick={openAdd}>Tambah Alat</Button>}
+        emptyDescription="Alat yang ditambahkan akan muncul di sini."
+        actionButton={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={reload}
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+              title="Refresh data"
+            >
+              <IconRefresh size={18} />
+            </button>
+            <Button icon={IconPlus} onClick={openAdd}>Tambah Alat</Button>
+          </div>
+        }
       />
 
       <datalist id="kategori-list">
@@ -198,13 +339,35 @@ export default function KelolaAlat() {
       >
         <form onSubmit={handleSave} className="space-y-4">
           <FormField label="Nama alat" required error={errors.nama}>
-            <input required value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} className={inputClass} placeholder="Contoh: Multimeter Digital" />
+            <input
+              required
+              value={form.nama}
+              onChange={(e) => setForm({ ...form, nama: e.target.value })}
+              className={inputClass}
+              placeholder="Contoh: Multimeter Digital"
+            />
           </FormField>
-          <div className="grid grid-cols-1">
-            <FormField label="Kode stiker alat" required hint="Kode pada stiker yang menempel di alat." error={errors.uid_rfid}>
-              <input required value={form.uid_rfid} onChange={(e) => setForm({ ...form, uid_rfid: e.target.value })} className={inputClass} placeholder="STK-ALT-001" />
-            </FormField>
-          </div>
+
+          <FormField
+            label="Kode stiker alat"
+            required
+            hint="Kode yang tertera pada stiker alat."
+            error={errors.kode}
+          >
+            <input
+              required
+              value={form.kode || ''}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  kode: e.target.value.toUpperCase().replace(/\s/g, ''),
+                })
+              }
+              className={inputClass}
+              placeholder="Contoh: KD-NomorBebas"
+            />
+          </FormField>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Kategori" required error={errors.kategori}>
               <input
@@ -215,15 +378,6 @@ export default function KelolaAlat() {
                 className={inputClass}
                 placeholder="Pilih atau ketik kategori"
               />
-              <datalist id="kategori-list">
-                <option value="Umum" />
-                <option value="Elektronika" />
-                <option value="Jaringan" />
-                <option value="Komputer" />
-                {alat && Array.from(new Set(alat.map(a => a.kategori))).filter(k => k && !['Umum', 'Elektronika', 'Jaringan', 'Komputer'].includes(k)).map(k => (
-                  <option key={k} value={k} />
-                ))}
-              </datalist>
             </FormField>
             <FormField label="Total unit" required error={errors.jumlah_total}>
               <input
@@ -242,6 +396,7 @@ export default function KelolaAlat() {
             <FormField
               label="Unit rusak"
               hint="Jika alat sudah diperbaiki, isi 0 agar unit bisa dipinjam lagi."
+              error={errors.jumlah_rusak}
             >
               <input
                 type="text"
@@ -269,7 +424,7 @@ export default function KelolaAlat() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleExecuteDelete}
         title="Hapus alat?"
-        message={`Apakah Anda yakin ingin menghapus ${deleteTarget?.nama}?\n\nTindakan ini tidak dapat dibatalkan.`}
+        message={`Apakah Anda yakin ingin menghapus "${deleteTarget?.nama}"?\n\nTindakan ini tidak dapat dibatalkan. Alat yang sedang dipinjam tidak bisa dihapus.`}
         confirmLabel="Hapus alat"
       />
     </div>

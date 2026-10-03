@@ -30,6 +30,36 @@ const PAGE_TITLES = {
   simulasi_iot:   'Simulasi Kartu',
 };
 
+// ── URL helpers ──────────────────────────────────────────────
+// Saat login: URL bersih (hash kosong atau #login)
+// Saat logout: hash dibersihkan, tidak ada #list_alat tersisa
+const LOGIN_HASH = 'login';
+
+function clearHashToLogin() {
+  // Ganti hash ke 'login' agar URL jadi /#login bukan /#list_alat
+  try {
+    if (window.history.replaceState) {
+      window.history.replaceState(null, '', window.location.pathname + '#' + LOGIN_HASH);
+    } else {
+      window.location.hash = LOGIN_HASH;
+    }
+  } catch (_) {
+    window.location.hash = LOGIN_HASH;
+  }
+}
+
+function getInitialTab() {
+  try {
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    // Jangan restore hash 'login' sebagai tab
+    if (hash && PAGE_TITLES[hash]) return hash;
+    const saved = localStorage.getItem('simlab_current_tab');
+    if (saved && PAGE_TITLES[saved]) return saved;
+  } catch (_) { /* noop */ }
+  return 'dashboard';
+}
+// ────────────────────────────────────────────────────────────
+
 function tapNotification(latest) {
   const rejected = latest.status === 'ditolak';
   let subMessage = 'Aktivitas berhasil dicatat.';
@@ -42,7 +72,6 @@ function tapNotification(latest) {
   } else if (latest.jenis_tap === 'kartu') {
     subMessage = 'Kartu kelas terdeteksi.';
   }
-
   return {
     title: rejected ? 'Kartu ditolak' : 'Kartu RFID terdeteksi',
     status: rejected ? 'ditolak' : 'berhasil',
@@ -53,18 +82,6 @@ function tapNotification(latest) {
     subMessage,
   };
 }
-
-const getInitialTab = () => {
-  try {
-    const hash = window.location.hash.replace(/^#\/?/, '');
-    if (hash && PAGE_TITLES[hash]) return hash;
-    const saved = localStorage.getItem('simlab_current_tab');
-    if (saved && PAGE_TITLES[saved]) return saved;
-  } catch (e) {
-    console.error(e);
-  }
-  return 'dashboard';
-};
 
 function FeedbackToast() {
   const [item, setItem] = useState(null);
@@ -87,21 +104,14 @@ function FeedbackToast() {
   return (
     <div className="fixed bottom-4 right-4 z-50 w-[min(100%-2rem,360px)]">
       <div className={`border shadow-md rounded bg-white px-3 py-2.5 flex items-start gap-2.5 ${isError ? 'border-red-300' : 'border-green-300'}`}>
-        {isError ? (
-          <IconAlertTriangle size={18} className="text-red-700 shrink-0 mt-0.5" />
-        ) : (
-          <IconCheck size={18} className="text-green-800 shrink-0 mt-0.5" />
-        )}
+        {isError
+          ? <IconAlertTriangle size={18} className="text-red-700 shrink-0 mt-0.5" />
+          : <IconCheck size={18} className="text-green-800 shrink-0 mt-0.5" />}
         <div className="min-w-0 flex-1">
           <p className="text-[15px] font-semibold text-gray-900">{item.title}</p>
           {item.message && <p className="text-sm text-gray-700 mt-0.5 leading-relaxed">{item.message}</p>}
         </div>
-        <button
-          type="button"
-          onClick={() => setItem(null)}
-          className="p-1 text-gray-500 hover:text-gray-800 min-h-8 min-w-8"
-          aria-label="Tutup"
-        >
+        <button type="button" onClick={() => setItem(null)} className="p-1 text-gray-500 hover:text-gray-800 min-h-8 min-w-8" aria-label="Tutup">
           <IconX size={16} />
         </button>
       </div>
@@ -110,7 +120,9 @@ function FeedbackToast() {
 }
 
 export default function App() {
-  const [currentUser, setCurrentUser]   = useState(() => dbService.getCurrentUser());
+  const [currentUser, setCurrentUser]   = useState(null);
+  // null = masih loading, false = belum login, object = sudah login
+  const [authState, setAuthState]       = useState('loading'); // 'loading' | 'unauthenticated' | 'authenticated'
   const [currentTab, setCurrentTab]     = useState(getInitialTab);
   const [unreadCount, setUnreadCount]   = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -118,10 +130,75 @@ export default function App() {
 
   const prevLogsLen = useRef(dbService.getTapLog().length);
 
-  const refreshUnread = useCallback(() => {
-    setUnreadCount(dbService.getUnreadCount());
+  // ── Auth: Supabase vs localStorage ──────────────────────────
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      // Mode demo: cek localStorage
+      const saved = dbService.getCurrentUser();
+      if (saved) {
+        setCurrentUser(saved);
+        setAuthState('authenticated');
+      } else {
+        setAuthState('unauthenticated');
+        clearHashToLogin();
+      }
+      return;
+    }
+
+    // Mode Supabase: cek session aktif
+    let mounted = true;
+
+    async function hydrateUser(session) {
+      if (!session?.user) {
+        if (mounted) {
+          setCurrentUser(null);
+          setAuthState('unauthenticated');
+          clearHashToLogin();
+        }
+        return;
+      }
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, nama_lengkap, email, role') // bisa tambahin aktif di samping role
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      if (!mounted) return;
+      if (profile) {
+        setCurrentUser({
+          uid: profile.id,
+          nama: profile.nama_lengkap || session.user.email,
+          email: profile.email || session.user.email,
+          role: profile.role,
+          // aktif: profile.aktif,
+        });
+        setAuthState('authenticated');
+      } else {
+        // Profil tidak aktif atau tidak ditemukan → logout
+        await supabase.auth.signOut();
+        setCurrentUser(null);
+        setAuthState('unauthenticated');
+        clearHashToLogin();
+      }
+    }
+
+    // Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      hydrateUser(session);
+    });
+
+    // Subscribe perubahan auth
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      hydrateUser(session);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
+  // ── Unread count & Realtime tap notifications ────────────────
   const triggerNotification = useCallback((latest) => {
     const id = 'notif-' + Date.now();
     setNotifications([{ id, ...tapNotification(latest) }]);
@@ -132,90 +209,155 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    refreshUnread();
-    const handle = () => {
-      setCurrentUser(dbService.getCurrentUser());
-      refreshUnread();
+    if (authState !== 'authenticated') return;
 
-      const logs = dbService.getTapLog();
-      if (logs.length > prevLogsLen.current) {
-        const added = logs.slice(0, logs.length - prevLogsLen.current);
-        const latest = added[0];
-        if (latest) triggerNotification(latest);
-      }
-      prevLogsLen.current = logs.length;
-    };
-
-    window.addEventListener('simlab_storage_updated', handle);
-    const interval = setInterval(refreshUnread, 3000);
-
-    let channel = null;
-    if (isSupabaseConfigured) {
-      channel = supabase
-        .channel('app-global-realtime-taps')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tap_log' }, (payload) => {
-          triggerNotification(payload.new);
-          refreshUnread();
-        })
-        .subscribe();
+    // Mode local: poll localStorage
+    if (!isSupabaseConfigured) {
+      setUnreadCount(dbService.getUnreadCount());
+      const handle = () => {
+        setCurrentUser(dbService.getCurrentUser());
+        setUnreadCount(dbService.getUnreadCount());
+        const logs = dbService.getTapLog();
+        if (logs.length > prevLogsLen.current) {
+          const latest = logs[0];
+          if (latest) triggerNotification(latest);
+        }
+        prevLogsLen.current = dbService.getTapLog().length;
+      };
+      window.addEventListener('simlab_storage_updated', handle);
+      const interval = setInterval(() => setUnreadCount(dbService.getUnreadCount()), 3000);
+      return () => {
+        window.removeEventListener('simlab_storage_updated', handle);
+        clearInterval(interval);
+      };
     }
 
-    return () => {
-      window.removeEventListener('simlab_storage_updated', handle);
-      if (channel) supabase.removeChannel(channel);
-      clearInterval(interval);
-    };
-  }, [refreshUnread, triggerNotification]);
+    // Mode Supabase: Realtime channel
+    supabase
+      .from('tap_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_read', false)
+      .then(({ count }) => setUnreadCount(count ?? 0));
 
+    const channel = supabase
+      .channel('app-global-realtime-taps')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tap_log' }, (payload) => {
+        triggerNotification(payload.new);
+        setUnreadCount((n) => n + 1);
+      })
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('[Realtime] channel error. Reconnecting...');
+        }
+      });
+
+    return () => supabase.removeChannel(channel);
+  }, [authState, triggerNotification]);
+
+  // ── Tab & URL management ────────────────────────────────────
   const handleTabChange = useCallback((tab) => {
     if (!PAGE_TITLES[tab]) return;
     setCurrentTab(tab);
     try {
       localStorage.setItem('simlab_current_tab', tab);
+      // Selalu update hash saat tab berubah
       if (window.location.hash.replace(/^#\/?/, '') !== tab) {
         window.location.hash = tab;
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (_) { /* noop */ }
     setMobileMenuOpen(false);
     if (tab === 'realtime_card') {
-      dbService.markTapsRead();
-      setUnreadCount(0);
+      if (isSupabaseConfigured) {
+        supabase.rpc('mark_taps_read').then(() => setUnreadCount(0));
+      } else {
+        dbService.markTapsRead();
+        setUnreadCount(0);
+      }
     }
   }, []);
 
+  // Sync tab saat hash berubah dari luar (tombol back/forward browser)
   useEffect(() => {
+    if (authState !== 'authenticated') return;
+
     const handleHashChange = () => {
       const hash = window.location.hash.replace(/^#\/?/, '');
       if (hash && PAGE_TITLES[hash] && hash !== currentTab) {
         setCurrentTab(hash);
-        localStorage.setItem('simlab_current_tab', hash);
+        try { localStorage.setItem('simlab_current_tab', hash); } catch (_) { /* noop */ }
       }
     };
     window.addEventListener('hashchange', handleHashChange);
-    if (!window.location.hash || window.location.hash === '#') {
+
+    // Kalau hash kosong atau #login → set ke tab aktif saat ini
+    const currentHash = window.location.hash.replace(/^#\/?/, '');
+    if (!currentHash || currentHash === LOGIN_HASH || !PAGE_TITLES[currentHash]) {
       window.location.hash = currentTab;
     }
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [currentTab]);
 
-  const handleLogout = () => {
-    dbService.logout();
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [authState, currentTab]);
+
+  // ── Logout ──────────────────────────────────────────────────
+  const handleLogout = async () => {
+    try {
+      if (isSupabaseConfigured) {
+        await supabase.auth.signOut();
+      } else {
+        dbService.logout();
+        setCurrentUser(null);
+      }
+    } catch (err) {
+      console.error('[Logout] error:', err);
+    }
+    // Bersihkan hash ke #login setelah logout
+    clearHashToLogin();
+    setAuthState('unauthenticated');
     setCurrentUser(null);
+    setUnreadCount(0);
   };
 
-  if (!currentUser) {
+  // ── Login success callback ───────────────────────────────────
+  const handleLoginSuccess = (userObj) => {
+    if (!isSupabaseConfigured) {
+      dbService.setCurrentUser(userObj);
+    }
+    setCurrentUser(userObj);
+    setAuthState('authenticated');
+    // Restore tab yang tersimpan atau default ke dashboard
+    const restoredTab = (() => {
+      try {
+        const saved = localStorage.getItem('simlab_current_tab');
+        return (saved && PAGE_TITLES[saved]) ? saved : 'dashboard';
+      } catch (_) { return 'dashboard'; }
+    })();
+    setCurrentTab(restoredTab);
+    // Update hash ke tab yang dipilih (bukan #login lagi)
+    try { window.location.hash = restoredTab; } catch (_) { /* noop */ }
+  };
+
+  // ── Render: Loading ─────────────────────────────────────────
+  if (authState === 'loading') {
     return (
-      <Login
-        onLoginSuccess={(u) => {
-          dbService.setCurrentUser(u);
-          setCurrentUser(u);
-        }}
-      />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3 text-gray-500">
+          <svg className="animate-spin h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          <p className="text-sm font-medium">Memuat aplikasi...</p>
+        </div>
+      </div>
     );
   }
 
+  // ── Render: Login page ──────────────────────────────────────
+  // URL: /#login (hash bersih, tidak ada tab aktif di URL)
+  if (authState === 'unauthenticated' || !currentUser) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // ── Render: Main app ────────────────────────────────────────
   return (
     <div className="min-h-screen bg-main flex">
       <NotificationToast
@@ -238,7 +380,6 @@ export default function App() {
       <main className="flex-1 md:ml-[232px] min-h-screen flex flex-col min-w-0">
         <header className="min-h-14 md:min-h-16 bg-surface border-b border-main px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-3 min-w-0">
-            {/* Hamburger Button (Mobile Only) */}
             <button
               onClick={() => setMobileMenuOpen(true)}
               className="md:hidden p-1.5 -ml-1.5 text-muted hover:text-main hover:bg-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
@@ -266,13 +407,13 @@ export default function App() {
             <Dashboard setCurrentTab={handleTabChange} user={currentUser} />
           </div>
           {currentTab === 'realtime_card' && <AktivitasKartu />}
-          {currentTab === 'peminjaman'    && <Peminjaman />}
-          {currentTab === 'pengembalian'  && <Pengembalian />}
+          {currentTab === 'peminjaman'    && <Peminjaman user={currentUser} />}
+          {currentTab === 'pengembalian'  && <Pengembalian user={currentUser} />}
           {currentTab === 'riwayat'       && <Riwayat />}
           {currentTab === 'list_alat'     && <DaftarAlat />}
           {currentTab === 'inventaris'    && <KelolaAlat />}
           {currentTab === 'kartu_rfid'    && <KelolaKartu />}
-          {currentTab === 'pengguna'      && <KelolaPetugas />}
+          {currentTab === 'pengguna'      && <KelolaPetugas currentUser={currentUser} />}
           {currentTab === 'simulasi_iot'  && <SimulasiKartu />}
         </div>
       </main>

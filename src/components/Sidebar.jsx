@@ -22,12 +22,12 @@ const MENU_SECTIONS = [
     ],
   },
   {
-    title: 'RFID',
+    title: 'Aktivitas RFID',
     items: [
       { id: 'realtime_card', label: 'Aktivitas Kartu', icon: IconCreditCard, roles: ['admin', 'petugas'] },
       { id: 'kartu_rfid', label: 'Kelola Kartu', icon: IconIdBadge2, roles: ['admin'] },
       { id: 'riwayat', label: 'Riwayat ', icon: IconHistory, roles: ['admin', 'petugas'] },
-      { id: 'simulasi_iot', label: 'Simulasi Kartu', icon: IconCpu, roles: ['admin', 'petugas'] },
+      // { id: 'simulasi_iot', label: 'Simulasi Kartu', icon: IconCpu, roles: ['admin', 'petugas'] },
     ],
   },
   {
@@ -39,7 +39,7 @@ const MENU_SECTIONS = [
     ],
   },
   {
-    title: 'Peminjaman',
+    title: 'Transaksi Manual',
     items: [
       { id: 'peminjaman', label: 'Peminjaman', icon: IconHandStop, roles: ['admin', 'petugas'] },
       { id: 'pengembalian', label: 'Pengembalian', icon: IconCornerDownLeft, roles: ['admin', 'petugas'] },
@@ -89,11 +89,10 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, unr
                         key={item.id}
                         id={`nav-${item.id}`}
                         onClick={() => setCurrentTab(item.id)}
-                        className={`w-full flex items-center gap-3 px-2.5 py-2.5 rounded text-[15px] min-h-11 text-left ${
-                          active
-                            ? 'bg-[#E8F1FB] text-[#1E5AAB] font-semibold border-l-[3px] border-[#1E5AAB]'
-                            : 'text-gray-700 hover:bg-gray-100 border-l-[3px] border-transparent'
-                        }`}
+                        className={`w-full flex items-center gap-3 px-2.5 py-2.5 rounded text-[15px] min-h-11 text-left ${active
+                          ? 'bg-[#E8F1FB] text-[#1E5AAB] font-semibold border-l-[3px] border-[#1E5AAB]'
+                          : 'text-gray-700 hover:bg-gray-100 border-l-[3px] border-transparent'
+                          }`}
                       >
                         <Icon size={20} className={`shrink-0 ${active ? 'text-[#1E5AAB]' : 'text-gray-500'}`} />
                         <span className="flex-1 truncate">{item.label}</span>

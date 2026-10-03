@@ -8,12 +8,42 @@ import { supabase } from './supabase';
  * JWT user dikirim otomatis oleh supabase-js.
  *
  * @param {string} name - Nama edge function (misal: "transaksi-manual")
- * @param {object} body - Body JSON yang dikirim ke function
+ * @param {object} [body] - Body JSON yang dikirim ke function (untuk POST)
+ * @param {object} [options] - Opsi tambahan: { method, params, body }
  * @returns {Promise<any>} Data dari response function
  * @throws Error JSON dari function (format: { ok, error, message, request_id })
  */
-export async function callFunction(name, body) {
-  const { data, error } = await supabase.functions.invoke(name, { body });
+export async function callFunction(name, body, options = {}) {
+  const { method, params } = options;
+
+  // Jika ada query params, buat URL manual
+  let functionOptions = { body: body ?? options.body };
+  if (method) functionOptions.method = method;
+
+  if (params && Object.keys(params).length > 0) {
+    const searchParams = new URLSearchParams(params).toString();
+    // supabase-js tidak support query param langsung, pakai fetch manual
+    const { data: session } = await supabase.auth.getSession();
+    const token = session?.session?.access_token;
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    const res = await fetch(`${supabaseUrl}/functions/v1/${name}?${searchParams}`, {
+      method: method ?? 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseAnon,
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+    });
+
+    const json = await res.json();
+    if (!res.ok) throw json;
+    return json;
+  }
+
+  const { data, error } = await supabase.functions.invoke(name, functionOptions);
 
   if (error) {
     // FunctionsHttpError: ambil payload JSON error dari edge function kita
@@ -32,6 +62,10 @@ export async function callRfidTap(uid, deviceId = 'web-simulator', deviceKey = '
   const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL;
   const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+  if (!supabaseUrl || !supabaseAnon) {
+    throw new Error('Supabase belum dikonfigurasi. Isi VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY di file .env');
+  }
+
   const res = await fetch(`${supabaseUrl}/functions/v1/rfid-tap`, {
     method: 'POST',
     headers: {
@@ -43,7 +77,30 @@ export async function callRfidTap(uid, deviceId = 'web-simulator', deviceKey = '
     body: JSON.stringify({ uid }),
   });
 
-  const json = await res.json();
-  if (!json.ok) throw json;
+  let json;
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error(`HTTP ${res.status}: respons bukan JSON. Periksa URL edge function.`);
+  }
+
+  if (!res.ok || json?.ok === false) {
+    const err = new Error(json?.message || `HTTP ${res.status}`);
+    err.error = json?.error;
+    err.type  = json?.type;
+    throw err;
+  }
   return json;
+}
+
+/**
+ * Shortcut untuk memanggil edge function transaksi-manual.
+ */
+export async function callTransaksiManual(payload) {
+  const { data, error } = await supabase.functions.invoke('transaksi-manual', { body: payload });
+  if (error) {
+    const p = await error.context?.json?.().catch(() => null);
+    throw p ?? error;
+  }
+  return data;
 }

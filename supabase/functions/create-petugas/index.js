@@ -142,9 +142,13 @@ Deno.serve(async (req) => {
     });
 
   } catch (err) {
-    console.error('Edge Function error:', err);
-    return json({ success: false, message: 'Terjadi kesalahan server' }, 500);
-  }
+  console.error('Edge Function error:', err);
+
+  return json({
+    success: false,
+    message: err?.message || String(err),
+  }, 500);
+}
 });
 
 // Helper: buat JSON Response

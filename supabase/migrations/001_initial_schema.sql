@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS public.alat (
   kode          TEXT        NOT NULL UNIQUE,
   nama          TEXT        NOT NULL,
   kategori      TEXT        NOT NULL DEFAULT 'umum',
-  uid_rfid      TEXT        UNIQUE,
   jumlah_total  INTEGER     NOT NULL DEFAULT 1,
   jumlah_rusak  INTEGER     NOT NULL DEFAULT 0,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -180,7 +179,6 @@ SELECT
   a.kode,
   a.nama,
   a.kategori,
-  a.uid_rfid,
   a.jumlah_total,
   a.jumlah_rusak,
   GREATEST(0, a.jumlah_total - a.jumlah_rusak - COALESCE(dipinjam.total, 0))::INTEGER AS stok_tersedia,

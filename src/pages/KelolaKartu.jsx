@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { dbService } from '../services/store';
 import Modal from '../components/Modal';
 import DataTable from '../components/DataTable';
@@ -8,21 +9,167 @@ import PageHeader from '../components/PageHeader';
 import ConfirmDialog from '../components/ConfirmDialog';
 import FormField, { inputClass } from '../components/FormField';
 import { showFeedback, friendlyError } from '../lib/feedback';
-import { IconPlus } from '@tabler/icons-react';
+import PageNote from '../components/PageNote';
+import { IconPlus, IconRefresh, IconMail } from '@tabler/icons-react';
 
 const EMPTY_FORM = { uid_kartu: '', kelas: '', nama_pemegang: '', aktif: true };
 
+// ── Data access helpers ──
+async function fetchKartu() {
+  if (isSupabaseConfigured) {
+    const { data, error } = await supabase
+      .from('kartu_rfid')
+      .select('uid_kartu, kelas, nama_pemegang, aktif, created_at')
+      .order('kelas');
+    if (error) throw error;
+    return data ?? [];
+  }
+  return dbService.getKartu();
+}
+
+async function fetchActiveLoansByCard(uid_kartu) {
+  if (isSupabaseConfigured) {
+    const { data, error } = await supabase
+      .from('transaksi')
+      .select('id, nama_alat')
+      .eq('uid_kartu', uid_kartu)
+      .eq('status', 'dipinjam');
+    if (error) return [];
+    return data ?? [];
+  }
+  return dbService.getActiveLoansByCard(uid_kartu);
+}
+
+async function upsertKartu(payload, isEdit) {
+  if (isSupabaseConfigured) {
+    if (isEdit) {
+      const { error } = await supabase
+        .from('kartu_rfid')
+        .update({ kelas: payload.kelas, nama_pemegang: payload.nama_pemegang, aktif: payload.aktif })
+        .eq('uid_kartu', payload.uid_kartu);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('kartu_rfid')
+        .insert({ uid_kartu: payload.uid_kartu, kelas: payload.kelas, nama_pemegang: payload.nama_pemegang, aktif: true });
+      if (error) throw error;
+    }
+    return;
+  }
+  // localStorage
+  const current = dbService.getKartu();
+  if (isEdit) {
+    const updated = current.map((k) => k.uid_kartu === payload.uid_kartu ? { ...k, ...payload } : k);
+    dbService.saveKartu(updated);
+  } else {
+    current.unshift({ ...payload, aktif: true, created_at: new Date().toISOString() });
+    dbService.saveKartu(current);
+  }
+}
+
+async function toggleKartuAktif(uid_kartu, aktif) {
+  if (isSupabaseConfigured) {
+    const { error } = await supabase
+      .from('kartu_rfid')
+      .update({ aktif })
+      .eq('uid_kartu', uid_kartu);
+    if (error) throw error;
+    return;
+  }
+  const updated = dbService.getKartu().map((k) =>
+    k.uid_kartu === uid_kartu ? { ...k, aktif } : k
+  );
+  dbService.saveKartu(updated);
+}
+
+async function deleteKartu(uid_kartu) {
+  if (isSupabaseConfigured) {
+    // Cek pinjaman aktif dulu
+    const { data } = await supabase
+      .from('transaksi')
+      .select('id')
+      .eq('uid_kartu', uid_kartu)
+      .eq('status', 'dipinjam')
+      .limit(1);
+    if (data && data.length > 0) {
+      throw new Error('Kartu tidak dapat dihapus karena masih memiliki pinjaman aktif.');
+    }
+    const { error } = await supabase.from('kartu_rfid').delete().eq('uid_kartu', uid_kartu);
+    if (error) throw error;
+    return;
+  }
+  const res = dbService.deleteKartu(uid_kartu);
+  if (!res.ok) throw new Error(res.message);
+}
+
+async function checkUidUsed(uid_kartu, excludeUid) {
+  if (isSupabaseConfigured) {
+    let q = supabase.from('kartu_rfid').select('uid_kartu').eq('uid_kartu', uid_kartu.trim());
+    if (excludeUid) q = q.neq('uid_kartu', excludeUid);
+    const { data } = await q.maybeSingle();
+    return !!data;
+  }
+  return dbService.getKartu().some(
+    (k) => k.uid_kartu === uid_kartu.trim() && k.uid_kartu !== excludeUid
+  );
+}
+
 export default function KartuRfidPage() {
-  const [kartu, setKartu]       = useState(() => dbService.getKartu());
-  const [modal, setModal]       = useState(false);
+  const [kartu, setKartu] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
-  const [form, setForm]         = useState(EMPTY_FORM);
-  const [errors, setErrors]     = useState({});
-  const [saving, setSaving]     = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
   const [lockedModal, setLockedModal] = useState({ isOpen: false, kartu: null, items: [] });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, item: null });
 
-  const reload = () => setKartu(dbService.getKartu());
+  // Cache pinjaman aktif per kartu (hitung di client agar tidak N+1)
+  const [activeLoansMap, setActiveLoansMap] = useState({});
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchKartu();
+      setKartu(data);
+
+      // Hitung pinjaman aktif per kartu sekaligus
+      if (isSupabaseConfigured) {
+        const { data: trx } = await supabase
+          .from('transaksi')
+          .select('uid_kartu, id, nama_alat')
+          .eq('status', 'dipinjam');
+        const map = {};
+        (trx ?? []).forEach((t) => {
+          if (!map[t.uid_kartu]) map[t.uid_kartu] = [];
+          map[t.uid_kartu].push(t);
+        });
+        setActiveLoansMap(map);
+      } else {
+        const map = {};
+        data.forEach((k) => {
+          map[k.uid_kartu] = dbService.getActiveLoansByCard(k.uid_kartu);
+        });
+        setActiveLoansMap(map);
+      }
+    } catch (err) {
+      console.error('[KelolaKartu] reload error:', err);
+      showFeedback({ type: 'error', title: 'Gagal memuat data kartu.', message: friendlyError(err) });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    reload();
+    if (!isSupabaseConfigured) return;
+    const ch = supabase
+      .channel('kartu-rfid-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kartu_rfid' }, () => reload())
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [reload]);
 
   const openAdd = () => {
     setEditItem(null);
@@ -42,14 +189,17 @@ export default function KartuRfidPage() {
     setModal(true);
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     const next = {};
     if (!form.uid_kartu?.trim()) next.uid_kartu = 'Nomor kartu wajib diisi.';
     if (!form.kelas?.trim()) next.kelas = 'Kelas wajib diisi.';
-    const current = dbService.getKartu();
-    const used = current.some((k) => k.uid_kartu === form.uid_kartu.trim() && k.uid_kartu !== editItem?.uid_kartu);
-    if (used) next.uid_kartu = 'Nomor kartu tersebut sudah digunakan.';
+
+    if (form.uid_kartu?.trim()) {
+      const used = await checkUidUsed(form.uid_kartu, editItem?.uid_kartu);
+      if (used) next.uid_kartu = 'Nomor kartu tersebut sudah digunakan.';
+    }
+
     setErrors(next);
     if (Object.keys(next).length) {
       showFeedback({ type: 'warning', title: 'Data tidak valid', message: Object.values(next)[0] });
@@ -58,27 +208,29 @@ export default function KartuRfidPage() {
 
     setSaving(true);
     try {
-      if (editItem) {
-        const updated = current.map((k) => (k.uid_kartu === editItem.uid_kartu ? { ...form } : k));
-        dbService.saveKartu(updated);
-        showFeedback({ type: 'success', title: 'Perubahan berhasil disimpan.' });
-      } else {
-        current.unshift({ ...form, aktif: true, created_at: new Date().toISOString() });
-        dbService.saveKartu(current);
-        showFeedback({ type: 'success', title: 'Kartu berhasil didaftarkan.' });
-      }
+      await upsertKartu({
+        uid_kartu: form.uid_kartu.trim(),
+        kelas: form.kelas.trim(),
+        nama_pemegang: form.nama_pemegang?.trim() || null,
+        aktif: form.aktif,
+      }, !!editItem);
+
+      showFeedback({
+        type: 'success',
+        title: editItem ? 'Perubahan berhasil disimpan.' : 'Kartu berhasil didaftarkan.',
+      });
       setModal(false);
       reload();
     } catch (err) {
-      console.error(err);
+      console.error('[KelolaKartu] save error:', err);
       showFeedback({ type: 'error', title: 'Kartu gagal disimpan.', message: friendlyError(err) });
     } finally {
       setSaving(false);
     }
   };
 
-  const handleAttemptDelete = (item) => {
-    const activeLoans = dbService.getActiveLoansByCard(item.uid_kartu);
+  const handleAttemptDelete = async (item) => {
+    const activeLoans = activeLoansMap[item.uid_kartu] ?? [];
     if (activeLoans.length > 0) {
       setLockedModal({ isOpen: true, kartu: item, items: activeLoans });
       return;
@@ -86,34 +238,36 @@ export default function KartuRfidPage() {
     setConfirmDelete({ isOpen: true, item });
   };
 
-  const handleExecuteDelete = () => {
+  const handleExecuteDelete = async () => {
     const uid = confirmDelete.item?.uid_kartu;
     if (!uid) return;
-    const res = dbService.deleteKartu(uid);
-    if (!res.ok) {
-      console.error(res.message);
+    try {
+      await deleteKartu(uid);
+      showFeedback({ type: 'success', title: 'Kartu berhasil dihapus.' });
+      setConfirmDelete({ isOpen: false, item: null });
+      reload();
+    } catch (err) {
+      console.error('[KelolaKartu] delete error:', err);
       showFeedback({
         type: 'error',
         title: 'Kartu gagal dihapus.',
-        message: 'Kartu masih memiliki pinjaman aktif atau tidak dapat dihapus saat ini.',
+        message: err?.message || friendlyError(err),
       });
-      return;
     }
-    showFeedback({ type: 'success', title: 'Kartu berhasil dihapus.' });
-    setConfirmDelete({ isOpen: false, item: null });
-    reload();
   };
 
-  const toggleAktif = (item) => {
-    const updated = dbService
-      .getKartu()
-      .map((k) => (k.uid_kartu === item.uid_kartu ? { ...k, aktif: !k.aktif } : k));
-    dbService.saveKartu(updated);
-    showFeedback({
-      type: 'success',
-      title: item.aktif ? 'Kartu diblokir.' : 'Kartu diaktifkan kembali.',
-    });
-    reload();
+  const handleToggleAktif = async (item) => {
+    try {
+      await toggleKartuAktif(item.uid_kartu, !item.aktif);
+      showFeedback({
+        type: 'success',
+        title: item.aktif ? 'Kartu berhasil diblokir.' : 'Kartu berhasil diaktifkan kembali.',
+      });
+      reload();
+    } catch (err) {
+      console.error('[KelolaKartu] toggleAktif error:', err);
+      showFeedback({ type: 'error', title: 'Gagal mengubah status kartu.', message: friendlyError(err) });
+    }
   };
 
   const columns = [
@@ -127,18 +281,22 @@ export default function KartuRfidPage() {
       key: 'pemegang',
       label: 'Pemegang',
       sortable: true,
-      render: (row) => <span className='font-medium text-main'>{row.nama_pemegang || '—'}</span>,
+      render: (row) => <span className="font-medium text-main">{row.nama_pemegang || '—'}</span>,
+    },
+    {
+      key: 'uid_kartu',
+      label: 'UID Kartu',
+      render: (row) => <span className="text-sm">{row.uid_kartu}</span>,
     },
     {
       key: 'pinjaman_aktif',
       label: 'Pinjaman aktif',
       sortable: false,
       render: (row) => {
-        const activeLoans = dbService.getActiveLoansByCard(row.uid_kartu);
-        if (activeLoans.length > 0) {
-          return <span className="text-orange-800 font-medium">{activeLoans.length} alat dipinjam</span>;
-        }
-        return <span className="text-muted">Tidak ada</span>;
+        const count = (activeLoansMap[row.uid_kartu] ?? []).length;
+        return count > 0
+          ? <span className="text-orange-800 font-medium">{count} alat dipinjam</span>
+          : <span className="text-muted">Tidak ada</span>;
       },
     },
     {
@@ -151,12 +309,12 @@ export default function KartuRfidPage() {
       key: 'aksi',
       label: 'Tindakan',
       render: (row) => {
-        const isBorrowing = dbService.getActiveLoansByCard(row.uid_kartu).length > 0;
+        const isBorrowing = (activeLoansMap[row.uid_kartu] ?? []).length > 0;
         return (
           <div className="flex items-center gap-1 justify-end flex-wrap">
             <button
               type="button"
-              onClick={() => toggleAktif(row)}
+              onClick={() => handleToggleAktif(row)}
               className="table-action table-action-edit"
             >
               {row.aktif ? 'Blokir' : 'Aktifkan'}
@@ -181,24 +339,40 @@ export default function KartuRfidPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Kelola Kartu"
+        title="Kelola Kartu RFID"
         description="Tambah, Edit, Hapus dan Blokir Kartu RFID"
       />
+
+      <PageNote title="Informasi Penting" icon={IconMail}>
+        UID Kartu akan otomatis terbaca jika Anda melakukan tap pada perangkat alat scanner reader. Kartu yang sedang memiliki pinjaman aktif tidak dapat dihapus dari sistem.
+      </PageNote>
 
       <DataTable
         columns={columns}
         data={kartu}
-        searchPlaceholder="Cari Kelas..."
+        loading={loading}
+        searchPlaceholder="Cari Kelas atau UID..."
         searchKeys={['kelas', 'nama_pemegang', 'uid_kartu']}
         emptyMessage="Belum ada kartu RFID"
         emptyDescription="Kartu yang didaftarkan akan muncul di sini."
         actionButton={
-          <Button icon={IconPlus} onClick={openAdd} className="w-full md:w-auto justify-center">
-            Daftar kartu
-          </Button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={reload}
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+              title="Refresh data"
+            >
+              <IconRefresh size={18} />
+            </button>
+            <Button icon={IconPlus} onClick={openAdd} className="w-full md:w-auto justify-center">
+              Daftar kartu
+            </Button>
+          </div>
         }
       />
 
+      {/* Modal Tambah/Edit */}
       <Modal
         isOpen={modal}
         onClose={() => !saving && setModal(false)}
@@ -207,17 +381,18 @@ export default function KartuRfidPage() {
       >
         <form onSubmit={handleSave} className="space-y-4">
           <FormField
-            label="Nomor kartu"
+            label="Nomor kartu (UID)"
             required
             error={errors.uid_kartu}
-            hint="Otomatis teracak saat menambah Kartu (bisa edit sendiri)"
+            hint={editItem ? 'UID tidak bisa diubah setelah didaftarkan.' : 'Otomatis teracak, bisa edit manual sesuai UID fisik kartu.'}
           >
             <input
               required
               value={form.uid_kartu}
-              onChange={(e) => setForm({ ...form, uid_kartu: e.target.value })}
+              onChange={(e) => setForm({ ...form, uid_kartu: e.target.value.toUpperCase().replace(/\s/g, '') })}
               disabled={!!editItem}
-              className={inputClass}
+              className={`${inputClass} ${editItem ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+              placeholder="A1B2C3D4 atau KARTU-XII-RPL1"
             />
           </FormField>
           <FormField label="Kelas" required error={errors.kelas}>
@@ -225,13 +400,13 @@ export default function KartuRfidPage() {
               required
               value={form.kelas}
               onChange={(e) => setForm({ ...form, kelas: e.target.value })}
-              placeholder="XI RPL 1"
+              placeholder="XII RPL 1"
               className={inputClass}
             />
           </FormField>
           <FormField label="Nama perwakilan">
             <input
-              value={form.nama_pemegang}
+              value={form.nama_pemegang || ''}
               onChange={(e) => setForm({ ...form, nama_pemegang: e.target.value })}
               placeholder="Ketua kelas / penanggung jawab"
               className={inputClass}
@@ -261,6 +436,7 @@ export default function KartuRfidPage() {
         </form>
       </Modal>
 
+      {/* Modal: Kartu locked (ada pinjaman aktif) */}
       <Modal
         isOpen={lockedModal.isOpen}
         onClose={() => setLockedModal({ isOpen: false, kartu: null, items: [] })}
@@ -270,26 +446,25 @@ export default function KartuRfidPage() {
       >
         <div className="space-y-4">
           <p className="text-[15px] text-gray-700 leading-relaxed">
-            Kelas {lockedModal.kartu?.kelas} masih meminjam alat. Kembalikan alat terlebih dahulu, lalu hapus kartu.
+            Kelas <b>{lockedModal.kartu?.kelas}</b> masih meminjam alat. Kembalikan alat terlebih dahulu, lalu hapus kartu.
           </p>
-          <div className="border border-gray-200 divide-y divide-gray-200">
-            {lockedModal.items.map((item) => (
-              <div key={item.id} className="flex items-center justify-between py-2 px-3 text-[15px]">
-                <span>{item.nama_alat}</span>
+          <div className="border border-gray-200 divide-y divide-gray-200 rounded-lg overflow-hidden">
+            {lockedModal.items.map((item, idx) => (
+              <div key={item.id || idx} className="flex items-center justify-between py-2 px-3 text-[15px]">
+                <span>{item.nama_alat || item.alat_id}</span>
+                <Badge status="dipinjam" />
               </div>
             ))}
           </div>
           <div className="flex justify-end">
-            <Button
-              variant="secondary"
-              onClick={() => setLockedModal({ isOpen: false, kartu: null, items: [] })}
-            >
+            <Button variant="secondary" onClick={() => setLockedModal({ isOpen: false, kartu: null, items: [] })}>
               Tutup
             </Button>
           </div>
         </div>
       </Modal>
 
+      {/* Confirm delete */}
       <ConfirmDialog
         isOpen={confirmDelete.isOpen}
         onClose={() => setConfirmDelete({ isOpen: false, item: null })}

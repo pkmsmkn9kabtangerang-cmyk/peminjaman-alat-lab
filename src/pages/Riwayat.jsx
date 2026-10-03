@@ -1,20 +1,23 @@
 // src/pages/RiwayatPage.jsx
 // Riwayat Peminjaman: Filter Waktu, Pemegang, Kelas, Status Pisah berstandar SaaS
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { dbService } from '../services/store';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import Badge from '../components/Badge';
 import Button from '../components/Button';
 import DataTable from '../components/DataTable';
 import FilterDropdown from '../components/FilterDropdown';
 import PageHeader from '../components/PageHeader';
+import PageNote from '../components/PageNote';
+import { friendlyError, showFeedback } from '../lib/feedback';
 import {
   IconTrash,
   IconX,
-  IconCircleCheck,
   IconClock,
   IconCalendar,
-  IconAlertCircle,
+  IconRefresh,
+  IconMail
 } from '@tabler/icons-react';
 import Modal from '../components/Modal';
 
@@ -29,34 +32,95 @@ const FMT = (iso) => {
 const CONFIRM_TEXT = 'hapus semua riwayat';
 
 const TIME_OPTIONS = [
-  { value: '1h',     label: '1 Jam Terakhir' },
-  { value: '5h',     label: '5 Jam Terakhir' },
-  { value: '24h',    label: '24 Jam Terakhir' },
+  { value: '1h', label: '1 Jam Terakhir' },
+  { value: '5h', label: '5 Jam Terakhir' },
+  { value: '24h', label: '24 Jam Terakhir' },
+  { value: 'all', label: 'Semua Waktu' },
   { value: 'custom', label: 'Pilih Tanggal' },
 ];
 
+async function fetchRiwayat() {
+  if (isSupabaseConfigured) {
+    const { data, error } = await supabase
+      .from('transaksi')
+      .select(`
+        *,
+        kartu_rfid ( nama_pemegang )
+      `)
+      .order('waktu_pinjam', { ascending: false });
+
+    if (error) throw error;
+    // Map to include pemegang field
+    return (data || []).map(row => ({
+      ...row,
+      pemegang: row.kartu_rfid?.nama_pemegang || row.pemegang || '—'
+    }));
+  }
+
+  // Local fallback
+  const trx = dbService.getTransaksi();
+  const kartu = dbService.getKartu();
+  return trx.map(row => {
+    const k = kartu.find(k => k.uid_kartu === row.uid_kartu);
+    return { ...row, pemegang: k?.nama_pemegang || row.pemegang || '—' };
+  });
+}
+
 export default function RiwayatPage() {
-  const [data, setData]             = useState(() => dbService.getTransaksi());
-  const [kartuList, setKartuList]   = useState(() => dbService.getKartu());
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [timeFilter, setTimeFilter] = useState('24h');
   const [customDate, setCustomDate] = useState('');
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearInput, setClearInput] = useState('');
-  const [toast, setToast]           = useState(null);
-  
-  const user = dbService.getCurrentUser();
-  const isAdmin = user?.role === 'admin';
 
-  const reload = () => {
-    setData(dbService.getTransaksi());
-    setKartuList(dbService.getKartu());
-  };
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
-    window.addEventListener('simlab_storage_updated', reload);
-    const t = setInterval(reload, 3000);
-    return () => { window.removeEventListener('simlab_storage_updated', reload); clearInterval(t); };
+    if (isSupabaseConfigured) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+          supabase.from('profiles').select('role').eq('id', session.user.id).single()
+            .then(({ data }) => setUser({ role: data?.role }));
+        }
+      });
+    } else {
+      setUser(dbService.getCurrentUser());
+    }
   }, []);
+
+  const isAdmin = user?.role === 'admin';
+
+  const reloadData = useCallback(async (isRealtimeEvent = false) => {
+    if (!isRealtimeEvent) setLoading(true);
+    try {
+      const res = await fetchRiwayat();
+      setData(res);
+    } catch (err) {
+      console.error('[Riwayat] fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    reloadData();
+
+    if (!isSupabaseConfigured) {
+      const handleStorage = () => reloadData(true);
+      window.addEventListener('simlab_storage_updated', handleStorage);
+      const t = setInterval(() => reloadData(true), 3000);
+      return () => {
+        window.removeEventListener('simlab_storage_updated', handleStorage);
+        clearInterval(t);
+      };
+    } else {
+      const channel = supabase.channel('transaksi_changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'transaksi' }, () => reloadData(true))
+        .subscribe();
+      return () => supabase.removeChannel(channel);
+    }
+  }, [reloadData]);
 
   const filteredData = useMemo(() => {
     let filtered = data;
@@ -71,34 +135,31 @@ export default function RiwayatPage() {
     } else if (timeFilter === 'custom' && customDate) {
       filtered = data.filter(d => d.waktu_pinjam?.startsWith(customDate));
     }
+    // jika 'all', jangan filter waktu
 
-    return filtered.map(row => {
-      const k = kartuList.find(k => k.uid_kartu === row.uid_kartu);
-      return { ...row, pemegang: k?.nama_pemegang || row.pemegang || '—' };
-    });
-  }, [data, timeFilter, customDate, kartuList]);
+    return filtered;
+  }, [data, timeFilter, customDate]);
 
-  const handleClearAll = () => {
+  const handleClearAll = async () => {
     if (clearInput.toLowerCase() !== CONFIRM_TEXT) return;
-    if (data.length === 0) {
-      setShowClearModal(false);
-      setClearInput('');
-      setToast({
-        type: 'warning',
-        message: 'Tidak ada data riwayat untuk dihapus (data riwayat sudah kosong).',
-      });
-      setTimeout(() => setToast(null), 4500);
-      return;
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('transaksi').delete().neq('id', 0);
+        if (error) throw error;
+        showFeedback({ type: 'success', title: 'Semua riwayat transaksi berhasil dihapus permanen.' });
+        reloadData();
+      } catch (err) {
+        showFeedback({ type: 'error', title: 'Gagal menghapus riwayat.', message: friendlyError(err) });
+      }
+    } else {
+      dbService.saveTransaksi([]);
+      reloadData();
+      showFeedback({ type: 'success', title: 'Semua riwayat transaksi peminjaman berhasil dihapus.' });
     }
-    dbService.saveTransaksi([]);
-    setData([]);
+
     setShowClearModal(false);
     setClearInput('');
-    setToast({
-      type: 'success',
-      message: 'Semua riwayat transaksi peminjaman berhasil dihapus secara permanen.',
-    });
-    setTimeout(() => setToast(null), 4500);
   };
 
   const columns = [
@@ -149,14 +210,14 @@ export default function RiwayatPage() {
       render: (row) => row.status === 'dikembalikan' ? <Badge status="dikembalikan" /> : <span className="text-muted">—</span>,
     },
     {
-          key: 'jenis_terdeteksi',
-          label: 'Jenis Deteksi',
-          sortable: true,
-          render: (row) => {
-            const isManual = row.jenis_terdeteksi === 'manual' || row.sumber === 'manual';
-            return <Badge status={isManual ? 'manual' : 'realtime'} />;
-          },
-        },
+      key: 'jenis_terdeteksi',
+      label: 'Jenis Deteksi',
+      sortable: true,
+      render: (row) => {
+        const isManual = row.jenis_terdeteksi === 'manual' || row.sumber === 'manual';
+        return <Badge status={isManual ? 'manual' : 'realtime'} />;
+      },
+    },
   ];
 
   return (
@@ -166,65 +227,44 @@ export default function RiwayatPage() {
         description="Seluruh riwayat catatan peminjaman dan pengembalian alat lab."
       />
 
-      {/* Notification Toast */}
-      {toast && (
-        <div
-          className={`flex items-center justify-between p-3.5 rounded-xl border text-xs sm:text-sm shadow-xs animate-fadeIn ${
-            toast.type === 'warning'
-              ? 'bg-amber-50 border-amber-300 text-amber-900'
-              : 'bg-emerald-50 border-emerald-200/90 text-emerald-800'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            {toast.type === 'warning' ? (
-              <IconAlertCircle size={18} className="text-amber-600 shrink-0" />
-            ) : (
-              <IconCircleCheck size={18} className="text-emerald-600 shrink-0" />
-            )}
-            <span className="font-medium">{toast.message}</span>
-          </div>
-          <button
-            onClick={() => setToast(null)}
-            className={`p-1 rounded-md transition ${
-              toast.type === 'warning'
-                ? 'text-amber-600 hover:text-amber-800 hover:bg-amber-100'
-                : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100'
-            }`}
-            aria-label="Tutup notifikasi"
-          >
-            <IconX size={14} />
-          </button>
-        </div>
-      )}
+      <PageNote title="Informasi Penting" icon={IconMail}>
+        Halaman ini mencatat semua transaksi peminjaman dan pengembalian. Gunakan filter waktu atau tanggal untuk mencari riwayat spesifik dengan lebih mudah.
+      </PageNote>
 
-      {/* Main DataTable */}
       <DataTable
         columns={columns}
         data={filteredData}
+        loading={loading}
         searchPlaceholder="Cari riwayat..."
         searchKeys={['kelas', 'nama_alat', 'uid_kartu', 'pemegang', 'sumber']}
         emptyMessage="Belum ada riwayat Peminjaman Alat"
         actionButton={
-          isAdmin && (
-            <Button
-              variant="danger-soft"
-              icon={IconTrash}
-              onClick={() => {
-                if (data.length === 0) {
-                  setToast({
-                    type: 'warning',
-                    message: 'Tidak ada data riwayat peminjaman untuk dihapus (data sudah kosong).',
-                  });
-                  setTimeout(() => setToast(null), 4500);
-                  return;
-                }
-                setShowClearModal(true);
-              }}
-              className="w-full md:w-auto justify-center whitespace-nowrap"
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => reloadData(false)}
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+              title="Refresh data"
             >
-              Hapus Semua Riwayat
-            </Button>
-          )
+              <IconRefresh size={18} />
+            </button>
+            {isAdmin && (
+              <Button
+                variant="danger-soft"
+                icon={IconTrash}
+                onClick={() => {
+                  if (data.length === 0) {
+                    showFeedback({ type: 'warning', title: 'Data kosong', message: 'Tidak ada data riwayat peminjaman untuk dihapus.' });
+                    return;
+                  }
+                  setShowClearModal(true);
+                }}
+                className="w-full md:w-auto justify-center whitespace-nowrap"
+              >
+                Hapus Semua Riwayat
+              </Button>
+            )}
+          </div>
         }
         filters={
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
@@ -238,7 +278,7 @@ export default function RiwayatPage() {
               options={TIME_OPTIONS}
               className="w-full sm:w-auto"
             />
-            
+
             {timeFilter === 'custom' && (
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
                 <span className="text-sm font-medium text-gray-600 sm:ml-2">Pilih Tanggal:</span>
@@ -259,7 +299,6 @@ export default function RiwayatPage() {
         }
       />
 
-      {/* Modal Hapus Semua - Gaptek Friendly */}
       <Modal
         isOpen={showClearModal}
         onClose={() => {
@@ -271,54 +310,33 @@ export default function RiwayatPage() {
         maxWidth="max-w-md"
       >
         <div className="space-y-4">
-          {data.length === 0 ? (
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs sm:text-sm">
-              Saat ini data riwayat peminjaman kosong. Tidak ada data yang dapat dihapus.
-            </div>
-          ) : (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
-              <h4 className="text-sm font-bold text-red-900 mb-1">
-                Peringatan Penting
-              </h4>
-              <p className="text-xs text-red-700 leading-relaxed">
-                Semua data riwayat peminjaman dan pengembalian ({data.length} data) akan dihapus selamanya dan tidak bisa dikembalikan.
-              </p>
-            </div>
-          )}
+          <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+            <h4 className="text-sm font-bold text-red-900 mb-1">Peringatan Penting</h4>
+            <p className="text-xs text-red-700 leading-relaxed">
+              Semua data riwayat peminjaman dan pengembalian ({data.length} data) akan dihapus selamanya dan tidak bisa dikembalikan.
+            </p>
+          </div>
 
           <div className="space-y-2 mt-4">
             <label className="text-sm font-semibold text-gray-700 block">
               Untuk melanjutkan, ketik tulisan ini: <span className="font-bold text-red-600 bg-gray-100 px-2 py-1 rounded select-all">{CONFIRM_TEXT}</span>
             </label>
-            
+
             <input
               type="text"
               value={clearInput}
               onChange={(e) => setClearInput(e.target.value)}
               placeholder={`Ketik: ${CONFIRM_TEXT}`}
-              disabled={data.length === 0}
-              className="w-full px-4 h-12 rounded-xl border border-gray-300 text-base focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="w-full px-4 h-12 rounded-xl border border-gray-300 text-base focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 bg-white text-gray-900"
               autoComplete="off"
             />
           </div>
 
           <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-5 border-t border-gray-100 mt-5">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setShowClearModal(false);
-                setClearInput('');
-              }}
-              className="w-full sm:w-auto justify-center h-11"
-            >
+            <Button variant="secondary" onClick={() => { setShowClearModal(false); setClearInput(''); }} className="w-full sm:w-auto justify-center h-11">
               Batal
             </Button>
-            <Button
-              variant="danger"
-              disabled={data.length === 0 || clearInput.toLowerCase() !== CONFIRM_TEXT}
-              onClick={handleClearAll}
-              className="w-full sm:w-auto justify-center h-11"
-            >
+            <Button variant="danger" disabled={clearInput.toLowerCase() !== CONFIRM_TEXT} onClick={handleClearAll} className="w-full sm:w-auto justify-center h-11">
               Hapus Semua Riwayat
             </Button>
           </div>
@@ -327,4 +345,3 @@ export default function RiwayatPage() {
     </div>
   );
 }
-

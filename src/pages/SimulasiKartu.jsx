@@ -1,7 +1,11 @@
 // src/pages/SimulasiIotPage.jsx
 // Simulator ESP32: kirim payload tap RFID
+// Mode Supabase: tap → callRfidTap() ke edge function rfid-tap
+// Mode local: tap → dbService.processTap() (localStorage)
 
 import { useState, useEffect, useRef } from 'react';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { callRfidTap } from '../lib/api';
 import { dbService, SESSION_DURATION_SECONDS } from '../services/store';
 import { getErrorMessage } from '../lib/handleError';
 import Button from '../components/Button';
@@ -87,53 +91,75 @@ export default function SimulasiIotPage() {
     return () => clearInterval(timer);
   }, [activeSession]);
 
-  const handleTap = async (uid, label, type) => {
+  const handleTap = async (uid, label) => {
     if (loading) return;
     setLoading(true);
-    addLog(`[TX] Mengirim UID: ${uid} (${label})`, 'tx');
+    const modeLabel = isSupabaseConfigured ? '[PROD→EdgeFn]' : '[LOCAL→Store]';
+    addLog(`[TX] ${modeLabel} Mengirim UID: ${uid} (${label})`, 'tx');
 
-    setTimeout(() => {
-      try {
-        const res = dbService.processTap(uid, 'simulator-01');
-        if (res.ok) {
-          if (res.action === 'selesai') {
-            addLog(`[RX] Sesi Selesai: ${res.kelas} mengakhiri sesi. Slot kartu kini bebas untuk pengguna lain!`, 'success');
-          } else if (res.action === 'mulai') {
-            addLog(`[RX] Berhasil: Sesi ${res.kelas} aktif (${res.jenis === 'pinjam' ? 'Mode Pinjam' : 'Mode Kembali'}) - Durasi 20 detik`, 'success');
-          } else if (res.type === 'alat') {
-            addLog(`[RX] Berhasil: ${res.jenis === 'pinjam' ? 'Pinjam' : 'Kembali'} "${res.alat}" (${res.kelas}) - Sesi di-reset ke 20s`, 'success');
-          } else {
-            addLog(`[RX] Berhasil: ${res.jenis} ${res.alat || res.kelas}`, 'success');
-          }
-        } else {
-          if (res.error === 'sesi_kartu_lain_aktif') {
-            const activeName = res.activeCard?.kelas || res.activeCard?.uid_kartu || 'lain';
-            addLog(
-              `[RX] Ditolak: Kartu ${label} tidak bisa ngetap! Sesi ${activeName} sedang aktif. Harap tunggu hingga ${activeName} men-tap kartu kembali atau tunggu waktu 20s habis.`,
-              'error'
-            );
-          } else if (res.error === 'kartu_nonaktif') {
-            addLog(`[RX] Ditolak: Kartu ${label} tidak aktif / diblokir.`, 'error');
-          } else if (res.error === 'sesi_tidak_ada') {
-            addLog(`[RX] Ditolak: Belum ada kartu yang di-tap atau sesi sudah habis (20 detik).`, 'error');
-          } else if (res.error === 'stok_habis') {
-            addLog(`[RX] Ditolak: Stok alat "${res.alat || label}" habis.`, 'error');
-          } else {
-            addLog(`[RX] Ditolak: ${getErrorMessage(res.error)}`, 'error');
-          }
-        }
-      } catch (err) {
-        addLog(`[RX] Error: ${err.message}`, 'error');
-      } finally {
-        loadData();
-        setLoading(false);
+    try {
+      let res;
+
+      if (isSupabaseConfigured) {
+        // ── Mode Supabase: kirim ke edge function rfid-tap ──
+        // x-device-key di sini adalah sim-key, hanya untuk testing.
+        // Di prod nyata, kunci ada di firmware ESP32 dan di tabel devices.
+        res = await callRfidTap(uid, 'web-simulator', import.meta.env.VITE_SIM_DEVICE_KEY ?? 'sim-key');
+      } else {
+        // ── Mode local: proses via localStorage store ──
+        await new Promise((r) => setTimeout(r, 450)); // simulasi latency
+        res = dbService.processTap(uid, 'simulator-01');
       }
-    }, 450); // simulasi latency hardware/jaringan
+
+      if (res.ok) {
+        if (res.action === 'selesai') {
+          addLog(`[RX] OK Sesi Selesai: ${res.kelas} mengakhiri sesi. Slot kartu kini bebas!`, 'success');
+        } else if (res.action === 'mulai') {
+          addLog(`[RX] OK Sesi ${res.kelas} aktif (${res.jenis === 'pinjam' ? 'Mode Pinjam' : 'Mode Kembali'}) - Durasi 20 detik`, 'success');
+        } else if (res.type === 'alat') {
+          addLog(`[RX] OK ${res.jenis === 'pinjam' ? 'Pinjam' : 'Kembali'} "${res.alat}" (${res.kelas}) - Sesi di-reset ke 20s`, 'success');
+        } else {
+          addLog(`[RX] OK ${res.jenis ?? ''} ${res.alat || res.kelas || ''}`, 'success');
+        }
+      } else {
+        if (res.error === 'sesi_kartu_lain_aktif') {
+          const activeName = res.activeCard?.kelas || res.activeCard?.uid_kartu || 'lain';
+          addLog(
+            `[RX] TOLAK: Kartu ${label} tidak bisa tap! Sesi ${activeName} sedang aktif. Tunggu selesai atau habis (20s).`,
+            'error'
+          );
+        } else if (res.error === 'kartu_nonaktif') {
+          addLog(`[RX] TOLAK: Kartu ${label} tidak aktif / diblokir.`, 'error');
+        } else if (res.error === 'sesi_tidak_ada') {
+          addLog(`[RX] TOLAK: Belum ada kartu yang di-tap atau sesi sudah habis (20 detik).`, 'error');
+        } else if (res.error === 'stok_habis') {
+          addLog(`[RX] TOLAK: Stok alat "${label}" habis.`, 'error');
+        } else if (res.error === 'uid_tidak_dikenal') {
+          addLog(`[RX] TOLAK: UID "${uid}" belum terdaftar di sistem.`, 'error');
+        } else {
+          addLog(`[RX] TOLAK: ${res.message || getErrorMessage(res.error)}`, 'error');
+        }
+      }
+    } catch (err) {
+      console.error('[SimulasiKartu] handleTap error:', err);
+      if (err?.error === 'sesi_tidak_ada') {
+        addLog(`[RX] TOLAK: Belum ada sesi kartu aktif.`, 'error');
+      } else if (err?.error === 'stok_habis') {
+        addLog(`[RX] TOLAK: Stok alat habis.`, 'error');
+      } else if (err?.error === 'kartu_nonaktif') {
+        addLog(`[RX] TOLAK: Kartu diblokir.`, 'error');
+      } else {
+        addLog(`[RX] ERROR: ${err?.message || String(err)}`, 'error');
+      }
+    } finally {
+      loadData();
+      setLoading(false);
+    }
   };
 
   const handleEndSessionDirectly = () => {
     if (!activeSession) return;
-    handleTap(activeSession.uid_kartu, activeSession.kelas || activeSession.uid_kartu, 'kartu');
+    handleTap(activeSession.uid_kartu, activeSession.kelas || activeSession.uid_kartu);
   };
 
   const maxDuration = SESSION_DURATION_SECONDS || 20;
@@ -152,9 +178,13 @@ export default function SimulasiIotPage() {
             Uji coba alur tap kartu RFID dan stiker alat. Sesi dibatasi 20 detik dan mengunci akses untuk kelas lain selama sesi aktif.
           </p>
         </div>
-        <div className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 self-start sm:self-auto shadow-xs">
+        <div className={`inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border self-start sm:self-auto shadow-xs ${
+          isSupabaseConfigured
+            ? 'bg-blue-50 text-blue-700 border-blue-200'
+            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        }`}>
           <IconWifi size={14} className="animate-pulse" />
-          ESP32 Online (Simulator)
+          {isSupabaseConfigured ? 'ESP32 → Edge Function (Prod)' : 'ESP32 → Local Store (Demo)'}
         </div>
       </div>
 

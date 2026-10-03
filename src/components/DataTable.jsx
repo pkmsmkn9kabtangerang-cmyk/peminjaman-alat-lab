@@ -16,15 +16,15 @@ export default function DataTable({
   searchKeys = [],
   defaultPageSize = 10,
   loading = false,
-  emptyMessage = 'Belum ada data',
-  emptyDescription = 'Data yang ditambahkan akan muncul di sini.',
+  emptyMessage = 'Belum ada data yang masuk',
+  emptyDescription = 'Data yang masuk akan muncul di sini.',
   filters,
   actionButton,
 }) {
-  const [search, setSearch]     = useState('');
-  const [sortKey, setSortKey]   = useState(null);
-  const [sortDir, setSortDir]   = useState('asc');
-  const [page, setPage]         = useState(1);
+  const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSize);
 
   const filtered = useMemo(() => {
@@ -45,12 +45,12 @@ export default function DataTable({
     });
   }, [filtered, sortKey, sortDir]);
 
-  const totalPages  = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const paged       = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const hasSearch   = search.trim().length > 0;
-  const emptyTitle  = hasSearch ? 'Data tidak ditemukan' : emptyMessage;
-  const emptyHint   = hasSearch ? 'Coba gunakan kata kunci lain.' : emptyDescription;
+  const paged = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const hasSearch = search.trim().length > 0;
+  const emptyTitle = hasSearch ? 'Data tidak ditemukan' : emptyMessage;
+  const emptyHint = hasSearch ? 'Coba gunakan kata kunci lain.' : emptyDescription;
 
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -127,9 +127,8 @@ export default function DataTable({
               {columns.map((col) => (
                 <th
                   key={col.key}
-                  className={`px-4 py-3 text-[15px] font-semibold text-gray-700 ${
-                    col.sortable ? 'cursor-pointer hover:bg-gray-100 group select-none' : ''
-                  }`}
+                  className={`px-4 py-3 text-[15px] font-semibold text-gray-700 ${col.sortable ? 'cursor-pointer hover:bg-gray-100 group select-none' : ''
+                    }`}
                   onClick={() => col.sortable && handleSort(col.key)}
                 >
                   <div className="flex items-center gap-1.5 whitespace-nowrap">
@@ -143,35 +142,34 @@ export default function DataTable({
           <tbody className="divide-y divide-gray-200 text-gray-800">
             {loading
               ? Array.from({ length: Math.min(pageSize, 6) }).map((_, i) => (
-                  <tr key={i}>
-                    {columns.map((col) => (
-                      <td key={col.key} className="px-4 py-4">
-                        <div className="h-4 bg-gray-100 rounded w-2/3" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
+                <tr key={i}>
+                  {columns.map((col) => (
+                    <td key={col.key} className="px-4 py-4">
+                      <div className="h-4 bg-gray-100 rounded w-2/3" />
+                    </td>
+                  ))}
+                </tr>
+              ))
               : paged.map((row, i) => (
-                  <tr
-                    key={row.id ?? i}
-                    className={`${
-                      row._isNew
-                        ? 'bg-blue-50 font-medium'
-                        : 'bg-white hover:bg-gray-50'
+                <tr
+                  key={row.id ?? i}
+                  className={`${row._isNew
+                    ? 'bg-blue-50 font-medium'
+                    : 'bg-white hover:bg-gray-50'
                     }`}
-                  >
-                    {columns.map((col) => (
-                      <td
-                        key={col.key}
-                        className="px-4 py-3.5 align-middle"
-                      >
-                        {col.render
-                          ? col.render(row, row[col.key])
-                          : (row[col.key] ?? '—')}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                >
+                  {columns.map((col) => (
+                    <td
+                      key={col.key}
+                      className="px-4 py-3.5 align-middle"
+                    >
+                      {col.render
+                        ? col.render(row, row[col.key])
+                        : (row[col.key] ?? '—')}
+                    </td>
+                  ))}
+                </tr>
+              ))}
             {!loading && paged.length === 0 && (
               <tr>
                 <td colSpan={columns.length} className="py-14 text-center px-6">
@@ -212,9 +210,9 @@ export default function DataTable({
           <span className="text-muted">
             {sorted.length > 0
               ? `${(currentPage - 1) * pageSize + 1}–${Math.min(
-                  currentPage * pageSize,
-                  sorted.length
-                )} dari ${sorted.length}`
+                currentPage * pageSize,
+                sorted.length
+              )} dari ${sorted.length}`
               : '0 dari 0'}
           </span>
 

@@ -6,13 +6,13 @@ import { dbService } from '../services/store';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import StatCard from '../components/StatCard';
 import Badge from '../components/Badge';
-import { IconArrowRight } from '@tabler/icons-react';
+import PageNote from '../components/PageNote';
+import { IconArrowRight, IconMail } from '@tabler/icons-react';
 
 const FORMAT_DATE = new Intl.DateTimeFormat('id-ID', {
   weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
 });
 
-// Format durasi relatif yang dinamis ("12 menit lalu", "1 jam 5 mnt lalu", "Baru saja")
 function formatDuration(waktu_pinjam) {
   if (!waktu_pinjam) return '—';
   const diffMs = Date.now() - new Date(waktu_pinjam).getTime();
@@ -28,7 +28,6 @@ function formatDuration(waktu_pinjam) {
   return `${days} hari lalu`;
 }
 
-// Helper untuk mengelompokkan baris v_pinjaman_aktif per kartu di client
 function groupPinjamanByKartu(rows) {
   if (!Array.isArray(rows)) return [];
   const map = new Map();
@@ -63,63 +62,63 @@ function groupPinjamanByKartu(rows) {
     }
   }
 
-  // Filter HANYA kartu yang memiliki item aktif
   return Array.from(map.values()).filter((g) => g.items.length > 0);
 }
 
-// Module-level cache untuk retensi data saat berpindah tab agar langsung tampil 0ms
 let activeCardsCache = null;
 
 export default function DashboardPage({ setCurrentTab, user }) {
-  const [alat, setAlat]           = useState(() => dbService.getAlatWithStok());
+  const [alat, setAlat] = useState(() => dbService.getAlatWithStok());
   const [transaksi, setTransaksi] = useState(() => dbService.getTransaksi());
-  const [tapLog, setTapLog]       = useState(() => dbService.getTapLog());
+  const [tapLog, setTapLog] = useState(() => dbService.getTapLog());
 
-  // State untuk fitur "Sedang Dipinjam":
-  // Di-load INSTAN (0ms) secara sinkron dari cache memory / local store
   const [activeCards, setActiveCards] = useState(() => {
     if (activeCardsCache !== null) return activeCardsCache;
     const initial = groupPinjamanByKartu(dbService.getPinjamanAktif());
     activeCardsCache = initial;
     return initial;
   });
-  const [tick, setTick] = useState(0); // Trigger re-render durasi tiap 30s
 
-  const reload = () => {
-    setAlat(dbService.getAlatWithStok());
-    setTransaksi(dbService.getTransaksi());
-    setTapLog(dbService.getTapLog());
-  };
+  const [, setTick] = useState(0);
 
-  // Muat data awal pinjaman aktif dari view v_pinjaman_aktif (Supabase / local fallback)
-  const fetchActiveLoans = useCallback(async () => {
-    // 1. Sinkronkan dengan local store langsung (0ms)
-    const localGrouped = groupPinjamanByKartu(dbService.getPinjamanAktif());
-    setActiveCards(localGrouped);
-    activeCardsCache = localGrouped;
+  const reloadData = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setAlat(dbService.getAlatWithStok());
+      setTransaksi(dbService.getTransaksi());
+      setTapLog(dbService.getTapLog());
 
-    // 2. Jika Supabase tidak dikonfigurasi nyata (placeholder URL), lewati fetch agar tidak menggantung
-    if (!isSupabaseConfigured) return;
+      const localGrouped = groupPinjamanByKartu(dbService.getPinjamanAktif());
+      setActiveCards(localGrouped);
+      activeCardsCache = localGrouped;
+      return;
+    }
 
     try {
-      // Pasang timeout 1000ms (1 detik) maksimal agar responsif
-      const queryPromise = supabase.from('v_pinjaman_aktif').select('*');
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Supabase fetch timeout')), 1000)
-      );
+      // Fetch concurrently with a 2-second timeout so dashboard stays responsive
+      const fetchPromise = Promise.all([
+        supabase.from('v_list_barang').select('*'),
+        supabase.from('transaksi').select('*, kartu_rfid(nama_pemegang)').order('waktu_pinjam', { ascending: false }).limit(200),
+        supabase.from('tap_log').select('*').order('waktu_tap', { ascending: false }).limit(10),
+        supabase.from('v_pinjaman_aktif').select('*')
+      ]);
 
-      const res = await Promise.race([queryPromise, timeoutPromise]);
-      if (res && !res.error && Array.isArray(res.data)) {
-        const grouped = groupPinjamanByKartu(res.data);
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000));
+
+      const [resAlat, resTrx, resTap, resPinjamanAktif] = await Promise.race([fetchPromise, timeoutPromise]);
+
+      if (!resAlat.error) setAlat(resAlat.data);
+      if (!resTrx.error) setTransaksi(resTrx.data.map(t => ({ ...t, pemegang: t.kartu_rfid?.nama_pemegang || t.pemegang })));
+      if (!resTap.error) setTapLog(resTap.data);
+      if (!resPinjamanAktif.error) {
+        const grouped = groupPinjamanByKartu(resPinjamanAktif.data);
         setActiveCards(grouped);
         activeCardsCache = grouped;
       }
-    } catch {
-      // Jika timeout atau offline, data lokal sudah aktif dan tampil
+    } catch (e) {
+      // timeout or network err, just keep what we have (local cache)
     }
   }, []);
 
-  // Realtime Handler: INSERT transaksi baru (status = 'dipinjam')
   const handleRealtimeInsert = useCallback((newTrx) => {
     if (newTrx.status !== 'dipinjam') return;
     const uid = newTrx.uid_kartu;
@@ -127,21 +126,14 @@ export default function DashboardPage({ setCurrentTab, user }) {
 
     setActiveCards((prevCards) => {
       const trxId = newTrx.id;
-
-      // Cegah duplikasi jika event Realtime masuk lebih dari sekali
-      const isAlreadyListed = prevCards.some((c) =>
-        c.items.some((it) => (it.transaksi_id || it.id) === trxId)
-      );
+      const isAlreadyListed = prevCards.some((c) => c.items.some((it) => (it.transaksi_id || it.id) === trxId));
       if (isAlreadyListed) return prevCards;
-
-      const kartuData = dbService.getKartu().find((k) => k.uid_kartu === uid);
-      const alatData  = dbService.getAlat().find((a) => a.id === newTrx.alat_id);
 
       const newItem = {
         id: trxId,
         transaksi_id: trxId,
         alat_id: newTrx.alat_id,
-        alat_nama: newTrx.nama_alat || alatData?.nama || 'Alat Lab',
+        alat_nama: newTrx.nama_alat || 'Alat Lab',
         waktu_pinjam: newTrx.waktu_pinjam || new Date().toISOString(),
         kondisi_pinjam: newTrx.kondisi_pinjam || 'baik',
       };
@@ -150,50 +142,34 @@ export default function DashboardPage({ setCurrentTab, user }) {
       let nextCards;
 
       if (cardIndex >= 0) {
-        const card = prevCards[cardIndex];
         nextCards = [...prevCards];
-        nextCards[cardIndex] = {
-          ...card,
-          items: [newItem, ...card.items],
-        };
+        nextCards[cardIndex] = { ...prevCards[cardIndex], items: [newItem, ...prevCards[cardIndex].items] };
       } else {
-        // Buat card baru untuk kartu ini
-        const newCard = {
+        nextCards = [{
           uid_kartu: uid,
-          kelas: newTrx.kelas || kartuData?.kelas || '—',
-          nama_pemegang: kartuData?.nama_pemegang || null,
+          kelas: newTrx.kelas || '—',
+          nama_pemegang: null,
           items: [newItem],
-        };
-        nextCards = [newCard, ...prevCards];
+        }, ...prevCards];
       }
-
       activeCardsCache = nextCards;
       return nextCards;
     });
   }, []);
 
-  // Realtime Handler: UPDATE transaksi (misal status jadi 'dikembalikan')
   const handleRealtimeUpdate = useCallback((updatedTrx) => {
     const trxId = updatedTrx.id;
-
     setActiveCards((prevCards) => {
       let nextCards;
-
       if (updatedTrx.status === 'dikembalikan') {
-        // Hapus item dari grup kartu terkait
         nextCards = prevCards
           .map((card) => {
             const hasItem = card.items.some((it) => (it.transaksi_id || it.id) === trxId);
             if (!hasItem) return card;
-            return {
-              ...card,
-              items: card.items.filter((it) => (it.transaksi_id || it.id) !== trxId),
-            };
+            return { ...card, items: card.items.filter((it) => (it.transaksi_id || it.id) !== trxId) };
           })
-          // Hapus card kartu jika semua item pinjamannya sudah dikembalikan (items kosong)
           .filter((card) => card.items.length > 0);
       } else if (updatedTrx.status === 'dipinjam') {
-        // Update informasi item jika masih berstatus dipinjam
         let itemUpdated = false;
         nextCards = prevCards.map((card) => {
           const hasItem = card.items.some((it) => (it.transaksi_id || it.id) === trxId);
@@ -201,135 +177,79 @@ export default function DashboardPage({ setCurrentTab, user }) {
           itemUpdated = true;
           return {
             ...card,
-            items: card.items.map((it) =>
-              (it.transaksi_id || it.id) === trxId
-                ? {
-                    ...it,
-                    alat_nama: updatedTrx.nama_alat || it.alat_nama,
-                    waktu_pinjam: updatedTrx.waktu_pinjam || it.waktu_pinjam,
-                    kondisi_pinjam: updatedTrx.kondisi_pinjam || it.kondisi_pinjam,
-                  }
-                : it
-            ),
+            items: card.items.map((it) => (it.transaksi_id || it.id) === trxId ? {
+              ...it,
+              alat_nama: updatedTrx.nama_alat || it.alat_nama,
+              waktu_pinjam: updatedTrx.waktu_pinjam || it.waktu_pinjam,
+              kondisi_pinjam: updatedTrx.kondisi_pinjam || it.kondisi_pinjam,
+            } : it),
           };
         });
 
-        if (!itemUpdated) {
-          // Jika belum ada di card manapun, masukkan ke kartu terkait
-          const uid = updatedTrx.uid_kartu;
-          if (!uid) return prevCards;
-          const kartuData = dbService.getKartu().find((k) => k.uid_kartu === uid);
-          const alatData  = dbService.getAlat().find((a) => a.id === updatedTrx.alat_id);
-
+        if (!itemUpdated && updatedTrx.uid_kartu) {
           const newItem = {
             id: trxId,
             transaksi_id: trxId,
             alat_id: updatedTrx.alat_id,
-            alat_nama: updatedTrx.nama_alat || alatData?.nama || 'Alat Lab',
+            alat_nama: updatedTrx.nama_alat || 'Alat Lab',
             waktu_pinjam: updatedTrx.waktu_pinjam || new Date().toISOString(),
             kondisi_pinjam: updatedTrx.kondisi_pinjam || 'baik',
           };
-
-          const cardIndex = prevCards.findIndex((c) => c.uid_kartu === uid);
+          const cardIndex = prevCards.findIndex((c) => c.uid_kartu === updatedTrx.uid_kartu);
           if (cardIndex >= 0) {
             nextCards = [...prevCards];
-            nextCards[cardIndex] = {
-              ...prevCards[cardIndex],
-              items: [newItem, ...prevCards[cardIndex].items],
-            };
+            nextCards[cardIndex] = { ...prevCards[cardIndex], items: [newItem, ...prevCards[cardIndex].items] };
           } else {
-            nextCards = [
-              {
-                uid_kartu: uid,
-                kelas: updatedTrx.kelas || kartuData?.kelas || '—',
-                nama_pemegang: kartuData?.nama_pemegang || null,
-                items: [newItem],
-              },
-              ...prevCards,
-            ];
+            nextCards = [{ uid_kartu: updatedTrx.uid_kartu, kelas: updatedTrx.kelas || '—', nama_pemegang: null, items: [newItem] }, ...prevCards];
           }
         }
       } else {
         nextCards = prevCards;
       }
-
       activeCardsCache = nextCards;
       return nextCards;
     });
   }, []);
 
   useEffect(() => {
-    reload();
-    fetchActiveLoans();
+    reloadData();
 
-    // 1. Subscribe Supabase Realtime ke tabel 'transaksi' (hanya jika Supabase terkonfigurasi)
     let channel = null;
     if (isSupabaseConfigured) {
-      channel = supabase
-        .channel('dashboard-realtime-transaksi')
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'transaksi' },
-          (payload) => {
-            handleRealtimeInsert(payload.new);
-            reload();
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'transaksi' },
-          (payload) => {
-            handleRealtimeUpdate(payload.new);
-            reload();
-          }
-        )
+      channel = supabase.channel('dashboard-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'transaksi' }, (payload) => {
+          if (payload.eventType === 'INSERT') handleRealtimeInsert(payload.new);
+          if (payload.eventType === 'UPDATE') handleRealtimeUpdate(payload.new);
+          reloadData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tap_log' }, () => reloadData())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'alat' }, () => reloadData())
         .subscribe();
+    } else {
+      window.addEventListener('simlab_storage_updated', reloadData);
     }
 
-    // 2. Sinkronisasi dengan localStorage simlab_storage_updated (simulasi IoT / testing lokal)
-    const onStorageUpdated = () => {
-      reload();
-      const updated = groupPinjamanByKartu(dbService.getPinjamanAktif());
-      setActiveCards(updated);
-      activeCardsCache = updated;
-    };
-    window.addEventListener('simlab_storage_updated', onStorageUpdated);
-
-    // 3. Refresh durasi_menit tiap 30 detik secara berkala di client tanpa query ulang server
-    const durationInterval = setInterval(() => {
-      setTick((t) => t + 1);
-    }, 30000);
-
-    const polling = setInterval(reload, 3000);
+    const durationInterval = setInterval(() => setTick((t) => t + 1), 30000);
+    const polling = setInterval(reloadData, 10000); // reduced polling frequency since we have realtime
 
     return () => {
       if (channel) supabase.removeChannel(channel);
-      window.removeEventListener('simlab_storage_updated', onStorageUpdated);
+      if (!isSupabaseConfigured) window.removeEventListener('simlab_storage_updated', reloadData);
       clearInterval(durationInterval);
       clearInterval(polling);
     };
-  }, [fetchActiveLoans, handleRealtimeInsert, handleRealtimeUpdate]);
+  }, [reloadData, handleRealtimeInsert, handleRealtimeUpdate]);
 
-  // Stat Cards
-  const totalAlat     = alat.reduce((s, a) => s + a.jumlah_total, 0);
-  const totalTersedia = alat.reduce((s, a) => s + a.stok_tersedia, 0);
+  const totalAlat = alat.reduce((s, a) => s + (a.jumlah_total || 0), 0);
+  const totalTersedia = alat.reduce((s, a) => s + (a.stok_tersedia || 0), 0);
   const totalDipinjam = transaksi.filter((t) => t.status === 'dipinjam').length;
-  const totalHariIni  = transaksi.filter((t) => {
-    const today = new Date().toISOString().slice(0, 10);
-    return t.waktu_pinjam?.startsWith(today);
-  }).length;
+  const totalHariIni = transaksi.filter((t) => t.waktu_pinjam?.startsWith(new Date().toISOString().slice(0, 10))).length;
 
-  const totalActiveItems = useMemo(
-    () => activeCards.reduce((acc, c) => acc + c.items.length, 0),
-    [activeCards]
-  );
-
+  const totalActiveItems = useMemo(() => activeCards.reduce((acc, c) => acc + c.items.length, 0), [activeCards]);
   const recentLoans = useMemo(() => transaksi.slice(0, 6), [transaksi]);
   const recentTaps = useMemo(() => tapLog.slice(0, 6), [tapLog]);
 
-  const FMT = (iso) => iso
-    ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
-    : '—';
+  const FMT = (iso) => iso ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso)) : '—';
 
   return (
     <div className="space-y-6">
@@ -342,6 +262,10 @@ export default function DashboardPage({ setCurrentTab, user }) {
           {user?.role === 'admin' ? 'Admin' : 'Petugas lab'} · ringkasan peminjaman alat laboratorium hari ini.
         </p>
       </div>
+
+      <PageNote title="Informasi Penting" icon={IconMail}>
+        Ringkasan data lab diperbarui secara realtime. Jika ada perubahan stok, aktivitas kartu, atau status peminjaman, angka pada dashboard akan langsung menyesuaikan.
+      </PageNote>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <StatCard title="Total unit alat" value={totalAlat} />
