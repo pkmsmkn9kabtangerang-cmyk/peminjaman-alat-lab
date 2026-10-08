@@ -390,7 +390,122 @@ Deno.serve(async (req) => {
       "";
 
     /* =====================================================
-       10. CEK TRANSAKSI ALAT + KARTU
+       10. CEK ALAT HABIS PAKAI
+    ===================================================== */
+
+    if (alat.tipe === "habis_pakai") {
+      if (alat.stok_tersedia <= 0) {
+        await addTapLog(
+          supabase,
+          sess.uid_kartu,
+          uid,
+          "alat",
+          "otomatis",
+          "ditolak",
+          "stok_habis",
+          kelas,
+          alat.nama
+        );
+
+        return json({
+          ok: false,
+          error: "stok_habis",
+          type: "alat",
+        });
+      }
+
+      const { data: existingReq, error: reqErr } = await supabase
+        .from("permintaan_habis_pakai")
+        .select("id")
+        .eq("uid_kartu", sess.uid_kartu)
+        .eq("alat_id", alat.id)
+        .eq("status", "menunggu")
+        .maybeSingle();
+
+      if (reqErr) {
+        throw reqErr;
+      }
+
+      if (existingReq) {
+        await addTapLog(
+          supabase,
+          sess.uid_kartu,
+          uid,
+          "alat",
+          "otomatis",
+          "ditolak",
+          "permintaan_sudah_ada",
+          kelas,
+          alat.nama
+        );
+
+        return json({
+          ok: false,
+          error: "permintaan_sudah_ada",
+          type: "alat",
+        });
+      }
+
+      const { error: insertReqErr } = await supabase
+        .from("permintaan_habis_pakai")
+        .insert({
+          uid_kartu: sess.uid_kartu,
+          kelas,
+          alat_id: alat.id,
+          nama_alat: alat.nama,
+          satuan: alat.satuan,
+          status: "menunggu",
+        });
+
+      if (insertReqErr) {
+        if (insertReqErr.code === '23505') {
+          await addTapLog(
+            supabase,
+            sess.uid_kartu,
+            uid,
+            "alat",
+            "otomatis",
+            "ditolak",
+            "permintaan_sudah_ada",
+            kelas,
+            alat.nama
+          );
+
+          return json({
+            ok: false,
+            error: "permintaan_sudah_ada",
+            type: "alat",
+          });
+        }
+        throw insertReqErr;
+      }
+
+      extendSession(sess.uid_kartu);
+
+      await addTapLog(
+        supabase,
+        sess.uid_kartu,
+        uid,
+        "alat",
+        "otomatis",
+        "menunggu",
+        null,
+        kelas,
+        alat.nama
+      );
+
+      return json({
+        ok: true,
+        type: "alat",
+        jenis: "pinjam",
+        alat: alat.nama,
+        kelas,
+        status: "menunggu_persetujuan"
+      });
+    }
+
+    /* =====================================================
+       11. CEK TRANSAKSI ALAT + KARTU (UNTUK PINJAMAN BIASA)
     ===================================================== */
 
     const {

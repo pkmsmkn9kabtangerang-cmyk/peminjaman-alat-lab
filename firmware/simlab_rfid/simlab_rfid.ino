@@ -343,9 +343,15 @@ void handleResponse(int code, JsonDocument& r, const String& uid) {
     if (type == "alat") {
       String jenis = r["jenis"] | "";
       String alat  = r["alat"]  | "";
+      String reqStatus = r["status"] | "";
       sessionActive = true;
       sessionUntil  = millis() + SESSION_MS;  // server memperpanjang sesi
-      showMessage(jenis == "kembali" ? "DIKEMBALIKAN" : "DIPINJAM", alat);
+      
+      if (reqStatus == "menunggu_persetujuan") {
+        showMessage("MENUNGGU ACC", alat);
+      } else {
+        showMessage(jenis == "kembali" ? "DIKEMBALIKAN" : "DIPINJAM", alat);
+      }
       beepOk();
       return;
     }
@@ -371,6 +377,8 @@ void handleResponse(int code, JsonDocument& r, const String& uid) {
     showMessage("Tap kartu kelas", "sebelum tap alat");
   } else if (err == "stok_habis") {
     showMessage("Stok habis", "Semua dipinjam");
+  } else if (err == "permintaan_sudah_ada") {
+    showMessage("Sedang Menunggu", "Acc Petugas", 4000);
   } else if (err == "payload_tidak_lengkap") {
     showMessage("Data tdk lengkap", "UID kosong");
   } else {

@@ -105,6 +105,13 @@ Deno.serve(async (req) => {
             .neq("id", ""); // delete all rows
 
           if (deleteErr) throw deleteErr;
+          
+          // Hapus permintaan habis pakai yang sudah diproses
+          await supabaseAdmin
+            .from("permintaan_habis_pakai")
+            .delete()
+            .neq("status", "menunggu");
+
           return json({ success: true, message: `${count} riwayat transaksi berhasil dihapus` });
         }
 

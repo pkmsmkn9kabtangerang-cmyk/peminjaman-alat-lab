@@ -13,7 +13,11 @@
 //   uid_rfid?: string,     // kode stiker RFID pada alat
 //   jumlah_total?: number,
 //   jumlah_rusak?: number,
+//   tipe?: string,         // "pinjam" | "habis_pakai"
+//   satuan?: string,       // "unit" | "cm" | "pcs"
 // }
+// 
+// POST   /manage-alat?action=stok  → ubah stok habis pakai (body: id, mode, nilai, catatan)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json, handleCors } from "../_shared/cors.js";
@@ -50,10 +54,37 @@ Deno.serve(async (req) => {
       return json({ success: true, data });
     }
 
-    // ── POST: tambah alat baru ──
+    // ── POST: tambah alat baru atau update stok ──
     if (method === "POST") {
+      const action = url.searchParams.get("action");
+      if (action === "stok") {
+         const body = await req.json();
+         const { id: alat_id, mode, nilai, catatan } = body;
+         if (!alat_id || !mode || nilai === undefined) {
+             return json({ success: false, message: "Parameter tidak lengkap" }, 400);
+         }
+         if (mode === "penyesuaian" && !catatan?.trim()) {
+             return json({ success: false, message: "Catatan wajib diisi untuk penyesuaian stok" }, 400);
+         }
+         const petugasName = profile.nama_lengkap ?? profile.username ?? null;
+         
+         const { data, error } = await supabaseAdmin.rpc("ubah_stok_habis_pakai", {
+             p_alat_id: alat_id,
+             p_mode: mode,
+             p_nilai: Number(nilai),
+             p_catatan: catatan?.trim() || null,
+             p_petugas: petugasName
+         });
+
+         if (error) throw error;
+         if (!data.success) {
+            return json({ success: false, error: data.error, message: `Gagal mengubah stok: ${data.error}` }, 422);
+         }
+         return json({ success: true, message: "Stok berhasil diperbarui" });
+      }
+
       const body = await req.json();
-      const { nama, kode, kategori = "umum", uid_rfid, jumlah_total = 1, jumlah_rusak = 0 } = body;
+      const { nama, kode, kategori = "umum", uid_rfid, jumlah_total = 1, jumlah_rusak = 0, tipe = "pinjam", satuan = "unit" } = body;
 
       if (!nama?.trim())  return json({ success: false, message: "Nama alat wajib diisi" }, 400);
       if (!kode?.trim())  return json({ success: false, message: "Kode alat wajib diisi" }, 400);
@@ -94,7 +125,9 @@ Deno.serve(async (req) => {
           kategori:     kategori?.trim() ?? "umum",
           uid_rfid:     uid_rfid?.trim() || null,
           jumlah_total: Number(jumlah_total) || 1,
-          jumlah_rusak: Number(jumlah_rusak) || 0,
+          jumlah_rusak: tipe === "habis_pakai" ? 0 : (Number(jumlah_rusak) || 0),
+          tipe:         tipe,
+          satuan:       satuan,
           created_at:   now,
         })
         .select()
@@ -109,16 +142,28 @@ Deno.serve(async (req) => {
       if (!id) return json({ success: false, message: "Parameter id diperlukan" }, 400);
 
       const body = await req.json();
-      const { nama, kode, kategori, uid_rfid, jumlah_total, jumlah_rusak } = body;
+      const { nama, kode, kategori, uid_rfid, jumlah_total, jumlah_rusak, tipe, satuan } = body;
 
       // Cek alat ada
       const { data: existing } = await supabaseAdmin
         .from("alat")
-        .select("id, kode, uid_rfid")
+        .select("id, kode, uid_rfid, tipe")
         .eq("id", id)
         .maybeSingle();
 
       if (!existing) return json({ success: false, message: "Alat tidak ditemukan" }, 404);
+
+      // Jika ubah tipe, cek apakah ada pinjaman aktif atau permintaan menunggu
+      if (tipe && tipe !== existing.tipe) {
+         const { data: trxAktif } = await supabaseAdmin.from("transaksi").select("id").eq("alat_id", id).eq("status", "dipinjam").limit(1);
+         if (trxAktif && trxAktif.length > 0) {
+            return json({ success: false, message: "Tidak dapat mengubah tipe karena ada pinjaman aktif" }, 422);
+         }
+         const { data: reqMenunggu } = await supabaseAdmin.from("permintaan_habis_pakai").select("id").eq("alat_id", id).eq("status", "menunggu").limit(1);
+         if (reqMenunggu && reqMenunggu.length > 0) {
+            return json({ success: false, message: "Tidak dapat mengubah tipe karena ada permintaan yang sedang menunggu" }, 422);
+         }
+      }
 
       // Cek duplikat kode (kecuali diri sendiri)
       if (kode && kode.trim().toUpperCase() !== existing.kode) {
@@ -148,6 +193,9 @@ Deno.serve(async (req) => {
         }
       }
 
+      const finalTipe = tipe || existing.tipe;
+      const finalJumlahRusak = finalTipe === "habis_pakai" ? 0 : (jumlah_rusak !== undefined ? Number(jumlah_rusak) : undefined);
+
       // Bangun payload update (hanya field yang dikirim)
       const payload = {};
       if (nama       !== undefined) payload.nama         = nama.trim();
@@ -155,7 +203,9 @@ Deno.serve(async (req) => {
       if (kategori   !== undefined) payload.kategori     = kategori.trim();
       if (uid_rfid   !== undefined) payload.uid_rfid     = uid_rfid?.trim() || null;
       if (jumlah_total !== undefined) payload.jumlah_total = Number(jumlah_total);
-      if (jumlah_rusak !== undefined) payload.jumlah_rusak = Number(jumlah_rusak);
+      if (finalJumlahRusak !== undefined) payload.jumlah_rusak = finalJumlahRusak;
+      if (tipe       !== undefined) payload.tipe         = tipe;
+      if (satuan     !== undefined) payload.satuan       = satuan;
 
       const { data: updated, error: updateErr } = await supabaseAdmin
         .from("alat")

@@ -126,6 +126,7 @@ Deno.serve(async (req) => {
         username:     username.trim().toLowerCase(),
         email:        email.trim(),
         role:         'petugas', // Paksa 'petugas', TIDAK dari body!
+        is_verified:  false,     // Belum diverifikasi (belum set password)
         created_at:   new Date().toISOString(),
       });
 

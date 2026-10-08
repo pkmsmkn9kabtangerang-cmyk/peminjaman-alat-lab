@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
     // ── 2. Cek alat ──
     const { data: alat, error: alatErr } = await supabaseAdmin
       .from("v_list_barang")
-      .select("id, nama, kode, kategori, stok_tersedia")
+      .select("id, nama, kode, kategori, stok_tersedia, tipe")
       .eq("id", alat_id.trim())
       .maybeSingle();
 
@@ -82,10 +82,86 @@ Deno.serve(async (req) => {
 
     const petugas = profile.nama_lengkap ?? profile.username ?? null;
     const now = new Date().toISOString();
+    const qty = Math.max(1, Number(jumlah));
+
+    if (alat.tipe === "habis_pakai") {
+      if (jenis === "pinjam") {
+        if (alat.stok_tersedia < qty) {
+          return json({
+            success: false,
+            error: "stok_habis",
+            message: `Stok tidak cukup. Tersedia: ${alat.stok_tersedia}, diminta: ${qty}`,
+          }, 422);
+        }
+
+        // Langsung catat permintaan yang disetujui (karena manual oleh petugas)
+        const permintaanId = `REQ-MANUAL-${Date.now()}`;
+        
+        // 1. Update stok alat
+        const newStok = alat.stok_tersedia - qty;
+        await supabaseAdmin.from("alat").update({ jumlah_total: newStok }).eq("id", alat.id);
+
+        // 2. Insert permintaan
+        await supabaseAdmin.from("permintaan_habis_pakai").insert({
+          id: permintaanId,
+          uid_kartu: kartu.uid_kartu,
+          kelas: kartu.kelas,
+          alat_id: alat.id,
+          nama_alat: alat.nama,
+          status: "disetujui",
+          jumlah: qty,
+          catatan: catatan ?? 'Diproses manual',
+          petugas: petugas,
+          waktu_tap: now,
+          waktu_proses: now
+        });
+
+        // 3. Insert stok mutasi
+        await supabaseAdmin.from("stok_mutasi").insert({
+          alat_id: alat.id,
+          delta: -qty,
+          stok_setelah: newStok,
+          alasan: "persetujuan",
+          permintaan_id: permintaanId,
+          catatan: catatan ?? 'Diproses manual',
+          petugas: petugas
+        });
+
+        await addTapLog(supabaseAdmin, kartu.uid_kartu, null, "pinjam", "manual", "berhasil", null, kartu.kelas, alat.nama);
+
+        return json({
+          success: true,
+          jenis: "pinjam",
+          jumlah: qty,
+          message: `${qty} stok ${alat.nama} berhasil diberikan ke ${kartu.kelas} secara manual`,
+        });
+      } else {
+        // Untuk alat sekali pakai, pengembalian manual = restock
+        const newStok = alat.stok_tersedia + qty;
+        await supabaseAdmin.from("alat").update({ jumlah_total: newStok }).eq("id", alat.id);
+
+        await supabaseAdmin.from("stok_mutasi").insert({
+          alat_id: alat.id,
+          delta: qty,
+          stok_setelah: newStok,
+          alasan: "restock",
+          catatan: catatan ?? 'Pengembalian / restock manual',
+          petugas: petugas
+        });
+
+        await addTapLog(supabaseAdmin, kartu.uid_kartu, null, "kembali", "manual", "berhasil", null, kartu.kelas, alat.nama);
+
+        return json({
+          success: true,
+          jenis: "kembali",
+          jumlah: qty,
+          message: `${qty} stok ${alat.nama} berhasil ditambahkan/dikembalikan dari ${kartu.kelas}`,
+        });
+      }
+    }
 
     if (jenis === "pinjam") {
       // ── 3a. Pinjam ──
-      const qty = Math.max(1, Number(jumlah));
       if (alat.stok_tersedia < qty) {
         return json({
           success: false,

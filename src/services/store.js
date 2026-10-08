@@ -208,6 +208,10 @@ export const dbService = {
   getTransaksi:  () => getStore('transaksi', INITIAL_TRANSAKSI),
   saveTransaksi: (t) => setStore('transaksi', t),
 
+  // --- Permintaan Habis Pakai ---
+  getPermintaan: () => getStore('permintaan', []),
+  savePermintaan: (p) => setStore('permintaan', p),
+
   // --- Kartu Session ---
   getSession,
   setSession,
@@ -310,6 +314,34 @@ export const dbService = {
     );
 
     let jenis;
+    if (alat.tipe === "habis_pakai") {
+      if (alat.stok_tersedia <= 0) {
+        dbService._addTapLog(sess.uid_kartu, uid, 'alat', 'otomatis', 'ditolak', 'stok_habis', kartuData?.kelas, alat.nama);
+        return { ok: false, error: 'stok_habis', type: 'alat' };
+      }
+      const permintaan = dbService.getPermintaan();
+      const existingReq = permintaan.find(p => p.uid_kartu === sess.uid_kartu && p.alat_id === alat.id && p.status === 'menunggu');
+      if (existingReq) {
+        dbService._addTapLog(sess.uid_kartu, uid, 'alat', 'otomatis', 'ditolak', 'permintaan_sudah_ada', kartuData?.kelas, alat.nama);
+        return { ok: false, error: 'permintaan_sudah_ada', type: 'alat' };
+      }
+      const newReq = {
+        id: 'REQ-' + Date.now(),
+        uid_kartu: sess.uid_kartu,
+        kelas: kartuData?.kelas ?? '',
+        alat_id: alat.id,
+        nama_alat: alat.nama,
+        satuan: alat.satuan || 'unit',
+        status: 'menunggu',
+        waktu_tap: new Date().toISOString()
+      };
+      permintaan.unshift(newReq);
+      setStore('permintaan', permintaan);
+      extendSession(sess.uid_kartu);
+      dbService._addTapLog(sess.uid_kartu, uid, 'alat', 'otomatis', 'menunggu', null, kartuData?.kelas, alat.nama);
+      return { ok: true, type: 'alat', jenis: 'pinjam', alat: alat.nama, kelas: kartuData?.kelas, status: 'menunggu_persetujuan' };
+    }
+
     if (activeTrx) {
       // Kembalikan
       const updated = transaksi.map((t) =>
@@ -358,6 +390,43 @@ export const dbService = {
 
     const alat = dbService.getAlatWithStok().find((a) => a.id === alat_id);
     if (!alat) return { ok: false, error: 'uid_tidak_dikenal' };
+
+    if (alat.tipe === 'habis_pakai') {
+      const now = new Date().toISOString();
+      const allAlat = dbService.getAlat();
+      const aIdx = allAlat.findIndex(a => a.id === alat_id);
+      
+      if (jenis === 'pinjam') {
+        if (alat.stok_tersedia < jumlah) return { ok: false, error: 'stok_habis' };
+        
+        if (aIdx > -1) {
+          allAlat[aIdx].jumlah_total -= jumlah;
+          allAlat[aIdx].stok_tersedia = allAlat[aIdx].jumlah_total;
+          dbService.saveAlat(allAlat);
+        }
+
+        const allReq = dbService.getPermintaan();
+        allReq.unshift({
+          id: `REQ-MANUAL-${Date.now()}`,
+          uid_kartu, kelas: kartu.kelas,
+          alat_id, nama_alat: alat.nama, satuan: alat.satuan,
+          status: 'disetujui', jumlah, catatan: catatan ?? 'Diproses manual',
+          petugas, waktu_tap: now, waktu_proses: now
+        });
+        dbService.savePermintaan(allReq);
+
+        dbService._addTapLog(uid_kartu, null, 'pinjam', 'manual', 'berhasil', null, kartu.kelas, alat.nama);
+        return { ok: true, jenis, jumlah };
+      } else {
+        if (aIdx > -1) {
+          allAlat[aIdx].jumlah_total += jumlah;
+          allAlat[aIdx].stok_tersedia = allAlat[aIdx].jumlah_total;
+          dbService.saveAlat(allAlat);
+        }
+        dbService._addTapLog(uid_kartu, null, 'kembali', 'manual', 'berhasil', null, kartu.kelas, alat.nama);
+        return { ok: true, jenis, jumlah };
+      }
+    }
 
     const transaksi = dbService.getTransaksi();
 
@@ -433,12 +502,12 @@ export const dbService = {
     const transaksi = dbService.getTransaksi();
     const kartu     = dbService.getKartu();
     return alat.map((a) => {
-      const activeTrx = transaksi.find((t) => t.alat_id === a.id && t.status === 'dipinjam');
+      const activeTrx = a.tipe === 'habis_pakai' ? null : transaksi.find((t) => t.alat_id === a.id && t.status === 'dipinjam');
       const peminjam_kartu = activeTrx?.uid_kartu ?? null;
       const peminjam_kelas = activeTrx
         ? (kartu.find((k) => k.uid_kartu === activeTrx.uid_kartu)?.kelas ?? null)
         : null;
-      const status = a.stok_tersedia <= 0 ? 'habis' : (activeTrx ? 'dipinjam' : 'tersedia');
+      const status = a.tipe === 'habis_pakai' ? (a.stok_tersedia <= 0 ? 'habis' : 'tersedia') : (a.stok_tersedia <= 0 ? 'habis' : (activeTrx ? 'dipinjam' : 'tersedia'));
       return { ...a, status, peminjam_kartu, peminjam_kelas };
     });
   },

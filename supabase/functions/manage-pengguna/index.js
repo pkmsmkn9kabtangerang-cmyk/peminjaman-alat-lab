@@ -5,6 +5,7 @@
 // GET    /manage-pengguna?id=:uid      → ambil 1 profil
 // PUT    /manage-pengguna?id=:uid      → update profil             [admin only]
 // DELETE /manage-pengguna?id=:uid      → hapus pengguna            [admin only]
+// POST   /manage-pengguna?id=:uid&aksi=reset-password → reset password [admin only]
 //
 // Catatan: untuk TAMBAH pengguna gunakan Edge Function `create-petugas`
 // Body PUT: { nama_lengkap?, nip?, username?, email?, role? }
@@ -159,6 +160,57 @@ Deno.serve(async (req) => {
       if (deleteErr) throw deleteErr;
 
       return json({ success: true, message: "Pengguna berhasil dihapus" });
+    }
+
+    // ── POST: aksi khusus (misal: reset-password) ──
+    if (method === "POST") {
+      const aksi = url.searchParams.get("aksi");
+      if (!id || aksi !== "reset-password") {
+        return json({ success: false, message: "Parameter id dan aksi=reset-password diperlukan" }, 400);
+      }
+
+      if (profile.role !== "admin") {
+        return json({ success: false, message: "Hanya Admin yang dapat melakukan reset password" }, 403);
+      }
+
+      if (id === profile.id) {
+        return json({ success: false, error: "tidak_boleh_reset_diri_sendiri", message: "Anda tidak dapat mereset password sendiri" }, 422);
+      }
+
+      const { data: targetProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (!targetProfile) {
+        return json({ success: false, error: "pengguna_tidak_ditemukan", message: "Pengguna tidak ditemukan" }, 404);
+      }
+
+      if (targetProfile.role !== "petugas") {
+        return json({ success: false, error: "hanya_petugas", message: "Hanya dapat mereset password role petugas" }, 422);
+      }
+
+      // Generate random password (length 14)
+      const array = new Uint8Array(14);
+      crypto.getRandomValues(array);
+      const tempPassword = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 14);
+
+      // Update di Auth
+      const { error: resetErr } = await supabaseAdmin.auth.admin.updateUserById(id, { password: tempPassword });
+      if (resetErr) throw resetErr;
+
+      // Update flag di profiles
+      const { error: profileErr } = await supabaseAdmin
+        .from("profiles")
+        .update({ wajib_ganti_password: true })
+        .eq("id", id);
+      if (profileErr) throw profileErr;
+
+      return new Response(JSON.stringify({ success: true, message: "Password berhasil direset", tempPassword }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
     }
 
     return json({ success: false, message: "Method tidak diizinkan" }, 405);

@@ -156,8 +156,8 @@ export default function PeminjamanPage({ user }) {
 
       showFeedback({
         type: 'success',
-        title: 'Peminjaman berhasil dicatat.',
-        message: `${jumlah} unit ${selectedAlat?.nama} untuk kelas ${selectedKartu.kelas}.`,
+        title: selectedAlat?.tipe === 'habis_pakai' ? 'Pemberian alat berhasil dicatat.' : 'Peminjaman berhasil dicatat.',
+        message: `${jumlah} ${selectedAlat?.satuan || 'unit'} ${selectedAlat?.nama} untuk kelas ${selectedKartu.kelas}.`,
       });
       resetForm();
       loadData(); // refresh stok
@@ -257,10 +257,10 @@ export default function PeminjamanPage({ user }) {
                       {selectedAlat.jumlah_total ? ` / ${selectedAlat.jumlah_total}` : ''}
                     </span>
                   </div>
-                  {selectedAlat.jumlah_rusak > 0 && (
+                  {selectedAlat.tipe !== 'habis_pakai' && selectedAlat.jumlah_rusak > 0 && (
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-orange-700">Unit rusak</span>
-                      <span className="font-medium text-orange-800">{selectedAlat.jumlah_rusak} unit</span>
+                      <span className="font-medium text-orange-800">{selectedAlat.jumlah_rusak} {selectedAlat.satuan || 'unit'}</span>
                     </div>
                   )}
                 </div>
@@ -294,26 +294,28 @@ export default function PeminjamanPage({ user }) {
 
           {/* Kondisi & Catatan */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block font-bold text-sm text-gray-800 mb-2">Kondisi alat saat dipinjam</label>
-              <div className="flex gap-2">
-                {['baik', 'rusak'].map((k) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => setKondisi(k)}
-                    className={`flex-1 py-2.5 rounded-xl border text-sm font-semibold transition capitalize ${kondisi === k
-                      ? k === 'baik'
-                        ? 'bg-emerald-600 border-emerald-600 text-white'
-                        : 'bg-orange-500 border-orange-500 text-white'
-                      : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
-                      }`}
-                  >
-                    {k}
-                  </button>
-                ))}
+            {selectedAlat?.tipe !== 'habis_pakai' && (
+              <div>
+                <label className="block font-bold text-sm text-gray-800 mb-2">Kondisi alat saat dipinjam</label>
+                <div className="flex gap-2">
+                  {['baik', 'rusak'].map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setKondisi(k)}
+                      className={`flex-1 py-2.5 rounded-xl border text-sm font-semibold transition capitalize ${kondisi === k
+                        ? k === 'baik'
+                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                          : 'bg-orange-500 border-orange-500 text-white'
+                        : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+                        }`}
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             <div>
               <label htmlFor="catatan-pinjam" className="block font-bold text-sm text-gray-800 mb-2">Catatan (opsional)</label>
               <input
@@ -332,8 +334,8 @@ export default function PeminjamanPage({ user }) {
             <div className="border-2 border-blue-200 p-4 rounded-xl text-base bg-blue-50 mt-2">
               <p className="font-bold text-blue-900 mb-1">Cek Kembali Sebelum Simpan</p>
               <p className="text-blue-800">
-                Kelas <b>{selectedKartu.kelas}</b> akan meminjam{' '}
-                <b>{jumlah} unit {selectedAlat.nama}</b> kondisi <b>{kondisi}</b>.
+                Kelas <b>{selectedKartu.kelas}</b> akan {selectedAlat.tipe === 'habis_pakai' ? 'meminta' : 'meminjam'}{' '}
+                <b>{jumlah} {selectedAlat.satuan || 'unit'} {selectedAlat.nama}</b> {selectedAlat.tipe !== 'habis_pakai' ? `kondisi ${kondisi}` : ''}.
               </p>
             </div>
           )}
@@ -345,7 +347,7 @@ export default function PeminjamanPage({ user }) {
             disabled={saving || loading || !selectedKartu || !selectedAlatId}
             className="w-full lg:w-auto justify-center h-12 text-base font-bold"
           >
-            {saving ? 'Menyimpan...' : 'Simpan Peminjaman Sekarang'}
+            {saving ? 'Menyimpan...' : (selectedAlat?.tipe === 'habis_pakai' ? 'Berikan Alat Sekarang' : 'Simpan Peminjaman Sekarang')}
           </Button>
         </div>
       </form>

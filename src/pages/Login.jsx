@@ -35,10 +35,45 @@ function validateForm(username, password) {
 export default function LoginPage({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [errors, setErrors]     = useState({});
+  const [errors, setErrors] = useState({});
   const [globalError, setGlobalError] = useState('');
-  const [loading, setLoading]   = useState(false);
+  const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [view, setView] = useState('login'); // 'login' | 'forgot'
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotError, setForgotError] = useState('');
+  const [forgotSuccess, setForgotSuccess] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setForgotError('');
+    setForgotSuccess('');
+    if (!forgotEmail.trim()) {
+      setForgotError('Masukkan email akun Anda.');
+      return;
+    }
+    if (!/^[^@]+@[^@]+\.[^@]+$/.test(forgotEmail.trim())) {
+      setForgotError('Format email tidak valid.');
+      return;
+    }
+    if (!isSupabaseConfigured) {
+      setForgotSuccess('Mode demo: Fitur lupa password tidak tersedia. Hubungi admin untuk reset password.');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
+        redirectTo: `${window.location.origin}/auth/set-password`,
+      });
+      if (error) throw error;
+      setForgotSuccess('Link reset password telah dikirim ke email Anda. Periksa inbox dan folder spam.');
+    } catch (err) {
+      setForgotError(err.message || 'Gagal mengirim email. Coba lagi.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -104,7 +139,7 @@ export default function LoginPage({ onLoginSuccess }) {
         // Ambil profil dari tabel profiles
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('id, nama_lengkap, email, role') // nanti bisa di tambahin aktif di sini, di samping role
+          .select('id, nama_lengkap, email, role, wajib_ganti_password') // nanti bisa di tambahin aktif di sini, di samping role
           .eq('id', data.user.id)
           .maybeSingle();
 
@@ -128,6 +163,7 @@ export default function LoginPage({ onLoginSuccess }) {
           nama: profile.nama_lengkap || profile.nama || data.user.email,
           email: profile.email || data.user.email,
           role: profile.role,
+          wajib_ganti_password: profile.wajib_ganti_password,
           // aktif: profile.aktif,
         };
 
@@ -206,7 +242,7 @@ export default function LoginPage({ onLoginSuccess }) {
         <div className="relative flex items-center gap-3">
           <img src={logoSmk} alt="Logo SMK" className="w-12 h-12 filter brightness-0 invert" />
           <div>
-            <h1 className="text-white font-bold text-lg leading-tight">SIMLAB</h1>
+            <h1 className="text-white font-bold text-lg leading-tight">SISPAS</h1>
             <p className="text-blue-200 text-sm">{SCHOOL_NAME}</p>
           </div>
         </div>
@@ -227,142 +263,188 @@ export default function LoginPage({ onLoginSuccess }) {
           {isSupabaseConfigured && (
             <div className="col-span-3 flex items-center gap-2 text-blue-200 text-xs">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
-              
+
             </div>
           )}
         </div>
       </div>
 
-      {/* ── Panel Kanan: Form Login ── */}
+      {/* ── Panel Kanan: Form Login atau Forgot ── */}
       <div className="flex-1 flex items-center justify-center p-4 sm:p-6 bg-main">
-        <div className="w-full max-w-md space-y-8">
-          {/* Mobile logo */}
-          <div className="lg:hidden text-center">
-            <img src={logoSmk} alt="Logo SMK" className="w-12 h-12 mx-auto mb-3" />
-          </div>
-
-          <div>
-            <h2 className="text-2xl font-bold text-main">Selamat Datang </h2>
-            <p className="text-muted text-sm mt-1">Silahkan untuk login terlebih dahulu</p>
-            {!isSupabaseConfigured && (
-              <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg inline-block">
-                ⚠️ Mode Demo — data tersimpan lokal di browser
-              </p>
+        {view === 'forgot' ? (
+          <div className="w-full max-w-md space-y-6">
+            <div>
+              <button onClick={() => { setView('login'); setForgotError(''); setForgotSuccess(''); }} className="text-sm text-blue-600 hover:underline mb-4 inline-flex items-center gap-1">
+                ← Kembali ke login
+              </button>
+              <h2 className="text-2xl font-bold text-main">Lupa Password</h2>
+              <p className="text-muted text-sm mt-1">Masukkan email akun Anda. Kami akan mengirim link reset password.</p>
+            </div>
+            {forgotError && <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">{forgotError}</div>}
+            {forgotSuccess && <div className="p-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg">{forgotSuccess}</div>}
+            {!forgotSuccess && (
+              <form onSubmit={handleForgotPassword} className="space-y-4" noValidate>
+                <div>
+                  <label htmlFor="forgot-email" className="block text-sm font-bold text-gray-700 mb-2">Email</label>
+                  <input
+                    id="forgot-email"
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    className="w-full px-5 py-4 rounded-xl border border-gray-300 text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    placeholder="email@sekolah.com"
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-base transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {forgotLoading ? 'Mengirim...' : 'Kirim Link Reset'}
+                </button>
+              </form>
             )}
           </div>
-
-          {/* Error global */}
-          {globalError && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg flex items-start gap-2">
-              <span className="text-red-500 mt-0.5 shrink-0">✕</span>
-              {globalError}
+        ) : (
+          <div className="w-full max-w-md space-y-8">
+            {/* Mobile logo */}
+            <div className="lg:hidden text-center">
+              <img src={logoSmk} alt="Logo SMK" className="w-12 h-12 mx-auto mb-3" />
             </div>
-          )}
 
-          <form onSubmit={handleLogin} className="space-y-4" noValidate>
-            {/* Username */}
             <div>
-              <label htmlFor="username-login" className="block text-sm font-bold text-gray-700 mb-2">
-                Nama Pengguna {isSupabaseConfigured ? 'atau Email' : '(Username)'}
-              </label>
-              <input
-                id="username-login"
-                type="text"
-                value={username}
-                onChange={(e) => {
-                  setUsername(e.target.value);
-                  if (errors.username) setErrors((prev) => ({ ...prev, username: '' }));
-                }}
-                autoComplete="username"
-                required
-                placeholder={isSupabaseConfigured ? 'username atau email@sekolah.com' : 'Contoh: admin'}
-                className={`w-full px-5 py-4 rounded-xl border text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${
-                  errors.username ? 'border-red-400 bg-red-50' : 'border-gray-300'
-                }`}
-              />
-              {errors.username && (
-                <p className="mt-1.5 text-xs text-red-600">{errors.username}</p>
+              <h2 className="text-2xl font-bold text-main">Selamat Datang Di SISPAS </h2>
+              <p className="text-muted text-sm mt-1">Silahkan untuk login terlebih dahulu</p>
+              {!isSupabaseConfigured && (
+                <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg inline-block">
+                  ⚠️ Mode Demo — data tersimpan lokal di browser
+                </p>
               )}
             </div>
 
-            {/* Password */}
-            <div className="mt-5">
-              <label htmlFor="password-login" className="block text-sm font-bold text-gray-700 mb-2">
-                Password
-              </label>
-              <div className="relative">
+            {/* Error global */}
+            {globalError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg flex items-start gap-2">
+                <span className="text-red-500 mt-0.5 shrink-0">✕</span>
+                {globalError}
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-4" noValidate>
+              {/* Username */}
+              <div>
+                <label htmlFor="username-login" className="block text-sm font-bold text-gray-700 mb-2">
+                  Nama Pengguna {isSupabaseConfigured ? 'atau Email' : '(Username)'}
+                </label>
                 <input
-                  id="password-login"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
+                  id="username-login"
+                  type="text"
+                  value={username}
                   onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (errors.password) setErrors((prev) => ({ ...prev, password: '' }));
+                    setUsername(e.target.value);
+                    if (errors.username) setErrors((prev) => ({ ...prev, username: '' }));
                   }}
-                  autoComplete="current-password"
+                  autoComplete="username"
                   required
-                  placeholder="Masukkan kata sandi"
-                  className={`w-full px-5 py-4 pr-14 rounded-xl border text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${
-                    errors.password ? 'border-red-400 bg-red-50' : 'border-gray-300'
-                  }`}
+                  placeholder={isSupabaseConfigured ? 'username atau email@kamu.com' : 'Contoh: admin'}
+                  className={`w-full px-5 py-4 rounded-xl border text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.username ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                    }`}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 text-sm font-medium"
-                  tabIndex={-1}
-                >
-                  {showPassword ? 'Sembunyikan' : 'Tampilkan'}
-                </button>
+                {errors.username && (
+                  <p className="mt-1.5 text-xs text-red-600">{errors.username}</p>
+                )}
               </div>
-              {errors.password && (
-                <p className="mt-1.5 text-xs text-red-600">{errors.password}</p>
-              )}
-            </div>
 
-            <button
-              id="btn-login-submit"
-              type="submit"
-              disabled={loading}
-              className="w-full py-4 mt-6 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-xl text-base transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                  </svg>
-                  Memverifikasi...
-                </>
-              ) : 'Masuk ke Dashboard'}
-            </button>
-          </form>
-
-          {/* Quick Demo — hanya kalau bukan Supabase */}
-          {!isSupabaseConfigured && (
-            <div className="border-t border-gray-200 pt-6 mt-8">
-              <p className="text-sm text-center text-gray-500 mb-4">Masuk Otomatis (Hanya untuk Demo)</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button
-                  id="btn-quick-admin"
-                  type="button"
-                  onClick={() => quickLogin('admin')}
-                  className="py-3 border border-blue-200 bg-blue-50 rounded-xl text-sm font-bold text-blue-700 hover:bg-blue-100 transition"
-                >
-                  Masuk sebagai Admin
-                </button>
-                <button
-                  id="btn-quick-petugas"
-                  type="button"
-                  onClick={() => quickLogin('petugas')}
-                  className="py-3 border border-gray-200 bg-gray-50 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-100 transition"
-                >
-                  Masuk sebagai Petugas
-                </button>
+              {/* Password */}
+              <div className="mt-5">
+                <label htmlFor="password-login" className="block text-sm font-bold text-gray-700 mb-2">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    id="password-login"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (errors.password) setErrors((prev) => ({ ...prev, password: '' }));
+                    }}
+                    autoComplete="current-password"
+                    required
+                    placeholder="Masukkan kata sandi"
+                    className={`w-full px-5 py-4 pr-14 rounded-xl border text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.password ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                      }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 text-sm font-medium"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? 'Sembunyikan' : 'Tampilkan'}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between mt-1">
+                  {errors.password && (
+                    <p className="text-xs text-red-600">{errors.password}</p>
+                  )}
+                  {isSupabaseConfigured && (
+                    <button
+                      type="button"
+                      onClick={() => setView('forgot')}
+                      className="text-xs text-blue-600 hover:underline ml-auto"
+                    >
+                      Lupa password?
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+
+              <button
+                id="btn-login-submit"
+                type="submit"
+                disabled={loading}
+                className="w-full py-4 mt-6 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-xl text-base transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    Memverifikasi...
+                  </>
+                ) : 'Masuk ke Dashboard'}
+              </button>
+            </form>
+
+            {/* Quick Demo — hanya kalau bukan Supabase */}
+            {!isSupabaseConfigured && (
+              <div className="border-t border-gray-200 pt-6 mt-8">
+                <p className="text-sm text-center text-gray-500 mb-4">Masuk Otomatis (Hanya untuk Demo)</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <button
+                    id="btn-quick-admin"
+                    type="button"
+                    onClick={() => quickLogin('admin')}
+                    className="py-3 border border-blue-200 bg-blue-50 rounded-xl text-sm font-bold text-blue-700 hover:bg-blue-100 transition"
+                  >
+                    Masuk sebagai Admin
+                  </button>
+                  <button
+                    id="btn-quick-petugas"
+                    type="button"
+                    onClick={() => quickLogin('petugas')}
+                    className="py-3 border border-gray-200 bg-gray-50 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-100 transition"
+                  >
+                    Masuk sebagai Petugas
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

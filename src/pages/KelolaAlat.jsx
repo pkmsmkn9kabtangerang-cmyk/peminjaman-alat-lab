@@ -12,7 +12,7 @@ import PageNote from '../components/PageNote';
 import { IconPlus, IconRefresh, IconMail } from '@tabler/icons-react';
 
 const EMPTY_FORM = {
-  id: '', kode: '', nama: '', kategori: 'elektronik', jumlah_total: 1, jumlah_rusak: 0,
+  id: '', kode: '', nama: '', kategori: 'elektronik', jumlah_total: 1, jumlah_rusak: 0, tipe: 'pinjam', satuan: 'unit'
 };
 
 // ── Data access: Supabase jika ada, localStorage jika tidak ──
@@ -20,7 +20,7 @@ async function fetchAlat() {
   if (isSupabaseConfigured) {
     const { data, error } = await supabase
       .from('alat')
-      .select('id, kode, nama, kategori, jumlah_total, jumlah_rusak, created_at')
+      .select('id, kode, nama, kategori, jumlah_total, jumlah_rusak, tipe, satuan, created_at')
       .order('created_at', { ascending: false });
     if (error) throw error;
     return data ?? [];
@@ -199,7 +199,9 @@ export default function KelolaAlat() {
         nama: form.nama.trim(),
         kategori: form.kategori.trim(),
         jumlah_total: Number(form.jumlah_total),
-        jumlah_rusak: Number(form.jumlah_rusak) || 0,
+        jumlah_rusak: form.tipe === 'habis_pakai' ? 0 : (Number(form.jumlah_rusak) || 0),
+        tipe: form.tipe,
+        satuan: form.satuan || 'unit',
       };
 
       if (editItem) {
@@ -265,11 +267,16 @@ export default function KelolaAlat() {
     {
       key: 'jumlah_rusak',
       label: 'Rusak',
-      render: (row) => (
+      render: (row) => row.tipe === 'habis_pakai' ? <span className="text-muted">—</span> : (
         <span className={row.jumlah_rusak > 0 ? 'text-orange-800 font-medium' : 'text-muted'}>
-          {row.jumlah_rusak} unit
+          {row.jumlah_rusak} {row.satuan}
         </span>
       ),
+    },
+    {
+      key: 'tipe',
+      label: 'Tipe',
+      render: (row) => <span className="text-main capitalize">{row.tipe === 'habis_pakai' ? 'Sekali Pakai' : 'Pinjam'}</span>
     },
     {
       key: 'aksi',
@@ -379,7 +386,7 @@ export default function KelolaAlat() {
                 placeholder="Pilih atau ketik kategori"
               />
             </FormField>
-            <FormField label="Total unit" required error={errors.jumlah_total}>
+            <FormField label={form.tipe === 'habis_pakai' ? 'Total (Sesuai satuan)' : 'Total unit'} required error={errors.jumlah_total}>
               <input
                 type="text"
                 inputMode="numeric"
@@ -392,7 +399,36 @@ export default function KelolaAlat() {
             </FormField>
           </div>
 
-          {editItem && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormField label="Tipe Alat" required error={errors.tipe}>
+              <select
+                value={form.tipe}
+                onChange={(e) => setForm({ ...form, tipe: e.target.value })}
+                className={inputClass}
+              >
+                <option value="pinjam">Pinjam (Biasa)</option>
+                <option value="habis_pakai">Sekali Pakai (Consumable)</option>
+              </select>
+            </FormField>
+
+            {form.tipe === 'habis_pakai' && (
+              <FormField label="Satuan" required error={errors.satuan}>
+                <select
+                  value={form.satuan}
+                  onChange={(e) => setForm({ ...form, satuan: e.target.value })}
+                  className={inputClass}
+                >
+                  <option value="unit">Unit</option>
+                  <option value="pcs">Pcs</option>
+                  <option value="cm">Cm</option>
+                  <option value="meter">Meter</option>
+                  <option value="pack">Pack</option>
+                </select>
+              </FormField>
+            )}
+          </div>
+
+          {form.tipe !== 'habis_pakai' && editItem && (
             <FormField
               label="Unit rusak"
               hint="Jika alat sudah diperbaiki, isi 0 agar unit bisa dipinjam lagi."

@@ -15,6 +15,10 @@ import Pengembalian from './pages/Pengembalian';
 import Riwayat from './pages/Riwayat';
 import KelolaPetugas from './pages/KelolaPetugas';
 import SimulasiKartu from './pages/SimulasiKartu';
+
+import ChangePasswordMandiri from './pages/ChangePasswordMandiri';
+import GantiPassword from './pages/GantiPassword';
+import SetPassword from './pages/SetPassword';
 import { IconBell, IconX, IconCheck, IconAlertTriangle, IconMenu2 } from '@tabler/icons-react';
 
 const PAGE_TITLES = {
@@ -28,6 +32,8 @@ const PAGE_TITLES = {
   kartu_rfid:     'Kartu RFID',
   pengguna:       'Pengguna',
   simulasi_iot:   'Simulasi Kartu',
+
+  ganti_password: 'Ganti Password',
 };
 
 // ── URL helpers ──────────────────────────────────────────────
@@ -127,6 +133,8 @@ export default function App() {
   const [unreadCount, setUnreadCount]   = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  
+  const isSetPasswordRoute = window.location.pathname === '/auth/set-password';
 
   const prevLogsLen = useRef(dbService.getTapLog().length);
 
@@ -159,7 +167,7 @@ export default function App() {
       }
       const { data: profile } = await supabase
         .from('profiles')
-        .select('id, nama_lengkap, email, role') // bisa tambahin aktif di samping role
+        .select('id, nama_lengkap, email, role, wajib_ganti_password') // bisa tambahin aktif di samping role
         .eq('id', session.user.id)
         .maybeSingle();
 
@@ -170,6 +178,7 @@ export default function App() {
           nama: profile.nama_lengkap || session.user.email,
           email: profile.email || session.user.email,
           role: profile.role,
+          wajib_ganti_password: profile.wajib_ganti_password,
           // aktif: profile.aktif,
         });
         setAuthState('authenticated');
@@ -336,6 +345,11 @@ export default function App() {
     try { window.location.hash = restoredTab; } catch (_) { /* noop */ }
   };
 
+  // ── Render: SetPassword Route ───────────────────────────────
+  if (isSetPasswordRoute) {
+    return <SetPassword />;
+  }
+
   // ── Render: Loading ─────────────────────────────────────────
   if (authState === 'loading') {
     return (
@@ -355,6 +369,15 @@ export default function App() {
   // URL: /#login (hash bersih, tidak ada tab aktif di URL)
   if (authState === 'unauthenticated' || !currentUser) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // ── Render: Wajib Ganti Password ────────────────────────────
+  if (currentUser.wajib_ganti_password) {
+    return <ChangePasswordMandiri 
+             user={currentUser} 
+             onSuccess={() => setCurrentUser({...currentUser, wajib_ganti_password: false})} 
+             onCancel={handleLogout} 
+           />;
   }
 
   // ── Render: Main app ────────────────────────────────────────
@@ -415,6 +438,8 @@ export default function App() {
           {currentTab === 'kartu_rfid'    && <KelolaKartu />}
           {currentTab === 'pengguna'      && <KelolaPetugas currentUser={currentUser} />}
           {currentTab === 'simulasi_iot'  && <SimulasiKartu />}
+
+          {currentTab === 'ganti_password' && <GantiPassword user={currentUser} />}
         </div>
       </main>
     </div>

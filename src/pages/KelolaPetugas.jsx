@@ -10,7 +10,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import FormField, { inputClass } from '../components/FormField';
 import { showFeedback, friendlyError } from '../lib/feedback';
 import PageNote from '../components/PageNote';
-import { IconPlus, IconShieldCheck, IconChevronDown, IconRefresh, IconMail } from '@tabler/icons-react';
+import { IconPlus, IconShieldCheck, IconChevronDown, IconRefresh, IconMail, IconKey, IconCircleCheck, IconClockHour4, IconSend } from '@tabler/icons-react';
 
 // Validasi email format
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -30,7 +30,7 @@ async function fetchUsers(selfUid) {
   if (isSupabaseConfigured) {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, nama_lengkap, username, nip, email, role, created_at')
+      .select('id, nama_lengkap, username, nip, email, role, is_verified, created_at')
       .eq('role', 'petugas')
       .order('created_at', { ascending: false });
     if (error) throw error;
@@ -44,7 +44,9 @@ async function fetchUsers(selfUid) {
         nip: u.nip,
         email: u.email,
         role: u.role,
-        // aktif: u.aktif,
+        // is_verified: false = belum set password (diset oleh create-petugas)
+        // is_verified: true atau null = sudah aktif / akun lama sebelum fitur ini
+        is_verified: u.is_verified === false ? false : true,
         created_at: u.created_at,
       }));
   }
@@ -61,6 +63,10 @@ export default function PenggunaPage({ currentUser }) {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [blockSelf, setBlockSelf] = useState(false);
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetting, setResetting] = useState(false);
+  const [resendTarget, setResendTarget] = useState(null);
+  const [resending, setResending] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -174,6 +180,7 @@ export default function PenggunaPage({ currentUser }) {
             uid: form.uid,
             email: fakeEmail,
             role: 'petugas',
+            is_verified: false, // Demo: petugas baru dianggap belum aktif
             // aktif: true,
             created_at: new Date().toISOString(),
           });
@@ -221,6 +228,48 @@ export default function PenggunaPage({ currentUser }) {
     }
   };
 
+  const handleResetPassword = async () => {
+    if (!resetTarget) return;
+    setResetting(true);
+    try {
+      if (isSupabaseConfigured) {
+        const res = await callFunction('manage-pengguna', { aksi: 'reset-password', id: resetTarget.uid }, {
+          method: 'POST',
+        });
+        if (!res?.success) throw new Error(res?.message || 'Gagal mereset password.');
+        showFeedback({ type: 'success', title: 'Password direset.', message: `${resetTarget.nama} wajib ganti password saat login berikutnya.` });
+      } else {
+        showFeedback({ type: 'success', title: '[Demo] Password direset.', message: `Petugas ${resetTarget.nama} akan diminta ganti password.` });
+      }
+      setResetTarget(null);
+    } catch (err) {
+      showFeedback({ type: 'error', title: 'Gagal mereset password.', message: err?.message || friendlyError(err) });
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const handleResendInvite = async () => {
+    if (!resendTarget) return;
+    setResending(true);
+    try {
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.auth.resetPasswordForEmail(resendTarget.email, {
+          redirectTo: `${window.location.origin}/auth/set-password`,
+        });
+        if (error) throw error;
+        showFeedback({ type: 'success', title: 'Undangan dikirim ulang.', message: `Link aktivasi dikirim ke ${resendTarget.email}.` });
+      } else {
+        showFeedback({ type: 'success', title: '[Demo] Undangan dikirim ulang.' });
+      }
+      setResendTarget(null);
+    } catch (err) {
+      showFeedback({ type: 'error', title: 'Gagal mengirim ulang undangan.', message: err?.message || friendlyError(err) });
+    } finally {
+      setResending(false);
+    }
+  };
+
   const columns = [
     {
       key: 'nama',
@@ -248,9 +297,29 @@ export default function PenggunaPage({ currentUser }) {
       label: 'Email',
       render: (row) => (
         row.email && !row.email.includes('@sekolah.internal')
-          ? <span className="text-muted text-xs">{row.email}</span>
+          ? <span className="text-muted text-main">{row.email}</span>
           : <span className="text-muted">—</span>
       ),
+    },
+    {
+      key: 'status_verifikasi',
+      label: 'Status',
+      render: (row) => {
+        if (row.is_verified === false) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+              <IconClockHour4 size={13} />
+              Menunggu aktivasi
+            </span>
+          );
+        }
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
+            <IconCircleCheck size={13} />
+            Terverifikasi
+          </span>
+        );
+      },
     },
     {
       key: 'role',
@@ -264,6 +333,17 @@ export default function PenggunaPage({ currentUser }) {
       render: (row) => (
         <div className="flex items-center gap-1 justify-end">
           <button type="button" onClick={() => openEdit(row)} className="table-action table-action-edit">Edit</button>
+          {row.is_verified === false && (
+            <button
+              type="button"
+              onClick={() => setResendTarget(row)}
+              className="table-action"
+              title="Kirim ulang undangan"
+            >
+              <IconSend size={13} className="inline mr-1" />
+              Kirim ulang
+            </button>
+          )}
           <button type="button" onClick={() => requestDelete(row)} className="table-action table-action-danger">Hapus</button>
         </div>
       ),
@@ -279,7 +359,8 @@ export default function PenggunaPage({ currentUser }) {
 
       {isSupabaseConfigured && (
         <PageNote title="Informasi Penting" icon={IconMail}>
-          Saat ingin menambahkan petugas baru, tolong masukkan email dengan benar. Nantinya email tersebut akan menerima undangan otomatis agar petugas dapat login dan mengatur kata sandinya sendiri.
+          <p>Saat ingin menambahkan petugas baru, tolong masukkan email dengan benar. Nantinya email tersebut akan menerima undangan otomatis agar petugas dapat login dan mengatur kata sandinya sendiri.</p>
+          <p className="mt-2 text-amber-800"> Petugas dengan status <span className="font-semibold">Menunggu aktivasi</span> belum membuka link undangan dan belum membuat password. Link undangan kedaluwarsa dalam <b>24 jam</b> gunakan tombol <b>Kirim ulang</b> untuk mengirim ulang undangan.</p>
         </PageNote>
       )}
 
@@ -406,6 +487,24 @@ export default function PenggunaPage({ currentUser }) {
         title="Hapus pengguna?"
         message={`Apakah Anda yakin ingin menghapus ${deleteTarget?.nama}?\n\nTindakan ini tidak dapat dibatalkan.`}
         confirmLabel="Hapus pengguna"
+      />
+
+      <ConfirmDialog
+        isOpen={!!resetTarget}
+        onClose={() => setResetTarget(null)}
+        onConfirm={handleResetPassword}
+        title="Reset Password?"
+        message={`Reset password untuk ${resetTarget?.nama}?\n\nPetugas ini akan diwajibkan mengganti password saat login berikutnya.`}
+        confirmLabel={resetting ? 'Mereset...' : 'Reset Password'}
+      />
+
+      <ConfirmDialog
+        isOpen={!!resendTarget}
+        onClose={() => setResendTarget(null)}
+        onConfirm={handleResendInvite}
+        title="Kirim Ulang Undangan?"
+        message={`Kirim ulang link aktivasi ke ${resendTarget?.email}?\n\nLink sebelumnya akan digantikan dengan link baru yang berlaku 24 jam.`}
+        confirmLabel={resending ? 'Mengirim...' : 'Kirim Undangan'}
       />
 
     </div>

@@ -66,5 +66,8 @@ entrypoint = "functions/manage-transaksi/index.js"
 [functions.manage-pengguna]
 entrypoint = "functions/manage-pengguna/index.js"
 
+[functions.manage-permintaan]
+entrypoint = "functions/manage-permintaan/index.js"
+
 [functions.dashboard-stats]
 entrypoint = "functions/dashboard-stats/index.js"

@@ -10,6 +10,8 @@ import {
   IconLogout,
   IconCreditCard,
   IconCpu,
+  IconPackage,
+  IconKey,
 } from '@tabler/icons-react';
 import logoSmk from '../assets/logo-smk.svg';
 
@@ -26,7 +28,8 @@ const MENU_SECTIONS = [
     items: [
       { id: 'realtime_card', label: 'Aktivitas Kartu', icon: IconCreditCard, roles: ['admin', 'petugas'] },
       { id: 'kartu_rfid', label: 'Kelola Kartu', icon: IconIdBadge2, roles: ['admin'] },
-      { id: 'riwayat', label: 'Riwayat ', icon: IconHistory, roles: ['admin', 'petugas'] },
+      { id: 'riwayat', label: 'Riwayat', icon: IconHistory, roles: ['admin', 'petugas'] },
+
       // { id: 'simulasi_iot', label: 'Simulasi Kartu', icon: IconCpu, roles: ['admin', 'petugas'] },
     ],
   },
@@ -122,6 +125,14 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, unr
               </p>
             </div>
           </div>
+          <button
+            id="btn-ganti-password"
+            onClick={() => setCurrentTab('ganti_password')}
+            className="w-full flex items-center gap-3 px-2.5 py-2.5 min-h-11 rounded text-[15px] font-medium text-gray-600 hover:bg-gray-100 border-l-[3px] border-transparent mb-1"
+          >
+            <IconKey size={20} className="shrink-0 text-gray-500" />
+            <span>Ganti Password</span>
+          </button>
           <button
             id="btn-logout"
             onClick={onLogout}

@@ -13,6 +13,7 @@
 //     pinjaman_aktif: number,
 //     transaksi_hari_ini: number,
 //     kartu_aktif: number,
+//     permintaan_menunggu: number,
 //   },
 //   chart: Array<{ tanggal: string, jumlah_pinjam: number, jumlah_kembali: number, total: number }>,
 //   pinjaman_aktif: Array<...>,  // dari v_pinjaman_aktif
@@ -39,11 +40,11 @@ Deno.serve(async (req) => {
 
   try {
     // Jalankan semua query secara paralel
-    const [alatRes, kartuRes, pinjamanAktifRes, transaksiHariIniRes, chartRes] = await Promise.all([
+    const [alatRes, kartuRes, pinjamanAktifRes, transaksiHariIniRes, permintaanMenungguRes, chartRes] = await Promise.all([
       // Total & status alat
       supabaseAdmin
         .from("v_list_barang")
-        .select("id, status"),
+        .select("id, status, tipe"),
 
       // Kartu aktif
       supabaseAdmin
@@ -63,6 +64,12 @@ Deno.serve(async (req) => {
         .select("id", { count: "exact", head: true })
         .gte("created_at", new Date().toISOString().slice(0, 10) + "T00:00:00.000Z"),
 
+      // Permintaan Menunggu
+      supabaseAdmin
+        .from("permintaan_habis_pakai")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "menunggu"),
+
       // Chart: transaksi per hari (days hari terakhir)
       buildChartData(supabaseAdmin, days),
     ]);
@@ -71,14 +78,17 @@ Deno.serve(async (req) => {
     if (pinjamanAktifRes.error) throw pinjamanAktifRes.error;
 
     const alatData = alatRes.data ?? [];
+    const alatPinjamData = alatData.filter((a) => a.tipe !== "habis_pakai");
+
     const stats = {
-      total_alat:          alatData.length,
-      alat_tersedia:       alatData.filter((a) => a.status === "tersedia").length,
-      alat_dipinjam:       alatData.filter((a) => a.status === "dipinjam").length,
-      alat_habis:          alatData.filter((a) => a.status === "habis").length,
+      total_alat:          alatPinjamData.length,
+      alat_tersedia:       alatPinjamData.filter((a) => a.status === "tersedia").length,
+      alat_dipinjam:       alatPinjamData.filter((a) => a.status === "dipinjam").length,
+      alat_habis:          alatPinjamData.filter((a) => a.status === "habis").length,
       pinjaman_aktif:      pinjamanAktifRes.data?.length ?? 0,
       transaksi_hari_ini:  transaksiHariIniRes.count ?? 0,
       kartu_aktif:         kartuRes.count ?? 0,
+      permintaan_menunggu: permintaanMenungguRes.count ?? 0,
     };
 
     return json({

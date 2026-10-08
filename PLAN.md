@@ -1,348 +1,309 @@
-# Plan Implementasi v2: Sistem Peminjaman Alat Lab Berbasis RFID + Web (PKM)
-
-**Supabase** (Auth + Postgres + Edge Functions + Realtime). UI direvisi (20 poin revisi, dipetakan di Bagian 8). Alur tap disederhanakan: **tap kartu sekali, lalu tap sticker alat sebanyak yang dipinjam**, tanpa konfirmasi manual petugas.
-
-## 0. Asumsi yang Dipakai (koreksi kalau salah)
-
-| # | Asumsi | Alasan |
-|---|---|---|
-| 1 | Konfirmasi petugas **dihapus**. Tap langsung masuk sebagai transaksi, petugas melihatnya di **Realtime Card**. | Kamu minta "Persetujuan" → "Realtime Card" dan data "langsung masuk". |
-| 2 | Jenis deteksi dihitung **per alat**: sticker alat yang sedang dipinjam kartu itu → *dikembalikan*; selain itu → *dipinjam*. Untuk tap kartu: belum punya pinjaman aktif → *dipinjam*, punya pinjaman aktif → *dikembalikan*. | Cocok dengan aturanmu (#11) dan tetap benar kalau satu kartu pinjam+kembalikan barang campur dalam satu sesi. |
-| 3 | Sesi kartu berlaku **60 detik**, diperpanjang tiap tap alat. | Agar tap alat tidak perlu tap kartu ulang (#16), tapi kartu tidak "nyangkut" selamanya. |
-| 4 | Satu baris `alat` = satu jenis alat dengan **satu sticker** dan `jumlah_total` unit. Tiap tap sticker = 1 unit. | Sesuai stok "4/5" (#13, #14). Kalau mau tiap unit punya sticker sendiri, bilang — schema perlu tabel `alat_unit`. |
-| 5 | Unit **rusak tidak bisa dipinjam** (stok yang bisa dipinjam = tersedia − rusak). | Supaya alat rusak tidak keluar lagi. |
-| 6 | Poin #19 tidak ada di daftarmu (loncat 18 → 20), dianggap tidak ada. | — |
-| 7 | "di page minimal ada gambar" (#1) dibaca: logo SMK tampil di setiap halaman (header sidebar + favicon). | Kalau maksudmu banner/ilustrasi per halaman, tinggal tambah. |
+# 📋 Master Plan & Dokumentasi Sistem: SIMLAB SMK
+> **Sistem Informasi & Manajemen Peminjaman Alat Laboratorium Berbasis IoT RFID & Cloud Supabase**  
+> Dibuat untuk Program Kreativitas Mahasiswa (PKM) / Pengabdian Masyarakat di SMK Negeri.
 
 ---
 
-## 1. Arsitektur
+## 📑 Daftar Isi
+1. [Ringkasan & Tujuan Sistem](#1-ringkasan--tujuan-sistem)
+2. [Arsitektur Sistem (Dual Mode)](#2-arsitektur-sistem-dual-mode)
+3. [Tech Stack](#3-tech-stack)
+4. [Skema Database & Views Supabase](#4-skema-database--views-supabase)
+5. [Supabase Edge Functions](#5-supabase-edge-functions)
+6. [Alur Bisnis & Logika IoT RFID](#6-alur-bisnis--logika-iot-rfid)
+7. [Fitur-Fitur & Halaman Frontend](#7-fitur-fitur--halaman-frontend)
+8. [Keamanan & Role-Based Access Control (RBAC)](#8-keamanan--role-based-access-control-rbac)
+9. [Firmware & Hardware IoT](#9-firmware--hardware-iot)
+10. [Panduan Instalasi & Deployment (Prod & Local)](#10-panduan-instalasi--deployment-prod--local)
+
+---
+
+## 1. Ringkasan & Tujuan Sistem
+
+**SIMLAB** adalah platform terpadu peminjaman inventaris alat lab yang mengintegrasikan pemindaian RFID fisik (kartu perwakilan kelas & stiker alat) dengan sistem berbasis web modern dan backend serverless Supabase.
+
+### Masalah yang Diselesaikan:
+- Pencatatan peminjaman alat lab konvensional berbasis buku sering mengalami kehilangan data, alat tercecer, atau ketidakjelasan siapa penanggung jawab peminjam.
+- Petugas laboratorium kesulitan memantau sisa stok alat yang layak pakai versus unit yang rusak secara seketika (*realtime*).
+- Kebutuhan alur cepat: siswa hanya perlu tap kartu RFID kelas lalu tap alat yang diambil, tanpa menunggu antrean pencatatan manual yang panjang.
+
+---
+
+## 2. Arsitektur Sistem (Dual Mode)
+
+SIMLAB dirancang dengan arsitektur cerdas **Dual-Mode**:
+1. **Production Mode (Live Supabase)**: Menggunakan Supabase Database (PostgreSQL), Supabase Auth, Row Level Security (RLS), Supabase Realtime WebSocket, dan 8 Edge Functions Deno.
+2. **Local Demo Mode (Fallback)**: Jika `VITE_SUPABASE_URL` belum diset, aplikasi secara otomatis berjalan di memori browser (`localStorage` via `dbService` di `src/services/store.js`). Penguji dapat mencoba seluruh alur tanpa setup server.
+
+### Diagram Arsitektur Alur Data:
 
 ```mermaid
-flowchart LR
-    A[Kartu RFID Kelas] -->|tap 1x| S[Scanner RC522]
-    B[Sticker RFID Alat] -->|tap 1..n| S
-    S --> E[ESP32]
-    E -->|HTTPS POST uid + x-device-key| F1[Edge Function rfid-tap]
-    F1 -->|rpc process_tap| DB[(Supabase Postgres)]
-    W[React Web App] -->|supabase-js + RLS| DB
-    W -->|JWT| F2[Edge Function transaksi-manual]
-    W -->|JWT admin| F3[Edge Function admin-users]
-    F2 --> DB
-    F3 --> AU[Supabase Auth]
-    DB -->|Realtime postgres_changes| W
-    E -.->|LED + Buzzer| E
+flowchart TD
+    subgraph Hardware_IoT["Hardware Lab (IoT)"]
+        K[Kartu RFID Kelas 13.56MHz] -->|Tap 1x| RC[Scanner RC522]
+        A[Stiker RFID Alat] -->|Tap 1..n| RC
+        RC --> ESP[ESP32 DevKit]
+        ESP -->|Status & Bip| LCD[LCD 1602 + Buzzer]
+    end
+
+    subgraph Supabase_Cloud["Supabase Backend"]
+        EF_TAP["Edge Function: rfid-tap"]
+        EF_AUTH["Edge Function: create-petugas"]
+        EF_MAN["Edge Function: process-manual / manage-*"]
+        DB[(PostgreSQL + RLS)]
+        AUTH_SVC[Supabase Auth]
+        RT[Supabase Realtime Pub/Sub]
+        VIEW1["View: v_list_barang"]
+        VIEW2["View: v_pinjaman_aktif"]
+    end
+
+    subgraph Frontend_App["Frontend Web (React + Vite)"]
+        WEB[Dashboard & Pages]
+        SIM[Simulasi RFID Web]
+        TOAST[Live Notification & Bel]
+    end
+
+    ESP -->|HTTPS POST + anon key + device key| EF_TAP
+    SIM -->|HTTPS POST| EF_TAP
+    EF_TAP --> DB
+    EF_TAP --> RT
+
+    WEB -->|JWT User (Admin/Petugas)| EF_AUTH
+    WEB -->|JWT User (Admin/Petugas)| EF_MAN
+    EF_AUTH --> AUTH_SVC
+    EF_AUTH --> DB
+    EF_MAN --> DB
+
+    WEB -->|Direct Query via supabase-js + RLS| VIEW1
+    WEB -->|Direct Query via supabase-js + RLS| VIEW2
+    RT -->|WebSocket Event (transaksi, tap_log)| TOAST
+    RT -->|Live Updates| WEB
 ```
 
-**Pembagian tugas backend**
-- **Edge Function**: semua yang butuh rahasia / logika bisnis / bypass RLS → `rfid-tap`, `transaksi-manual`, `admin-users`.
-- **Postgres function (RPC)**: logika atomik pinjam/kembali & stok (`process_tap`, `process_manual`) — dipanggil edge function, jadi tidak ada race condition antar tap.
-- **supabase-js + RLS langsung**: baca data (tabel, dashboard) dan CRUD sederhana admin (alat, kartu). Aman karena dijaga Row Level Security.
-- **Realtime**: `tap_log`, `transaksi`, `alat` → Realtime Card, badge notifikasi, chart dashboard.
+---
 
-## 2. Tech Stack
+## 3. Tech Stack
 
-| Layer | Teknologi |
-|---|---|
-| Hardware | ESP32 + RC522 (1 atau 2 modul) + kartu Mifare 1K + sticker RFID + LED + buzzer |
-| Firmware | Arduino IDE / PlatformIO |
-| Frontend | React + Vite + Tailwind, **font Poppins**, Recharts (bar + area), TanStack Table (sort/search), `@supabase/supabase-js` |
-| Auth | Supabase Auth (email/password, signup publik dimatikan) |
-| Database | Supabase Postgres + RLS |
-| Backend | Supabase Edge Functions (Deno, JavaScript) |
-| Realtime | Supabase Realtime |
-| Hosting web | Vercel / Netlify / Cloudflare Pages (Supabase tidak host frontend) |
-
-## 3. Role & Akses
-
-| Role | Akses |
-|---|---|
-| **Admin** | Semua: CRUD alat (Inventaris), kartu RFID, akun petugas, semua laporan |
-| **Petugas** | Lihat Realtime Card, Riwayat, List Barang; peminjaman/pengembalian manual; edit kondisi alat (jumlah rusak) |
-| **Perwakilan kelas** | Tidak login. Hanya tap kartu + sticker |
-
-## 4. Alur Tap (Business Logic)
-
-Firmware **tidak perlu tahu** mana kartu dan mana alat. ESP32 cukup kirim tiap UID; server menentukan.
-
-```
-Tap kartu  ─► validasi kartu aktif ─► buat/perbarui sesi (20 dtk)
-              jenis_terdeteksi = belum ada pinjaman aktif ? "pinjam" : "kembali"
-              ─► tap_log (muncul di Realtime Card + notifikasi)
-
-Tap alat   ─► UID tidak dikenal?             -> ditolak  uid_tidak_dikenal
-              tidak ada sesi kartu aktif?     -> ditolak  sesi_tidak_ada   (suruh tap kartu dulu)
-              kartu ini sedang pinjam alat ini? -> KEMBALI (stok +1, transaksi ditutup)
-              selain itu                         -> PINJAM  (stok -1, transaksi baru)
-                                                    stok habis? -> ditolak stok_habis
-              sesi diperpanjang 20 dtk ─► tap_log
-```
-
-Aturan:
-- Debounce 3 detik untuk UID yang sama di device yang sama (tap ganda diabaikan).
-- Kartu nonaktif ditolak (`kartu_nonaktif`).
-- Alat yang sedang dipinjam kartu **lain** dan stok 0 → `stok_habis`.
-- Semua ditulis atomik di Postgres → aman kalau 2 tap datang bersamaan.
-
-**Kode respons API (kontrak untuk sisi IoT):**
-
-| `error` | Arti |
-|---|---|
-| — (`ok:true`, `type:"kartu"`) | Kartu diterima, sesi mulai |
-| — (`ok:true`, `type:"alat"`) | Pinjam/kembali berhasil |
-| `kartu_nonaktif` | Kartu diblokir |
-| `uid_tidak_dikenal` | UID belum terdaftar |
-| `sesi_tidak_ada` | Belum tap kartu / sesi habis |
-| `stok_habis` | Tidak ada unit tersedia |
-| gagal koneksi / 5xx | Jaringan/server bermasalah |
-
-> Cara IoT menampilkan tiap kode (LED, buzzer, dll) ditentukan di project IoT sendiri.
-
-## 5. Database Schema (Supabase Postgres)
-
-File lengkap: `supabase/migrations/001_initial_schema.sql`
-
-| Tabel | Isi | Pengganti di Firebase |
+| Layer | Komponen / Teknologi | Keterangan |
 |---|---|---|
-| `profiles` | id (= `auth.users.id`), nama, email, `role` (admin/petugas), aktif | `users` |
-| `kartu_rfid` | `uid_kartu` (PK), kelas, nama_pemegang, aktif | `kartu_rfid` |
-| `alat` | kode, nama, kategori, `uid_rfid` (unik), `jumlah_total`, `jumlah_rusak`, `stok_tersedia` | `alat` |
-| `transaksi` | 1 baris = 1 unit: kartu, kelas, alat, **`status`** (dipinjam/dikembalikan), **`sumber`** (otomatis/manual → kolom *Terkirim*), `kondisi_pinjam`, `kondisi_kembali`, waktu_pinjam, waktu_kembali, petugas_id, catatan | `transaksi` |
-| `tap_log` | Log tiap tap: jenis_tap, kelas, alat, **`jenis_terdeteksi`**, kondisi, status berhasil/ditolak, error_code, `is_read`, `waktu_tap` (tanggal+jam) | `tap_log` |
-| `kartu_session` | Sesi kartu per device (expires_at) | *baru* |
-| `devices` | Daftar ESP32 + hash API key | *baru* |
-| `error_log` | Error server di produksi | *baru* |
+| **Frontend** | React 18, Vite | SPA super cepat, hot-reloading |
+| **Styling** | Vanilla CSS + Tailwind CSS utilities | Desain modern, responsive, badge, modal, dark/light tones |
+| **Icons & Font** | `@tabler/icons-react`, Google Font (Poppins / Inter) | UI informatif, modern, konsisten |
+| **Data Visualization**| SVG & Custom Progress Charts | Visualisasi stok, tren harian, persentase ketersediaan |
+| **Database** | PostgreSQL 15 (Supabase Cloud) | Dilengkapi View terhitung & RLS policies |
+| **Backend API** | Supabase Edge Functions (Deno Runtime) | Serverless, performa tinggi, aman (Service Role key terisolasi) |
+| **Realtime** | Supabase Realtime (PostgreSQL Changes) | Notifikasi instan saat ada tap RFID baru atau mutasi transaksi |
+| **Autentikasi** | Supabase Auth (Email + Password / Invite Email) | Role-Based Access Control (`admin` vs `petugas`) |
+| **Hardware** | ESP32 DevKit V1, RC522 RFID Reader, LCD 1602 I2C, Buzzer | Pemindai fisik di lab |
 
-**View:** `v_list_barang` (stok "4/5", status, kondisi, kartu peminjam), `v_stat_harian` (30 hari untuk bar + area chart).
+---
 
-**Function penting:** `process_tap`, `process_manual` (hanya service_role), `update_kondisi_alat`, `set_kondisi_kembali`, `mark_taps_read` (authenticated, dicek role di dalam).
+## 4. Skema Database & Views Supabase
 
-**Catatan model stok:**
-`jumlah_total` = total unit · `stok_tersedia` = total − sedang dipinjam · `jumlah_rusak` = unit rusak. Contoh: total 5, dipinjam 1, rusak 1 → tersedia 4, bisa dipinjam 3, tampil "4/5", kondisi "rusak (1)".
+File migrasi DDL lengkap: `supabase/migrations/001_initial_schema.sql`
 
-## 6. Auth & Keamanan
+### 4.1 Tabel Utama
 
-1. **Signup publik dimatikan** (`enable_signup = false`). Akun hanya dibuat admin lewat edge function `admin-users`.
-2. Login: `supabase.auth.signInWithPassword`. Role dibaca dari `profiles` (bukan dari `user_metadata`, karena bisa diubah user).
-3. **RLS aktif di semua tabel.** Staff (admin/petugas) boleh `select`; tulis `alat`/`kartu_rfid` hanya admin; **tulis `transaksi`/`tap_log` hanya service_role** (edge function).
-4. ESP32 autentikasi dengan `x-device-id` + `x-device-key` (hash SHA-256 disimpan di `devices`). Key asli hanya ada di firmware. Jika ESP32 hilang → set `devices.aktif = false`.
-5. `SUPABASE_SERVICE_ROLE_KEY` **tidak pernah** masuk frontend/firmware/git. Frontend hanya pakai `anon` key.
-6. Admin pertama: buat user di Dashboard → jalankan SQL `update public.profiles set role='admin' ...` (ada di akhir file migrasi).
+1. **`public.profiles`**
+   - Terhubung langsung dengan `auth.users(id)` (ON DELETE CASCADE).
+   - Kolom: `id` (UUID, PK), `nama_lengkap`, `nip`, `username`, `email`, `role` (`admin` | `petugas`), `created_at`.
+2. **`public.alat`**
+   - Inventaris alat laboratorium.
+   - Kolom: `id` (PK, text misal `ALT-001`), `kode` (unique), `nama`, `kategori`, `jumlah_total`, `jumlah_rusak`, `tipe` (`pinjam` | `sekali_pakai`), `satuan`, `created_at`.
+3. **`public.kartu_rfid`**
+   - Registrasi kartu fisik perwakilan kelas.
+   - Kolom: `uid_kartu` (PK), `kelas`, `nama_pemegang`, `aktif` (boolean), `created_at`.
+4. **`public.transaksi`**
+   - Riwayat peminjaman dan pengembalian unit.
+   - Kolom: `id` (PK), `uid_kartu` (FK), `kelas`, `alat_id` (FK), `nama_alat`, `status` (`dipinjam` | `dikembalikan`), `sumber` (`otomatis` | `manual`), `kondisi_pinjam` (default 'baik'), `kondisi_kembali`, `catatan`, `waktu_pinjam`, `waktu_kembali`, `petugas`, `created_at`.
+5. **`public.tap_log`**
+   - Audit trail semua aktivitas tap dari ESP32 atau emulator.
+   - Kolom: `id` (PK), `uid_kartu`, `uid_alat`, `jenis_tap`, `jenis_terdeteksi`, `kelas`, `nama_alat`, `status` (`berhasil` | `ditolak`), `error_code`, `is_read` (boolean), `waktu_tap`.
 
-**Edge Functions**
+---
 
-| Function | Siapa | Auth | Fungsi |
+### 4.2 Views & Computed Data
+
+1. **`v_list_barang`**  
+   Menghitung status ketersediaan alat secara otomatis:
+   - `stok_tersedia` = `GREATEST(0, jumlah_total - jumlah_rusak - dipinjam_aktif)`
+   - `dipinjam_aktif` = Jumlah baris transaksi alat tersebut yang berstatus `dipinjam`
+   - `status` = `'habis'` jika stok_tersedia <= 0, `'dipinjam'` jika sedang ada yang meminjam, `'tersedia'` jika utuh.
+   - `peminjam_kartu` & `peminjam_kelas` = Data kartu peminjam terakhir.
+
+2. **`v_pinjaman_aktif`**  
+   Mendaftar semua transaksi yang belum dikembalikan (`status = 'dipinjam'`) di-join dengan info `kartu_rfid` dan `alat`, dilengkapi kalkulasi:
+   - `durasi_menit` = Durasi sejak `waktu_pinjam` hingga `NOW()`.
+
+---
+
+### 4.3 Stored Procedures & Realtime Publication
+
+- **`public.get_my_role()`**: Fungsi `SECURITY DEFINER` untuk memeriksa role dari user yang sedang melakukan request (`SELECT role FROM profiles WHERE id = auth.uid()`).
+- **`public.mark_taps_read()`**: Menandai seluruh tap belum terbaca (`is_read = FALSE`) menjadi `TRUE`.
+- **Publication `supabase_realtime`**: Menyiarkan event INSERT/UPDATE pada tabel `transaksi` dan `tap_log`.
+
+---
+
+## 5. Supabase Edge Functions
+
+Semua backend serverless berlokasi di direktori `supabase/functions/` (Deno runtime).
+
+| Function | Method | Otorisasi | Deskripsi & Logic |
 |---|---|---|---|
-| `rfid-tap` | ESP32 | `x-device-key` (`--no-verify-jwt`) | Proses tiap tap |
-| `transaksi-manual` | Admin/Petugas | JWT user | Peminjaman & pengembalian manual (jumlah, kondisi, catatan) |
-| `admin-users` | Admin | JWT + cek role admin | Buat/ubah/hapus akun petugas |
+| **`rfid-tap`** | `POST` | Anon / Service Role (`--no-verify-jwt`) | Endpoint untuk ESP32 & Simulator. Mengidentifikasi UID kartu vs stiker alat, mengelola sesi aktif 20 detik, mencatat peminjaman/pengembalian otomatis, dan mencatat log audit ke `tap_log`. |
+| **`create-petugas`** | `POST` | Admin (JWT Auth) | Menggunakan Supabase Service Role untuk memanggil `auth.admin.inviteUserByEmail`. Mengirim email aktivasi resmi, menetapkan role `petugas`, dan membuat entri di tabel `profiles`. |
+| **`process-manual`** | `POST` | Admin, Petugas (JWT) | Memproses peminjaman dan pengembalian yang dilakukan manual oleh staf via web (memvalidasi stok, update status transaksi, isi catatan & kondisi). |
+| **`manage-alat`** | `GET, POST, PUT, DELETE`| Read: Authenticated<br>Write: Admin | CRUD inventaris alat lab, kode alat, kategori, jumlah total, dan pelaporan unit rusak. |
+| **`manage-kartu`** | `GET, POST, PUT, DELETE`| Read: Authenticated<br>Write: Admin | Registrasi kartu RFID kelas, status aktif/blokir, nama ketua/pemegang kartu. |
+| **`manage-transaksi`**| `GET, PUT, DELETE` | Admin & Petugas (Clear all: Admin) | Mengambil daftar riwayat transaksi, update catatan/kondisi, serta fitur *danger zone* pembersihan massal riwayat / tap log. |
+| **`manage-pengguna`** | `GET, PUT, DELETE` | Admin only (JWT) | Mengelola profil petugas, ganti data/NIP, hapus petugas. **Dilengkapi proteksi:** Admin tidak bisa menghapus atau mengubah akun dirinya sendiri. |
+| **`dashboard-stats`** | `GET` | Authenticated (JWT) | Menyediakan data metrik statistik dashboard (total alat, unit dipinjam, unit rusak, tren aktivitas 7/30 hari). |
 
-## 7. Struktur Halaman & Sidebar
+---
 
-```
-Sidebar (logo SMK + nama sekolah di atas)
-├─ Dashboard
-├─ Realtime Card          ← (dulu "Persetujuan") + badge notifikasi
-├─ Peminjaman Manual
-├─ Pengembalian Manual
-├─ Riwayat Peminjaman
-├─ List Barang
-├─ Inventaris Barang      (admin)
-├─ Kartu RFID             (admin)
-├─ Pengguna               (admin)
-├─ ─────────── <hr> ───────────
-└─ Keluar                 (tombol merah, di paling bawah sidebar)
-```
+## 6. Alur Bisnis & Logika IoT RFID
 
-**Login:** logo SMK + nama sekolah, form email/password, gambar sekolah (split layout di desktop; gambar jadi header di mobile).
+### Alur Sesi Tap (Smart 20-Second Window):
+1. **Tap 1 (Kartu Kelas)**:
+   - ESP32 membaca UID kartu kelas.
+   - Server mengecek apakah kartu terdaftar dan aktif.
+   - Sesi dibuka selama 20 detik.
+   - Sistem menentukan mode: jika kelas masih memiliki alat yang belum dikembalikan, mode otomatis siap **kembali / pinjam**.
+   - Buzzer berbunyi 2× beep, LCD menampilkan nama kelas & status standby.
+2. **Tap 2..n (Stiker Alat)**:
+   - Siswa menempelkan stiker alat yang dipinjam/dikembalikan.
+   - Jika alat tersebut sedang dipinjam oleh kelas tersebut -> **STATUS: DIKEMBALIKAN** (stok bertambah 1).
+   - Jika alat belum dipinjam dan stok > 0 -> **STATUS: DIPINJAM** (stok berkurang 1).
+   - Setiap tap alat memperpanjang durasi sesi sebanyak 20 detik.
+   - Buzzer berbunyi 1× beep (sukses) atau 3× beep (gagal/stok habis/tag tidak dikenal).
+3. **Penutupan Sesi**:
+   - Siswa tap kartu kelas sekali lagi, ATAU durasi 20 detik habis tanpa ada tap baru.
 
-**Dashboard:** greeting "Selamat datang, {nama}" → card ringkasan → **Bar chart (dipinjam vs dikembalikan per hari) + Area chart (tren transaksi)** → tabel riwayat terbaru.
+---
 
-**Realtime Card** (halaman utama IoT):
-- Kolom: **Waktu Tap (tanggal + jam)**, Kelas, Kartu ID, Jenis Tap (kartu/alat), Alat, **Jenis Deteksi** (badge Dipinjam/Dikembalikan, *read-only*), Kondisi, Hasil (berhasil/ditolak + alasan).
-- Baris baru masuk lewat Supabase Realtime, animasi highlight 3 detik.
-- Tidak ada dropdown jenis — otomatis dari server.
-- Layout kartu per tap (bukan cuma tabel) supaya nanti gampang disesuaikan dengan tampilan IoT.
+## 7. Fitur-Fitur & Halaman Frontend
 
-**Notifikasi tap:** badge angka merah di menu Realtime Card + ikon bel di pojok kanan atas (jumlah `tap_log.is_read = false`) + toast saat tap masuk. Buka Realtime Card → panggil `mark_taps_read()`.
+Aplikasi web terbagi ke dalam menu navigasi yang intuitif dan profesional:
 
-**Peminjaman/Pengembalian Manual (lengkap):** pilih kartu/kelas (searchable), pilih alat (tampilkan stok sisa & kondisi), jumlah (stepper), kondisi barang (baik/rusak — untuk pengembalian), catatan, ringkasan sebelum submit, dan panel "pinjaman aktif kartu ini" (pada pengembalian). Submit → edge function `transaksi-manual`.
+1. **Dashboard** (`#dashboard`)
+   - Sambutan personal sesuai nama petugas yang login.
+   - Kartu metrik: Total Alat, Unit Dipinjam, Alat Tersedia, dan Unit Rusak.
+   - Progress bar ketersediaan dan visualisasi tren peminjaman.
+   - Tabel ringkasan pinjaman aktif yang sedang berlangsung.
+2. **Aktivitas RFID / Realtime Card** (`#realtime_card`)
+   - Tampilan live feed audit tap kartu dan alat dari scanner lab.
+   - Highlight visual saat ada transaksi baru masuk lewat Supabase Realtime WebSocket.
+   - Indikator status berhasil vs ditolak beserta kode error.
+3. **Peminjaman Manual** (`#peminjaman`)
+   - Digunakan oleh petugas jika siswa tidak membawa kartu fisik atau scanner mengalami kendala.
+   - Pemilihan kelas, pencarian alat berbasis live stock, stepper jumlah unit, dan catatan kondisi awal.
+4. **Pengembalian Manual** (`#pengembalian`)
+   - Memilih kartu kelas peminjam, menampilkan daftar barang yang sedang mereka bawa.
+   - Pemeriksaan kondisi barang saat kembali (Baik / Rusak / Hilang) untuk otomatis memperbarui `jumlah_rusak` di database.
+5. **Riwayat Peminjaman** (`#riwayat`)
+   - Catatan lengkap seluruh transaksi historis lab.
+   - Filter status (`Semua`, `Dipinjam`, `Dikembalikan`), filter sumber (`Otomatis RFID` vs `Manual Web`), pencarian nama alat/siswa, dan pagination.
+   - Kemampuan export data riwayat.
+6. **Daftar Alat** (`#list_alat`)
+   - Menampilkan inventaris lab beserta status terkini (`Tersedia`, `Dipinjam`, `Habis`).
+   - Format rasio stok praktis (`X / Y unit tersedia`).
+   - Informasi siapa kelas yang sedang meminjam unit tersebut secara transparan.
+7. **Inventaris Alat (Admin Only)** (`#inventaris`)
+   - Manajemen katalog alat: Tambah alat baru, ubah nama/kode/kategori, update jumlah total unit, dan pelaporan barang rusak.
+8. **Kartu RFID (Admin Only)** (`#kartu_rfid`)
+   - Registrasi kartu fisik baru, asosiasi ke nama kelas, penugasan nama pemegang kartu (Ketua Kelas/Penanggung Jawab), serta toggle aktif/nonaktif kartu.
+9. **Kelola Pengguna (Admin Only)** (`#pengguna`)
+   - Pendaftaran akun petugas baru dengan undangan email aktivasi resmi.
+   - Pengelolaan NIP, username, nama lengkap.
+   - **Aturan Proteksi Akun Admin**: Admin yang sedang login tidak dapat melihat opsi edit/hapus pada akunnya sendiri, menjaga integritas akses sistem.
+10. **Simulasi Kartu / IoT Simulator** (`#simulasi_iot`)
+    - Emulator scanner hardware langsung di browser.
+    - Uji coba tap kartu kelas dan tap alat secara virtual untuk verifikasi alur sebelum diuji pada alat fisik.
+11. **Ganti Password** (`#ganti_password`)
+    - Memungkinkan petugas dan admin mengganti password akun mereka sendiri secara mandiri.
+    - Evaluasi kekuatan password.
+12. **Catatan Halaman Elegan (`PageNote`)**:
+    - Setiap halaman dilengkapi panduan SOP terintegrasi yang ringkas dan fungsional, tanpa membebani antarmuka.
 
-**Riwayat Peminjaman:** kolom Waktu Pinjam, Waktu Kembali, Kelas, Kartu ID, Alat, **Status** (dipinjam/dikembalikan), **Kondisi Barang**, **Terkirim** (otomatis/manual), Petugas. Kondisi bisa dikoreksi lewat `set_kondisi_kembali`.
+---
 
-**Inventaris Barang** (fokus tambah alat baru): form tambah alat (kode, nama, kategori, UID sticker — bisa "scan" dari Realtime Card, total unit). Tanpa kolom status, tanpa stok "4/5".
+## 8. Keamanan & Role-Based Access Control (RBAC)
 
-**List Barang:** Nama, Kode, **Stok "4/5"**, **Status** (tersedia/dipinjam), **Kondisi** (baik/rusak + edit jumlah rusak inline), **Kartu ID peminjam** (dari `v_list_barang.peminjam`).
+1. **Row Level Security (RLS) PostgreSQL**:
+   - Seluruh tabel database dilindungi kebijakan RLS ketat.
+   - Pengguna publik tanpa autentikasi diblokir total dari membaca data inventaris maupun transaksi.
+   - Petugas hanya dapat mengelola transaksi; modifikasi tabel master (`alat`, `kartu_rfid`, `profiles`) dibatasi hanya untuk `role = 'admin'`.
+2. **Kerahasiaan Service Role Key**:
+   - `SUPABASE_SERVICE_ROLE_KEY` **hanya** berada di environment Edge Functions Supabase.
+   - Frontend web hanya memegang `VITE_SUPABASE_ANON_KEY`.
+3. **Keamanan URL & Sesi**:
+   - Saat logout, sistem secara otomatis membersihkan hash navigasi dan meredirect ke state `/#login` yang bersih.
+   - Proteksi route di frontend memvalidasi sesi dan profil secara reaktif.
 
-**Semua tabel** memakai satu komponen `DataTable`: sort ascending/descending di header, search box, pagination, empty state, loading skeleton.
+---
 
-## 8. Checklist 20 Revisi → Implementasi
+## 9. Firmware & Hardware IoT
 
-| # | Revisi | Implementasi |
-|---|---|---|
-| 1 | Logo SMK + gambar di page | `src/assets/logo-smk.png` di header sidebar, favicon, tiap halaman |
-| 2a | Login: gambar + nama sekolah | Layout login split, konfigurasi `VITE_SCHOOL_NAME` |
-| 2b | Greeting di atas card | `Selamat datang, {profiles.nama}` di Dashboard |
-| 3 | Ganti backend/DB/auth ke Supabase + Edge Function | Bagian 5, 6 + folder `supabase/` |
-| 4 | Kondisi barang di Riwayat | `transaksi.kondisi_pinjam / kondisi_kembali` + kolom di tabel |
-| 5 | Bar + area chart di dashboard | Recharts + `v_stat_harian`, di antara card dan tabel riwayat |
-| 6 | Garis pemisah di sidebar | `<hr>` sebelum tombol Keluar (dan pemisah antar grup menu) |
-| 7 | Tabel: sort asc/desc + search | Komponen `DataTable` (TanStack Table) dipakai semua tabel |
-| 8 | "Persetujuan" → "Realtime Card" | Halaman baru, subscribe `tap_log` |
-| 9 | Form manual lebih lengkap | Bagian 7, Peminjaman/Pengembalian Manual |
-| 10 | Notifikasi setelah tap kartu | Badge sidebar + bel kanan atas + toast (`tap_log.is_read`) |
-| 11 | Deteksi otomatis, tidak bisa dipilih; waktu tap tgl+jam | `jenis_terdeteksi` dari server, badge read-only, `waktu_tap` `dd MMM yyyy HH:mm:ss` (Asia/Jakarta) |
-| 12 | Riwayat: "Jenis" → "Status"; "Persetujuan" → "Terkirim" (otomatis/manual) | `transaksi.status`, `transaksi.sumber` |
-| 13 | Inventaris = tambah alat baru; hapus status & stok 4/5 | Halaman Inventaris hanya CRUD alat + jumlah total |
-| 14 | List Barang: stok sisa, status, kondisi, kartu peminjam | `v_list_barang` |
-| 15 | Error handling prod & local | Bagian 9 |
-| 16 | Tap kartu 1x, lalu tap sticker alat saja | `kartu_session` (60 dtk, auto-perpanjang) |
-| 17 | Tombol Keluar di sidebar, merah | Paling bawah sidebar, `bg-red-600` |
-| 18 | Dashboard responsive | Sidebar → drawer di mobile, grid `1/2/4` kolom, tabel scroll horizontal |
-| 20 | Font Poppins | `@fontsource/poppins` + `fontFamily.sans` di Tailwind |
+- **Platform**: ESP32 DevKit V1 (30/38 pin)
+- **Komponen**:
+  - Sensor RFID RC522 (koneksi SPI via GPIO 5, 18, 19, 23, 4) — *tegangan 3.3V*
+  - Display LCD 1602 I2C (koneksi I2C via GPIO 21 & 22) — *tegangan 5V*
+  - Buzzer Aktif 5V (GPIO 25)
+- **Firmware Sketch**: `firmware/simlab_rfid/simlab_rfid.ino`
+- **Konfigurasi**: Cukup mengisi SSID WiFi, Password WiFi, URL Edge Function Supabase, dan Anon Key.
 
-## 9. Error Handling (Production vs Local)
+---
 
-**Edge Function** (`_shared/http.js`, sudah diimplementasi):
-- Format error seragam: `{ ok:false, error:"kode", message:"...", request_id }`.
-- `APP_ENV=local` → response menyertakan `details` + `stack`. `APP_ENV=production` → hanya pesan generik; detail masuk `console.error` (Supabase Logs) + tabel `error_log`, dicari lewat `request_id`.
-- Error bisnis (4xx) tidak masuk `error_log`, hanya 5xx.
+## 10. Panduan Instalasi & Deployment (Prod & Local)
 
-**Frontend:**
-```js
-// src/lib/handleError.js
-const isProd = import.meta.env.PROD;
-export function handleError(e, fallback = "Terjadi kesalahan, coba lagi") {
-  const err = e ?? {};
-  if (!isProd) console.error("[DEV]", e);// lokal: detail lengkap di console
-  const msg = err?.message ?? fallback;
-  toast.error(isProd && err?.request_id ? `${msg} (ref: ${err.request_id.slice(0, 8)})` : msg);
-  // produksi: opsional kirim ke Sentry di sini
-}
-```
-- React `ErrorBoundary` di root: produksi → halaman "Terjadi kesalahan" + tombol muat ulang; lokal → tampilkan stack.
-- Realtime disconnect → banner "Koneksi terputus, mencoba menyambung ulang…" (channel `.subscribe(status => …)`).
-- Semua query: state `loading / error / empty` eksplisit.
+### 10.1 Menjalankan Frontend Lokal
 
-**IoT:** error handling perangkat (retry, buffer offline, indikator, mode debug) dikerjakan di project IoT sendiri. Sisi web/backend hanya menyediakan kode error yang konsisten (Bagian 4 dan 11).
-
-## 10. Kode Kunci Frontend
-
-```js
-// src/lib/supabase.js
-import { createClient } from "@supabase/supabase-js";
-export const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY,   // anon key saja, BUKAN service_role
-);
-```
-
-```js
-// src/lib/api.js — panggil edge function dengan JWT user
-import { supabase } from "./supabase";
-export async function callFunction(name, body) {
-  const { data, error } = await supabase.functions.invoke(name, { body });
-  if (error) {
-    // FunctionsHttpError: ambil body JSON error kita
-    const payload = await error.context?.json?.().catch(() => null);
-    throw payload ?? error;
-  }
-  return data;
-}
-// contoh: await callFunction("transaksi-manual", { uid_kartu, alat_id, jenis: "pinjam", jumlah: 2 });
-```
-
-```js
-// src/hooks/useAuth.jsx — session + role dari profiles
-// onAuthStateChange -> ambil profiles(nama, role, aktif) -> expose { user, profile, isAdmin, signOut }
-// <RequireRole roles={["admin"]}> untuk route /inventaris, /kartu, /pengguna
-```
-
-```js
-// src/hooks/useRealtimeTaps.js — Realtime Card + badge + toast
-export function useRealtimeTaps() {
-  const [taps, setTaps] = useState([]);
-  const [unread, setUnread] = useState(0);
-
-  useEffect(() => {
-    supabase.from("tap_log").select("*").order("waktu_tap", { ascending: false }).limit(50)
-      .then(({ data }) => setTaps(data ?? []));
-    supabase.from("tap_log").select("id", { count: "exact", head: true }).eq("is_read", false)
-      .then(({ count }) => setUnread(count ?? 0));
-
-    const ch = supabase.channel("tap-log")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "tap_log" }, (p) => {
-        setTaps((t) => [p.new, ...t].slice(0, 50));
-        setUnread((n) => n + 1);
-        toast(`Kelas ${p.new.kelas ?? "?"} tap kartu/alat`);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, []);
-
-  const markRead = async () => { await supabase.rpc("mark_taps_read"); setUnread(0); };
-  return { taps, unread, markRead };
-}
-```
-
-```js
-// tailwind.config.js
-theme: { extend: { fontFamily: { sans: ["Poppins", "ui-sans-serif", "system-ui", "sans-serif"] } } }
-// main.jsx: import "@fontsource/poppins/400.css"; "500.css"; "600.css"; "700.css"
-```
-
-Query List Barang: `supabase.from("v_list_barang").select("*")`. Tampil stok: `` `${stok_tersedia}/${jumlah_total}` ``. Edit jumlah rusak: `supabase.rpc("update_kondisi_alat", { p_alat_id, p_jumlah_rusak })`.
-
-## 11. IoT (Plan Saja)
-
-Logic IoT (firmware, wiring, retry, LED/buzzer) **tidak diimplementasi di dokumen ini** — dikerjakan di project IoT sendiri. Yang perlu diketahui sisi IoT:
-
-- **Tugas perangkat:** baca UID tiap tap (kartu maupun sticker alat, 1 atau 2 scanner sama saja) lalu kirim ke endpoint. Tidak perlu membedakan kartu/alat, tidak perlu menyimpan sesi — server yang mengurus.
-- **Endpoint:** `POST https://<project-ref>.supabase.co/functions/v1/rfid-tap`
-- **Header:** `Content-Type: application/json`, `apikey: <anon key>` (untuk gateway Supabase), `x-device-id`, `x-device-key`
-- **Body:** `{ "uid": "A1B2C3D4" }` (hex uppercase)
-- **Respons:** `ok`, `type` (`kartu`/`alat`), `jenis`, `error` — daftar kode di Bagian 4.
-- **Keamanan:** `x-device-key` hanya ada di perangkat (jangan di-commit). Perangkat hilang → set `devices.aktif = false`.
-
-## 12. Langkah Setup & Fase
-
-**Setup Supabase (sekali):**
 ```bash
-npm i -g supabase            # atau: npx supabase ...
-supabase init
-supabase login && supabase link --project-ref <PROJECT_REF>
-# salin isi config.toml.snippet ke supabase/config.toml
-supabase db push             # jalankan migration
-supabase secrets set APP_ENV=production ALLOWED_ORIGIN=https://domain-web-kamu.com
+# 1. Clone repository & install dependencies
+npm install
+
+# 2. Siapkan file .env (salin dari .env.example)
+cp .env.example .env
+
+# 3. Jalankan server pengembangan
+npm run dev
+```
+
+> **Tips:** Jika `.env` dibiarkan kosong, aplikasi langsung aktif dalam **Mode Demo Offline** menggunakan LocalStorage bawaan.
+
+### 10.2 Setup Supabase Backend (Production)
+
+```bash
+# 1. Install Supabase CLI & Login
+npm install -g supabase
+supabase login
+supabase link --project-ref <PROJECT_REF_ANDA>
+
+# 2. Jalankan Migrasi Database Schema
+supabase db push
+
+# 3. Deploy Seluruh Edge Functions
 supabase functions deploy rfid-tap --no-verify-jwt
-supabase functions deploy transaksi-manual
-supabase functions deploy admin-users
-```
-Lokal: `supabase start` → `supabase functions serve --env-file supabase/functions/.env`.
-Lalu: buat admin pertama + daftarkan device (SQL di akhir file migrasi).
+supabase functions deploy create-petugas
+supabase functions deploy process-manual
+supabase functions deploy manage-alat
+supabase functions deploy manage-kartu
+supabase functions deploy manage-transaksi
+supabase functions deploy manage-pengguna
+supabase functions deploy dashboard-stats
 
-| Fase | Task |
-|---|---|
-| 1 | Supabase project, migration, admin pertama, disable signup |
-| 2 | Hardware: wiring, baca UID via Serial |
-| 3 | Edge function `rfid-tap` + test `curl` → ESP32 |
-| 4 | Frontend: auth, layout sidebar, Poppins, login, dashboard + chart |
-| 5 | Realtime Card + notifikasi + DataTable (sort/search) |
-| 6 | Inventaris, List Barang, Kartu, Pengguna |
-| 7 | Peminjaman/Pengembalian Manual + Riwayat |
-| 8 | Error handling, responsive, test end-to-end, polish PKM |
-
-**Test cepat edge function (tanpa hardware):**
-```bash
-curl -X POST "$SUPABASE_URL/functions/v1/rfid-tap" \
-  -H "apikey: $ANON_KEY" -H "x-device-id: lab-esp32-01" -H "x-device-key: $KEY" \
-  -H "Content-Type: application/json" -d '{"uid":"A1B2C3D4"}'
+# 4. Set Secret URL Frontend (untuk redirect email aktivasi petugas)
+supabase secrets set SITE_URL=https://peminjaman-alat-lab-iot.vercel.app
 ```
 
-## 13. Yang Perlu Disiapkan
+### 10.3 Konfigurasi Environment Variable Frontend (`.env`)
 
-1. Project Supabase (catat Project URL + anon key + project ref).
-2. Logo SMK (PNG transparan) + foto/gambar sekolah + nama sekolah resmi.
-3. Daftar kelas + UID kartu, daftar alat (nama, kode, kategori, jumlah, UID sticker) — bisa di-import CSV lewat Table Editor Supabase.
-4. Email admin & petugas awal.
-5. Putuskan: 1 sticker per jenis alat (sesuai asumsi #4) atau 1 sticker per unit.
+```env
+VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<your-anon-key>
+VITE_SCHOOL_NAME="SMK NEGERI 9 KAB. TANGERANG"
+```
+
+---
+*Dokumen ini merupakan spesifikasi arsitektur resmi sistem SIMLAB.*

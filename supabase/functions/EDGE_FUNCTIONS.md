@@ -22,6 +22,7 @@ supabase/
     ├── manage-alat/               # CRUD inventaris alat (admin write)
     ├── manage-kartu/              # CRUD kartu RFID (admin write)
     ├── manage-transaksi/          # Kelola riwayat + hapus semua (admin)
+    ├── manage-permintaan/         # Persetujuan alat habis pakai
     ├── manage-pengguna/           # CRUD profil pengguna (admin)
     └── dashboard-stats/           # Statistik & chart dashboard
 ```
@@ -44,8 +45,11 @@ supabase/
 | `manage-transaksi` | DELETE | `/manage-transaksi?id=:id` | Admin |
 | `manage-transaksi` | DELETE | `/manage-transaksi?clear=riwayat` | Admin |
 | `manage-transaksi` | DELETE | `/manage-transaksi?clear=taplog` | Admin |
+| `manage-permintaan` | GET | `/manage-permintaan?status=menunggu` | Admin, Petugas |
+| `manage-permintaan` | PUT | `/manage-permintaan?id=:id` | Admin, Petugas |
 | `manage-pengguna` | GET | `/manage-pengguna` | Admin |
 | `manage-pengguna` | PUT/DELETE | `/manage-pengguna?id=:uid` | Admin |
+| `manage-pengguna` | POST | `/manage-pengguna?id=:uid&aksi=reset-password` | Admin |
 | `dashboard-stats` | GET | `/dashboard-stats?days=7` | Semua (authenticated) |
 
 ---
@@ -100,6 +104,7 @@ supabase functions deploy process-manual
 supabase functions deploy manage-alat
 supabase functions deploy manage-kartu
 supabase functions deploy manage-transaksi
+supabase functions deploy manage-permintaan
 supabase functions deploy manage-pengguna
 supabase functions deploy dashboard-stats
 ```

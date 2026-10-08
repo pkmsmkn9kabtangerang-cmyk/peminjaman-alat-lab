@@ -16,6 +16,10 @@ const VARIANTS = {
   selesai:        'badge-success',
   kartu:          'badge-gray',
   alat:           'badge-info',
+  menunggu:       'badge-warning',
+  disetujui:      'badge-success',
+  dibatalkan:     'badge-gray',
+  habis_pakai:    'badge-info',
 };
 
 const LABELS = {
@@ -36,6 +40,10 @@ const LABELS = {
   selesai:        'Selesai',
   kartu:          'Kartu',
   alat:           'Alat',
+  menunggu:       'Menunggu',
+  disetujui:      'Disetujui',
+  dibatalkan:     'Dibatalkan',
+  habis_pakai:    'Sekali Pakai',
 };
 
 export default function Badge({ status, className = '' }) {

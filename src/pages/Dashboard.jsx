@@ -8,6 +8,7 @@ import StatCard from '../components/StatCard';
 import Badge from '../components/Badge';
 import PageNote from '../components/PageNote';
 import { IconArrowRight, IconMail } from '@tabler/icons-react';
+import PersetujuanSekaliPakai from '../components/PersetujuanSekaliPakai';
 
 const FORMAT_DATE = new Intl.DateTimeFormat('id-ID', {
   weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -71,6 +72,7 @@ export default function DashboardPage({ setCurrentTab, user }) {
   const [alat, setAlat] = useState(() => dbService.getAlatWithStok());
   const [transaksi, setTransaksi] = useState(() => dbService.getTransaksi());
   const [tapLog, setTapLog] = useState(() => dbService.getTapLog());
+  const [permintaanMenunggu, setPermintaanMenunggu] = useState(() => dbService.getPermintaan().filter(p => p.status === 'menunggu').length);
 
   const [activeCards, setActiveCards] = useState(() => {
     if (activeCardsCache !== null) return activeCardsCache;
@@ -86,6 +88,7 @@ export default function DashboardPage({ setCurrentTab, user }) {
       setAlat(dbService.getAlatWithStok());
       setTransaksi(dbService.getTransaksi());
       setTapLog(dbService.getTapLog());
+      setPermintaanMenunggu(dbService.getPermintaan().filter(p => p.status === 'menunggu').length);
 
       const localGrouped = groupPinjamanByKartu(dbService.getPinjamanAktif());
       setActiveCards(localGrouped);
@@ -99,16 +102,18 @@ export default function DashboardPage({ setCurrentTab, user }) {
         supabase.from('v_list_barang').select('*'),
         supabase.from('transaksi').select('*, kartu_rfid(nama_pemegang)').order('waktu_pinjam', { ascending: false }).limit(200),
         supabase.from('tap_log').select('*').order('waktu_tap', { ascending: false }).limit(10),
-        supabase.from('v_pinjaman_aktif').select('*')
+        supabase.from('v_pinjaman_aktif').select('*'),
+        supabase.from('permintaan_habis_pakai').select('id', { count: 'exact', head: true }).eq('status', 'menunggu')
       ]);
 
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000));
 
-      const [resAlat, resTrx, resTap, resPinjamanAktif] = await Promise.race([fetchPromise, timeoutPromise]);
+      const [resAlat, resTrx, resTap, resPinjamanAktif, resPermintaan] = await Promise.race([fetchPromise, timeoutPromise]);
 
       if (!resAlat.error) setAlat(resAlat.data);
       if (!resTrx.error) setTransaksi(resTrx.data.map(t => ({ ...t, pemegang: t.kartu_rfid?.nama_pemegang || t.pemegang })));
       if (!resTap.error) setTapLog(resTap.data);
+      if (!resPermintaan.error) setPermintaanMenunggu(resPermintaan.count || 0);
       if (!resPinjamanAktif.error) {
         const grouped = groupPinjamanByKartu(resPinjamanAktif.data);
         setActiveCards(grouped);
@@ -224,6 +229,7 @@ export default function DashboardPage({ setCurrentTab, user }) {
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tap_log' }, () => reloadData())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'alat' }, () => reloadData())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'permintaan_habis_pakai' }, () => reloadData())
         .subscribe();
     } else {
       window.addEventListener('simlab_storage_updated', reloadData);
@@ -273,6 +279,12 @@ export default function DashboardPage({ setCurrentTab, user }) {
         <StatCard title="Sedang dipinjam" value={totalDipinjam} />
         <StatCard title="Peminjaman hari ini" value={totalHariIni} />
       </div>
+
+      {permintaanMenunggu > 0 && (
+        <div className="mb-6">
+          <PersetujuanSekaliPakai user={user} />
+        </div>
+      )}
 
       <div className="bg-surface border border-main">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-4 border-b border-main">
