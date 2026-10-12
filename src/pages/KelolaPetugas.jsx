@@ -279,7 +279,7 @@ export default function PenggunaPage({ currentUser }) {
     },
     {
       key: 'username',
-      label: 'Nama pengguna',
+      label: 'Username',
       sortable: true,
       render: (row) => (
         <span className="text-muted">{row.username || row.email?.split('@')[0]}</span>

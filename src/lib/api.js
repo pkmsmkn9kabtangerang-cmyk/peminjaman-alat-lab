@@ -97,7 +97,7 @@ export async function callRfidTap(uid, deviceId = 'web-simulator', deviceKey = '
  * Shortcut untuk memanggil edge function transaksi-manual.
  */
 export async function callTransaksiManual(payload) {
-  const { data, error } = await supabase.functions.invoke('transaksi-manual', { body: payload });
+  const { data, error } = await supabase.functions.invoke('process-manual', { body: payload });
   if (error) {
     const p = await error.context?.json?.().catch(() => null);
     throw p ?? error;

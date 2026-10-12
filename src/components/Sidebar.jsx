@@ -12,6 +12,7 @@ import {
   IconCpu,
   IconPackage,
   IconKey,
+  IconFlask,
 } from '@tabler/icons-react';
 import logoSmk from '../assets/logo-smk.svg';
 
@@ -44,8 +45,9 @@ const MENU_SECTIONS = [
   {
     title: 'Transaksi Manual',
     items: [
-      { id: 'peminjaman', label: 'Peminjaman', icon: IconHandStop, roles: ['admin', 'petugas'] },
-      { id: 'pengembalian', label: 'Pengembalian', icon: IconCornerDownLeft, roles: ['admin', 'petugas'] },
+      { id: 'peminjaman',   label: 'Peminjaman',           icon: IconHandStop,       roles: ['admin', 'petugas'] },
+      { id: 'pengembalian', label: 'Pengembalian',          icon: IconCornerDownLeft, roles: ['admin', 'petugas'] },
+      { id: 'sekali_pakai', label: 'Sekali Pakai',          icon: IconFlask,          roles: ['admin', 'petugas'] },
     ],
   },
 ];

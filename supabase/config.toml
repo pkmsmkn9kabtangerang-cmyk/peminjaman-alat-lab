@@ -71,3 +71,6 @@ entrypoint = "functions/manage-permintaan/index.js"
 
 [functions.dashboard-stats]
 entrypoint = "functions/dashboard-stats/index.js"
+
+[functions.process-manual]
+entrypoint = "functions/process-manual/index.js"

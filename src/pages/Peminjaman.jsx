@@ -28,13 +28,16 @@ async function fetchAlatTersedia() {
   if (isSupabaseConfigured) {
     const { data, error } = await supabase
       .from('v_list_barang')
-      .select('id, kode, nama, kategori, jumlah_total, jumlah_rusak, stok_tersedia')
+      .select('id, kode, nama, kategori, jumlah_total, jumlah_rusak, stok_tersedia, tipe, satuan')
+      .neq('tipe', 'habis_pakai')   // Alat sekali pakai dikelola di halaman khusus
       .gt('stok_tersedia', 0)
       .order('nama');
     if (error) throw error;
     return data ?? [];
   }
-  return dbService.getAlatWithStok().filter((a) => a.stok_tersedia > 0);
+  return dbService.getAlatWithStok().filter(
+    (a) => a.tipe !== 'habis_pakai' && a.stok_tersedia > 0
+  );
 }
 
 export default function PeminjamanPage({ user }) {

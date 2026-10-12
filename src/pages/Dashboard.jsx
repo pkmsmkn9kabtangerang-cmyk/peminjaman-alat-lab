@@ -246,7 +246,7 @@ export default function DashboardPage({ setCurrentTab, user }) {
     };
   }, [reloadData, handleRealtimeInsert, handleRealtimeUpdate]);
 
-  const totalAlat = alat.reduce((s, a) => s + (a.jumlah_total || 0), 0);
+  const totalAlat = alat.length; // jumlah jenis alat yang terdaftar
   const totalTersedia = alat.reduce((s, a) => s + (a.stok_tersedia || 0), 0);
   const totalDipinjam = transaksi.filter((t) => t.status === 'dipinjam').length;
   const totalHariIni = transaksi.filter((t) => t.waktu_pinjam?.startsWith(new Date().toISOString().slice(0, 10))).length;
@@ -274,17 +274,15 @@ export default function DashboardPage({ setCurrentTab, user }) {
       </PageNote>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <StatCard title="Total unit alat" value={totalAlat} />
+        <StatCard title="Alat terdaftar" value={totalAlat} />
         <StatCard title="Stok tersedia" value={totalTersedia} />
         <StatCard title="Sedang dipinjam" value={totalDipinjam} />
         <StatCard title="Peminjaman hari ini" value={totalHariIni} />
       </div>
 
-      {permintaanMenunggu > 0 && (
-        <div className="mb-6">
-          <PersetujuanSekaliPakai user={user} />
-        </div>
-      )}
+      {/* ── Persetujuan Alat Sekali Pakai ── */}
+      <PersetujuanSekaliPakai user={user} />
+
 
       <div className="bg-surface border border-main">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-4 border-b border-main">

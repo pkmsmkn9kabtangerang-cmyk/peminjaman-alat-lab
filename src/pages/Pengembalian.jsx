@@ -35,6 +35,19 @@ async function fetchKartuAktif() {
 async function fetchPinjamanAktif(uid_kartu) {
   if (!uid_kartu) return [];
   if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('transaksi')
+        .select('id, alat_id, nama_alat, waktu_pinjam, kondisi_pinjam, status, alat!inner(tipe)')
+        .eq('uid_kartu', uid_kartu)
+        .eq('status', 'dipinjam')
+        .neq('alat.tipe', 'habis_pakai')
+        .order('waktu_pinjam', { ascending: false });
+      if (!error && data) return data;
+    } catch {
+      // fallback jika foreign key join berbeda
+    }
+
     const { data, error } = await supabase
       .from('transaksi')
       .select('id, alat_id, nama_alat, waktu_pinjam, kondisi_pinjam, status')
@@ -44,9 +57,13 @@ async function fetchPinjamanAktif(uid_kartu) {
     if (error) throw error;
     return data ?? [];
   }
-  return dbService.getTransaksi().filter(
-    (t) => t.uid_kartu === uid_kartu && t.status === 'dipinjam'
-  );
+
+  const allAlat = dbService.getAlat();
+  return dbService.getTransaksi().filter((t) => {
+    if (t.uid_kartu !== uid_kartu || t.status !== 'dipinjam') return false;
+    const item = allAlat.find((a) => a.id === t.alat_id);
+    return item ? item.tipe !== 'habis_pakai' : true;
+  });
 }
 
 export default function PengembalianPage({ user }) {

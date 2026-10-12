@@ -15,56 +15,90 @@ import Pengembalian from './pages/Pengembalian';
 import Riwayat from './pages/Riwayat';
 import KelolaPetugas from './pages/KelolaPetugas';
 import SimulasiKartu from './pages/SimulasiKartu';
+import PemberianSekaliPakai from './pages/PemberianSekaliPakai';
 
-import ChangePasswordMandiri from './pages/ChangePasswordMandiri';
 import GantiPassword from './pages/GantiPassword';
 import SetPassword from './pages/SetPassword';
 import { IconBell, IconX, IconCheck, IconAlertTriangle, IconMenu2 } from '@tabler/icons-react';
 
+// ── Internal tab keys (tidak berubah) ────────────────────────
 const PAGE_TITLES = {
-  dashboard:      'Dashboard',
-  realtime_card:  'Aktivitas RFID',
-  peminjaman:     'Peminjaman',
-  pengembalian:   'Pengembalian',
-  riwayat:        'Riwayat',
-  list_alat:      'Daftar Alat',
-  inventaris:     'Inventaris',
-  kartu_rfid:     'Kartu RFID',
-  pengguna:       'Pengguna',
-  simulasi_iot:   'Simulasi Kartu',
-
-  ganti_password: 'Ganti Password',
+  dashboard:          'Dashboard',
+  realtime_card:      'Aktivitas RFID',
+  peminjaman:         'Peminjaman',
+  pengembalian:       'Pengembalian',
+  riwayat:            'Riwayat',
+  list_alat:          'Daftar Alat',
+  inventaris:         'Inventaris',
+  kartu_rfid:         'Kartu RFID',
+  pengguna:           'Pengguna',
+  simulasi_iot:       'Simulasi Kartu',
+  ganti_password:     'Ganti Password',
+  sekali_pakai:       'Pemberian Sekali Pakai',
 };
 
-// ── URL helpers ──────────────────────────────────────────────
-// Saat login: URL bersih (hash kosong atau #login)
-// Saat logout: hash dibersihkan, tidak ada #list_alat tersisa
-const LOGIN_HASH = 'login';
+// ── URL mapping: tab key → clean pathname ─────────────────────
+const TAB_TO_PATH = {
+  dashboard:          '/dashboard',
+  realtime_card:      '/aktivitas-rfid',
+  peminjaman:         '/peminjaman',
+  pengembalian:       '/pengembalian',
+  riwayat:            '/riwayat',
+  list_alat:          '/daftar-alat',
+  inventaris:         '/inventaris',
+  kartu_rfid:         '/kartu-rfid',
+  pengguna:           '/pengguna',
+  simulasi_iot:       '/simulasi-iot',
+  ganti_password:     '/ganti-password',
+  sekali_pakai:       '/sekali-pakai',
+};
 
-function clearHashToLogin() {
-  // Ganti hash ke 'login' agar URL jadi /#login bukan /#list_alat
+// Reverse map: pathname → tab key
+const PATH_TO_TAB = Object.fromEntries(
+  Object.entries(TAB_TO_PATH).map(([tab, path]) => [path, tab])
+);
+
+// Pathname yang dimulai dengan /auth/ ditangani di luar flow utama
+const AUTH_PATHS = ['/auth/set-password'];
+
+// ── URL helpers ───────────────────────────────────────────────
+function navigateTo(path, replace = false) {
   try {
-    if (window.history.replaceState) {
-      window.history.replaceState(null, '', window.location.pathname + '#' + LOGIN_HASH);
+    if (replace) {
+      window.history.replaceState(null, '', path);
     } else {
-      window.location.hash = LOGIN_HASH;
+      window.history.pushState(null, '', path);
     }
   } catch (_) {
-    window.location.hash = LOGIN_HASH;
+    window.location.href = path;
   }
 }
 
+function getTabFromPath(pathname) {
+  // Exact match
+  if (PATH_TO_TAB[pathname]) return PATH_TO_TAB[pathname];
+  // Legacy hash: /#dashboard → /dashboard
+  return null;
+}
+
 function getInitialTab() {
+  const pathname = window.location.pathname;
+  const tabFromPath = getTabFromPath(pathname);
+  if (tabFromPath) return tabFromPath;
+
+  // Fallback: cek hash lama #dashboard → migrate ke path
+  const hash = window.location.hash.replace(/^#\/?/, '');
+  if (hash && PAGE_TITLES[hash]) return hash;
+
+  // Fallback ke localStorage
   try {
-    const hash = window.location.hash.replace(/^#\/?/, '');
-    // Jangan restore hash 'login' sebagai tab
-    if (hash && PAGE_TITLES[hash]) return hash;
     const saved = localStorage.getItem('simlab_current_tab');
     if (saved && PAGE_TITLES[saved]) return saved;
   } catch (_) { /* noop */ }
+
   return 'dashboard';
 }
-// ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 
 function tapNotification(latest) {
   const rejected = latest.status === 'ditolak';
@@ -126,20 +160,26 @@ function FeedbackToast() {
 }
 
 export default function App() {
-  const [currentUser, setCurrentUser]   = useState(null);
-  // null = masih loading, false = belum login, object = sudah login
-  const [authState, setAuthState]       = useState('loading'); // 'loading' | 'unauthenticated' | 'authenticated'
-  const [currentTab, setCurrentTab]     = useState(getInitialTab);
-  const [unreadCount, setUnreadCount]   = useState(0);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authState, setAuthState] = useState('loading'); // 'loading' | 'unauthenticated' | 'authenticated'
+  const [currentTab, setCurrentTab] = useState(getInitialTab);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  
-  const isSetPasswordRoute = window.location.pathname === '/auth/set-password';
+
+  const currentPathname = window.location.pathname;
+  const isAuthRoute = AUTH_PATHS.includes(currentPathname);
 
   const prevLogsLen = useRef(dbService.getTapLog().length);
 
   // ── Auth: Supabase vs localStorage ──────────────────────────
   useEffect(() => {
+    // Jika di halaman auth khusus, jangan lakukan redirect apapun
+    if (isAuthRoute) {
+      setAuthState('unauthenticated'); // agar tidak stuck di loading
+      return;
+    }
+
     if (!isSupabaseConfigured) {
       // Mode demo: cek localStorage
       const saved = dbService.getCurrentUser();
@@ -148,7 +188,7 @@ export default function App() {
         setAuthState('authenticated');
       } else {
         setAuthState('unauthenticated');
-        clearHashToLogin();
+        navigateTo('/login', true);
       }
       return;
     }
@@ -161,13 +201,13 @@ export default function App() {
         if (mounted) {
           setCurrentUser(null);
           setAuthState('unauthenticated');
-          clearHashToLogin();
+          if (!isAuthRoute) navigateTo('/login', true);
         }
         return;
       }
       const { data: profile } = await supabase
         .from('profiles')
-        .select('id, nama_lengkap, email, role, wajib_ganti_password') // bisa tambahin aktif di samping role
+        .select('id, nama_lengkap, email, role, wajib_ganti_password')
         .eq('id', session.user.id)
         .maybeSingle();
 
@@ -179,24 +219,20 @@ export default function App() {
           email: profile.email || session.user.email,
           role: profile.role,
           wajib_ganti_password: profile.wajib_ganti_password,
-          // aktif: profile.aktif,
         });
         setAuthState('authenticated');
       } else {
-        // Profil tidak aktif atau tidak ditemukan → logout
         await supabase.auth.signOut();
         setCurrentUser(null);
         setAuthState('unauthenticated');
-        clearHashToLogin();
+        navigateTo('/login', true);
       }
     }
 
-    // Initial session check
     supabase.auth.getSession().then(({ data: { session } }) => {
       hydrateUser(session);
     });
 
-    // Subscribe perubahan auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       hydrateUser(session);
     });
@@ -205,7 +241,7 @@ export default function App() {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Unread count & Realtime tap notifications ────────────────
   const triggerNotification = useCallback((latest) => {
@@ -220,7 +256,6 @@ export default function App() {
   useEffect(() => {
     if (authState !== 'authenticated') return;
 
-    // Mode local: poll localStorage
     if (!isSupabaseConfigured) {
       setUnreadCount(dbService.getUnreadCount());
       const handle = () => {
@@ -241,7 +276,6 @@ export default function App() {
       };
     }
 
-    // Mode Supabase: Realtime channel
     supabase
       .from('tap_log')
       .select('id', { count: 'exact', head: true })
@@ -263,15 +297,15 @@ export default function App() {
     return () => supabase.removeChannel(channel);
   }, [authState, triggerNotification]);
 
-  // ── Tab & URL management ────────────────────────────────────
+  // ── Tab & URL management ─────────────────────────────────────
   const handleTabChange = useCallback((tab) => {
     if (!PAGE_TITLES[tab]) return;
     setCurrentTab(tab);
     try {
       localStorage.setItem('simlab_current_tab', tab);
-      // Selalu update hash saat tab berubah
-      if (window.location.hash.replace(/^#\/?/, '') !== tab) {
-        window.location.hash = tab;
+      const targetPath = TAB_TO_PATH[tab] ?? '/dashboard';
+      if (window.location.pathname !== targetPath) {
+        navigateTo(targetPath);
       }
     } catch (_) { /* noop */ }
     setMobileMenuOpen(false);
@@ -285,29 +319,29 @@ export default function App() {
     }
   }, []);
 
-  // Sync tab saat hash berubah dari luar (tombol back/forward browser)
+  // Sync tab saat user klik Back/Forward browser
   useEffect(() => {
     if (authState !== 'authenticated') return;
 
-    const handleHashChange = () => {
-      const hash = window.location.hash.replace(/^#\/?/, '');
-      if (hash && PAGE_TITLES[hash] && hash !== currentTab) {
-        setCurrentTab(hash);
-        try { localStorage.setItem('simlab_current_tab', hash); } catch (_) { /* noop */ }
+    const handlePopState = () => {
+      const tab = getTabFromPath(window.location.pathname);
+      if (tab && tab !== currentTab) {
+        setCurrentTab(tab);
+        try { localStorage.setItem('simlab_current_tab', tab); } catch (_) { /* noop */ }
       }
     };
-    window.addEventListener('hashchange', handleHashChange);
+    window.addEventListener('popstate', handlePopState);
 
-    // Kalau hash kosong atau #login → set ke tab aktif saat ini
-    const currentHash = window.location.hash.replace(/^#\/?/, '');
-    if (!currentHash || currentHash === LOGIN_HASH || !PAGE_TITLES[currentHash]) {
-      window.location.hash = currentTab;
+    // Jika pathname tidak dikenali tapi user sudah login, push ke path yang benar
+    const pathTab = getTabFromPath(window.location.pathname);
+    if (!pathTab && window.location.pathname !== '/login') {
+      navigateTo(TAB_TO_PATH[currentTab] ?? '/dashboard', true);
     }
 
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, [authState, currentTab]);
 
-  // ── Logout ──────────────────────────────────────────────────
+  // ── Logout ───────────────────────────────────────────────────
   const handleLogout = async () => {
     try {
       if (isSupabaseConfigured) {
@@ -319,21 +353,19 @@ export default function App() {
     } catch (err) {
       console.error('[Logout] error:', err);
     }
-    // Bersihkan hash ke #login setelah logout
-    clearHashToLogin();
+    navigateTo('/login', true);
     setAuthState('unauthenticated');
     setCurrentUser(null);
     setUnreadCount(0);
   };
 
-  // ── Login success callback ───────────────────────────────────
+  // ── Login success callback ────────────────────────────────────
   const handleLoginSuccess = (userObj) => {
     if (!isSupabaseConfigured) {
       dbService.setCurrentUser(userObj);
     }
     setCurrentUser(userObj);
     setAuthState('authenticated');
-    // Restore tab yang tersimpan atau default ke dashboard
     const restoredTab = (() => {
       try {
         const saved = localStorage.getItem('simlab_current_tab');
@@ -341,16 +373,15 @@ export default function App() {
       } catch (_) { return 'dashboard'; }
     })();
     setCurrentTab(restoredTab);
-    // Update hash ke tab yang dipilih (bukan #login lagi)
-    try { window.location.hash = restoredTab; } catch (_) { /* noop */ }
+    navigateTo(TAB_TO_PATH[restoredTab] ?? '/dashboard', true);
   };
 
-  // ── Render: SetPassword Route ───────────────────────────────
-  if (isSetPasswordRoute) {
+  // ── Render: Halaman /auth/* ──────────────────────────────────
+  if (isAuthRoute) {
     return <SetPassword />;
   }
 
-  // ── Render: Loading ─────────────────────────────────────────
+  // ── Render: Loading ──────────────────────────────────────────
   if (authState === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -365,22 +396,21 @@ export default function App() {
     );
   }
 
-  // ── Render: Login page ──────────────────────────────────────
-  // URL: /#login (hash bersih, tidak ada tab aktif di URL)
+  // ── Render: Login page ───────────────────────────────────────
   if (authState === 'unauthenticated' || !currentUser) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
-  // ── Render: Wajib Ganti Password ────────────────────────────
+  // ── Render: Wajib Ganti Password ─────────────────────────────
   if (currentUser.wajib_ganti_password) {
-    return <ChangePasswordMandiri 
-             user={currentUser} 
-             onSuccess={() => setCurrentUser({...currentUser, wajib_ganti_password: false})} 
-             onCancel={handleLogout} 
+    return <ChangePasswordMandiri
+             user={currentUser}
+             onSuccess={() => setCurrentUser({...currentUser, wajib_ganti_password: false})}
+             onCancel={handleLogout}
            />;
   }
 
-  // ── Render: Main app ────────────────────────────────────────
+  // ── Render: Main app ─────────────────────────────────────────
   return (
     <div className="min-h-screen bg-main flex">
       <NotificationToast
@@ -429,17 +459,17 @@ export default function App() {
           <div className={currentTab === 'dashboard' ? 'block' : 'hidden'}>
             <Dashboard setCurrentTab={handleTabChange} user={currentUser} />
           </div>
-          {currentTab === 'realtime_card' && <AktivitasKartu />}
-          {currentTab === 'peminjaman'    && <Peminjaman user={currentUser} />}
-          {currentTab === 'pengembalian'  && <Pengembalian user={currentUser} />}
-          {currentTab === 'riwayat'       && <Riwayat />}
-          {currentTab === 'list_alat'     && <DaftarAlat />}
-          {currentTab === 'inventaris'    && <KelolaAlat />}
-          {currentTab === 'kartu_rfid'    && <KelolaKartu />}
-          {currentTab === 'pengguna'      && <KelolaPetugas currentUser={currentUser} />}
-          {currentTab === 'simulasi_iot'  && <SimulasiKartu />}
-
+          {currentTab === 'realtime_card'  && <AktivitasKartu />}
+          {currentTab === 'peminjaman'     && <Peminjaman user={currentUser} />}
+          {currentTab === 'pengembalian'   && <Pengembalian user={currentUser} />}
+          {currentTab === 'riwayat'        && <Riwayat />}
+          {currentTab === 'list_alat'      && <DaftarAlat />}
+          {currentTab === 'inventaris'     && <KelolaAlat />}
+          {currentTab === 'kartu_rfid'     && <KelolaKartu />}
+          {currentTab === 'pengguna'       && <KelolaPetugas currentUser={currentUser} />}
+          {currentTab === 'simulasi_iot'   && <SimulasiKartu />}
           {currentTab === 'ganti_password' && <GantiPassword user={currentUser} />}
+          {currentTab === 'sekali_pakai'   && <PemberianSekaliPakai user={currentUser} />}
         </div>
       </main>
     </div>

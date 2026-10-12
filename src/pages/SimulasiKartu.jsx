@@ -117,12 +117,27 @@ export default function SimulasiIotPage() {
         } else if (res.action === 'mulai') {
           addLog(`[RX] OK Sesi ${res.kelas} aktif (${res.jenis === 'pinjam' ? 'Mode Pinjam' : 'Mode Kembali'}) - Durasi 20 detik`, 'success');
         } else if (res.type === 'alat') {
-          addLog(`[RX] OK ${res.jenis === 'pinjam' ? 'Pinjam' : 'Kembali'} "${res.alat}" (${res.kelas}) - Sesi di-reset ke 20s`, 'success');
+          if (res.status === 'menunggu_persetujuan') {
+            addLog(
+              `[RX] ⏳ Consumable "${res.alat}" (${res.kelas}) dicatat! Menunggu persetujuan petugas di Dashboard.`,
+              'success'
+            );
+          } else {
+            addLog(
+              `[RX] OK ${res.jenis === 'pinjam' ? 'Pinjam' : 'Kembali'} "${res.alat}" (${res.kelas}) - Sesi di-reset ke 20s`,
+              'success'
+            );
+          }
         } else {
           addLog(`[RX] OK ${res.jenis ?? ''} ${res.alat || res.kelas || ''}`, 'success');
         }
       } else {
-        if (res.error === 'sesi_kartu_lain_aktif') {
+        if (res.error === 'permintaan_sudah_ada') {
+          addLog(
+            `[RX] PERINGATAN: Permintaan alat consumable "${label}" sudah tercatat dan sedang menunggu persetujuan di Dashboard.`,
+            'error'
+          );
+        } else if (res.error === 'sesi_kartu_lain_aktif') {
           const activeName = res.activeCard?.kelas || res.activeCard?.uid_kartu || 'lain';
           addLog(
             `[RX] TOLAK: Kartu ${label} tidak bisa tap! Sesi ${activeName} sedang aktif. Tunggu selesai atau habis (20s).`,
@@ -299,15 +314,22 @@ export default function SimulasiIotPage() {
                   className="text-left p-3.5 rounded-xl border border-main hover:bg-purple-50 hover:border-purple-300 transition group disabled:opacity-50 flex flex-col justify-between"
                 >
                   <div>
-                    <p className="font-semibold text-main text-xs group-hover:text-purple-700 leading-tight mb-1">
-                      {a.nama}
-                    </p>
+                    <div className="flex items-start justify-between gap-1 mb-1">
+                      <p className="font-semibold text-main text-xs group-hover:text-purple-700 leading-tight">
+                        {a.nama}
+                      </p>
+                      {a.tipe === 'habis_pakai' && (
+                        <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                          Consumable
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[10px] font-mono text-muted">{a.uid_rfid}</p>
                   </div>
                   <div className="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between text-[11px]">
                     <span className="font-medium text-muted">Stok:</span>
                     <span className={`font-bold ${a.stok_tersedia > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {a.stok_tersedia} / {a.jumlah_total}
+                      {a.stok_tersedia} {a.satuan ? `${a.satuan}` : ''} / {a.jumlah_total}
                     </span>
                   </div>
                 </button>

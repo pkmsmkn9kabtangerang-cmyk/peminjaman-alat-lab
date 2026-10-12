@@ -65,6 +65,28 @@ const INITIAL_ALAT = [
     id: 'ALT-005', kode: 'CRM-005', nama: 'Crimping Tool RJ45',
     kategori: 'jaringan', uid_rfid: 'STK-ALT-005',
     jumlah_total: 3, jumlah_rusak: 3, stok_tersedia: 0,
+    tipe: 'alat', satuan: 'unit',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'ALT-006', kode: 'KBL-006', nama: 'Kabel UTP Cat6',
+    kategori: 'jaringan', uid_rfid: 'STK-ALT-006',
+    jumlah_total: 100, jumlah_rusak: 0, stok_tersedia: 100,
+    tipe: 'habis_pakai', satuan: 'meter',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'ALT-007', kode: 'TIM-007', nama: 'Timah Solder (Tin Lead)',
+    kategori: 'elektronik', uid_rfid: 'STK-ALT-007',
+    jumlah_total: 500, jumlah_rusak: 0, stok_tersedia: 500,
+    tipe: 'habis_pakai', satuan: 'cm',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'ALT-008', kode: 'RJ-008', nama: 'Konektor RJ45',
+    kategori: 'jaringan', uid_rfid: 'STK-ALT-008',
+    jumlah_total: 50, jumlah_rusak: 0, stok_tersedia: 50,
+    tipe: 'habis_pakai', satuan: 'pcs',
     created_at: new Date().toISOString(),
   },
 ];
@@ -170,19 +192,40 @@ export const dbService = {
   },
 
   // --- Alat ---
-  getAlat:  () => getStore('alat', INITIAL_ALAT),
+  getAlat: () => {
+    const list = getStore('alat', INITIAL_ALAT);
+    const hasConsumable = list.some((a) => a.tipe === 'habis_pakai');
+    if (!hasConsumable) {
+      const merged = [...list, ...INITIAL_ALAT.filter((a) => a.tipe === 'habis_pakai')];
+      setStore('alat', merged);
+      return merged;
+    }
+    return list;
+  },
   saveAlat: (a) => setStore('alat', a),
 
   // Hitung stok_tersedia dari jumlah_total & jumlah_dipinjam aktif
   getAlatWithStok: () => {
-    const alat      = getStore('alat', INITIAL_ALAT);
+    const alat      = dbService.getAlat();
     const transaksi = getStore('transaksi', INITIAL_TRANSAKSI);
     return alat.map((a) => {
       const dipinjam = transaksi.filter(
         (t) => t.alat_id === a.id && t.status === 'dipinjam'
       ).length;
-      const stok_tersedia = Math.max(0, a.jumlah_total - a.jumlah_rusak - dipinjam);
+      const stok_tersedia = Math.max(0, a.jumlah_total - (a.jumlah_rusak || 0) - dipinjam);
       return { ...a, stok_tersedia, dipinjam_aktif: dipinjam };
+    });
+  },
+
+  getListBarang: () => {
+    return dbService.getAlatWithStok().map((a) => {
+      let status = 'tersedia';
+      if (a.stok_tersedia === 0) status = 'habis';
+      else if (a.dipinjam_aktif > 0) status = 'dipinjam';
+      return {
+        ...a,
+        status,
+      };
     });
   },
 
@@ -211,6 +254,84 @@ export const dbService = {
   // --- Permintaan Habis Pakai ---
   getPermintaan: () => getStore('permintaan', []),
   savePermintaan: (p) => setStore('permintaan', p),
+
+  setujuiPermintaan: ({ id, jumlah, catatan, petugas }) => {
+    const all = dbService.getPermintaan();
+    const pIdx = all.findIndex((x) => x.id === id);
+    if (pIdx === -1) return { ok: false, error: 'permintaan_tidak_ditemukan' };
+
+    const req = all[pIdx];
+    const qty = parseInt(jumlah, 10);
+    if (isNaN(qty) || qty <= 0) return { ok: false, error: 'jumlah_tidak_valid' };
+
+    const alatList = dbService.getAlat();
+    const aIdx = alatList.findIndex((x) => x.id === req.alat_id);
+    if (aIdx === -1) return { ok: false, error: 'alat_tidak_ditemukan' };
+
+    if (alatList[aIdx].stok_tersedia < qty && alatList[aIdx].jumlah_total < qty) {
+      return { ok: false, error: 'stok_habis' };
+    }
+
+    alatList[aIdx].jumlah_total = Math.max(0, alatList[aIdx].jumlah_total - qty);
+    alatList[aIdx].stok_tersedia = alatList[aIdx].jumlah_total;
+    dbService.saveAlat(alatList);
+
+    const now = new Date().toISOString();
+    all[pIdx] = {
+      ...req,
+      status: 'disetujui',
+      jumlah: qty,
+      catatan: catatan || req.catatan || '',
+      petugas: petugas || 'Petugas',
+      waktu_proses: now,
+    };
+    dbService.savePermintaan(all);
+    return { ok: true, data: all[pIdx] };
+  },
+
+  tolakPermintaan: ({ id, alasan, petugas }) => {
+    const all = dbService.getPermintaan();
+    const pIdx = all.findIndex((x) => x.id === id);
+    if (pIdx === -1) return { ok: false, error: 'permintaan_tidak_ditemukan' };
+
+    all[pIdx] = {
+      ...all[pIdx],
+      status: 'ditolak',
+      alasan_tolak: alasan || 'Ditolak petugas',
+      petugas: petugas || 'Petugas',
+      waktu_proses: new Date().toISOString(),
+    };
+    dbService.savePermintaan(all);
+    return { ok: true, data: all[pIdx] };
+  },
+
+  batalkanPermintaan: ({ id, catatan, petugas }) => {
+    const all = dbService.getPermintaan();
+    const pIdx = all.findIndex((x) => x.id === id);
+    if (pIdx === -1) return { ok: false, error: 'permintaan_tidak_ditemukan' };
+
+    const req = all[pIdx];
+    if (req.status === 'disetujui') {
+      const qty = req.jumlah || 1;
+      const alatList = dbService.getAlat();
+      const aIdx = alatList.findIndex((x) => x.id === req.alat_id);
+      if (aIdx > -1) {
+        alatList[aIdx].jumlah_total += qty;
+        alatList[aIdx].stok_tersedia = alatList[aIdx].jumlah_total;
+        dbService.saveAlat(alatList);
+      }
+    }
+
+    all[pIdx] = {
+      ...req,
+      status: 'dibatalkan',
+      catatan: catatan ? `${req.catatan ? req.catatan + ' | ' : ''}Batal: ${catatan}` : req.catatan,
+      petugas: petugas || 'Petugas',
+      waktu_proses: new Date().toISOString(),
+    };
+    dbService.savePermintaan(all);
+    return { ok: true, data: all[pIdx] };
+  },
 
   // --- Kartu Session ---
   getSession,
@@ -396,7 +517,7 @@ export const dbService = {
       const allAlat = dbService.getAlat();
       const aIdx = allAlat.findIndex(a => a.id === alat_id);
       
-      if (jenis === 'pinjam') {
+      if (jenis === 'pinjam' || jenis === 'habis_pakai' || jenis === 'pemberian') {
         if (alat.stok_tersedia < jumlah) return { ok: false, error: 'stok_habis' };
         
         if (aIdx > -1) {

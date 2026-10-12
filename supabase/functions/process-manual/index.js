@@ -50,8 +50,8 @@ Deno.serve(async (req) => {
   // ── Validasi field wajib ──
   if (!uid_kartu?.trim()) return json({ success: false, message: "uid_kartu wajib diisi" }, 400);
   if (!alat_id?.trim())   return json({ success: false, message: "alat_id wajib diisi" }, 400);
-  if (!["pinjam", "kembali"].includes(jenis)) {
-    return json({ success: false, message: 'jenis harus "pinjam" atau "kembali"' }, 400);
+  if (!["pinjam", "kembali", "habis_pakai", "pemberian"].includes(jenis)) {
+    return json({ success: false, message: 'jenis harus "pinjam", "kembali", atau "habis_pakai"' }, 400);
   }
 
   try {
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
     const qty = Math.max(1, Number(jumlah));
 
     if (alat.tipe === "habis_pakai") {
-      if (jenis === "pinjam") {
+      if (jenis === "pinjam" || jenis === "habis_pakai" || jenis === "pemberian") {
         if (alat.stok_tersedia < qty) {
           return json({
             success: false,
