@@ -6,7 +6,7 @@
 //
 // Body PUT setujui : { aksi: 'setujui', jumlah: number, catatan?: string }
 // Body PUT tolak   : { aksi: 'tolak', alasan: string }
-// Body PUT batalkan: { aksi: 'batalkan', catatan?: string }
+// Body PUT batalkan: { aksi: 'batalkan', catatan?: string } p
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json, handleCors } from "../_shared/cors.js";
@@ -16,9 +16,9 @@ Deno.serve(async (req) => {
   const corsRes = handleCors(req);
   if (corsRes) return corsRes;
 
-  const url    = new URL(req.url);
+  const url = new URL(req.url);
   const method = req.method;
-  const id     = url.searchParams.get("id");
+  const id = url.searchParams.get("id");
 
   const auth = await requireAuth(req, null);
   if (auth.error) return auth.error;
@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
     // ── GET: list permintaan ──
     if (method === "GET") {
       const status = url.searchParams.get("status");
-      
+
       let query = supabaseAdmin
         .from("permintaan_habis_pakai")
         .select("*, kartu_rfid(nama_pemegang)")
@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
 
       const { data, error } = await query;
       if (error) throw error;
-      
+
       return json({ success: true, data });
     }
 
@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
 
         if (error) throw error;
         if (!data.success) {
-           return json({ success: false, error: data.error, message: `Gagal menyetujui: ${data.error}` }, 422);
+          return json({ success: false, error: data.error, message: `Gagal menyetujui: ${data.error}` }, 422);
         }
 
         return json({ success: true, message: "Permintaan berhasil disetujui" });
@@ -81,28 +81,28 @@ Deno.serve(async (req) => {
 
       if (aksi === "tolak") {
         if (!alasan?.trim()) {
-           return json({ success: false, message: "Alasan penolakan wajib diisi" }, 400);
+          return json({ success: false, message: "Alasan penolakan wajib diisi" }, 400);
         }
 
         const { data: existing, error: errExist } = await supabaseAdmin
-           .from("permintaan_habis_pakai")
-           .select("status")
-           .eq("id", id)
-           .maybeSingle();
+          .from("permintaan_habis_pakai")
+          .select("status")
+          .eq("id", id)
+          .maybeSingle();
 
         if (errExist || !existing) return json({ success: false, message: "Permintaan tidak ditemukan" }, 404);
         if (existing.status !== "menunggu") return json({ success: false, message: "Permintaan sudah diproses" }, 422);
 
         const { error: updateErr } = await supabaseAdmin
-           .from("permintaan_habis_pakai")
-           .update({
-             status: "ditolak",
-             alasan_tolak: alasan.trim(),
-             petugas: petugasName,
-             waktu_proses: new Date().toISOString()
-           })
-           .eq("id", id);
-           
+          .from("permintaan_habis_pakai")
+          .update({
+            status: "ditolak",
+            alasan_tolak: alasan.trim(),
+            petugas: petugasName,
+            waktu_proses: new Date().toISOString()
+          })
+          .eq("id", id);
+
         if (updateErr) throw updateErr;
         return json({ success: true, message: "Permintaan ditolak" });
       }
@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
 
         if (error) throw error;
         if (!data.success) {
-           return json({ success: false, error: data.error, message: `Gagal membatalkan: ${data.error}` }, 422);
+          return json({ success: false, error: data.error, message: `Gagal membatalkan: ${data.error}` }, 422);
         }
 
         return json({ success: true, message: "Permintaan berhasil dibatalkan dan stok dikembalikan" });
