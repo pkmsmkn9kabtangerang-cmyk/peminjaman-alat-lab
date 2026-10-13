@@ -159,7 +159,11 @@ export default function KelolaAlat() {
   const openEdit = (item) => {
     setEditItem(item);
     setErrors({});
-    setForm({ ...item });
+    setForm({
+      ...item,
+      satuan: item.satuan || 'unit',
+      tipe: item.tipe || 'pinjam',
+    });
     setModal(true);
   };
 
@@ -260,16 +264,22 @@ export default function KelolaAlat() {
     },
     {
       key: 'jumlah_total',
-      label: 'Total unit',
+      label: 'Total Stok',
       sortable: true,
-      render: (row) => <span className="font-medium">{row.jumlah_total} unit</span>,
+      render: (row) => <span className="font-medium">{row.jumlah_total} {row.satuan || 'unit'}</span>,
+    },
+    {
+      key: 'satuan',
+      label: 'Satuan',
+      sortable: true,
+      render: (row) => <span className="text-main font-semibold">{row.satuan || 'unit'}</span>,
     },
     {
       key: 'jumlah_rusak',
       label: 'Rusak',
       render: (row) => row.tipe === 'habis_pakai' ? <span className="text-muted">—</span> : (
         <span className={row.jumlah_rusak > 0 ? 'text-orange-800 font-medium' : 'text-muted'}>
-          {row.jumlah_rusak} {row.satuan}
+          {row.jumlah_rusak} {row.satuan || 'unit'}
         </span>
       ),
     },
@@ -310,7 +320,7 @@ export default function KelolaAlat() {
         data={alat}
         loading={loading}
         searchPlaceholder="Cari Alat..."
-        searchKeys={['nama', 'kode', 'kategori']}
+        searchKeys={['nama', 'kode', 'kategori', 'satuan', 'tipe']}
         emptyMessage="Belum ada alat"
         emptyDescription="Alat yang ditambahkan akan muncul di sini."
         actionButton={
@@ -411,21 +421,22 @@ export default function KelolaAlat() {
               </select>
             </FormField>
 
-            {form.tipe === 'habis_pakai' && (
-              <FormField label="Satuan" required error={errors.satuan}>
-                <select
-                  value={form.satuan}
-                  onChange={(e) => setForm({ ...form, satuan: e.target.value })}
-                  className={inputClass}
-                >
-                  <option value="unit">Unit</option>
-                  <option value="pcs">Pcs</option>
-                  <option value="cm">Cm</option>
-                  <option value="meter">Meter</option>
-                  <option value="pack">Pack</option>
-                </select>
-              </FormField>
-            )}
+            <FormField label="Satuan" required error={errors.satuan} hint="Contoh: unit, pcs, cm, meter, pack">
+              <select
+                value={form.satuan || 'unit'}
+                onChange={(e) => setForm({ ...form, satuan: e.target.value })}
+                className={inputClass}
+              >
+                <option value="unit">Unit</option>
+                <option value="pcs">Pcs</option>
+                <option value="cm">Cm</option>
+                <option value="meter">Meter</option>
+                <option value="pack">Pack</option>
+                <option value="set">Set</option>
+                <option value="roll">Roll</option>
+                <option value="box">Box</option>
+              </select>
+            </FormField>
           </div>
 
           {form.tipe !== 'habis_pakai' && editItem && (

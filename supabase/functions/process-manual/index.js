@@ -1,11 +1,11 @@
 // supabase/functions/process-manual/index.js
-// Edge Function: Transaksi manual peminjaman & pengembalian oleh petugas/admin
+// Edge Function: Transaksi manual peminjaman, pengembalian, dan pemberian consumable
 //
 // POST /process-manual
 // Body: {
 //   uid_kartu: string,
 //   alat_id: string,
-//   jenis: "pinjam" | "kembali",
+//   jenis: "pinjam" | "kembali" | "habis_pakai" | "pemberian",
 //   jumlah?: number,          // default 1
 //   kondisi_pinjam?: string,  // default "baik"
 //   kondisi_kembali?: string,
@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
     // ── 2. Cek alat ──
     const { data: alat, error: alatErr } = await supabaseAdmin
       .from("v_list_barang")
-      .select("id, nama, kode, kategori, stok_tersedia, tipe")
+      .select("id, nama, kode, kategori, stok_tersedia, tipe, satuan")
       .eq("id", alat_id.trim())
       .maybeSingle();
 
@@ -84,84 +84,121 @@ Deno.serve(async (req) => {
     const now = new Date().toISOString();
     const qty = Math.max(1, Number(jumlah));
 
+    // =========================================================
+    // A. BARANG HABIS PAKAI (CONSUMABLE)
+    // =========================================================
     if (alat.tipe === "habis_pakai") {
-      if (jenis === "pinjam" || jenis === "habis_pakai" || jenis === "pemberian") {
-        if (alat.stok_tersedia < qty) {
+      // Consumable tidak mengenal pengembalian
+      if (jenis === "kembali") {
+        return json({
+          success: false,
+          error: "alat_habis_pakai_tidak_bisa_dikembalikan",
+          message: "Barang sekali pakai (consumable) langsung diberikan dan tidak perlu dikembalikan.",
+        }, 422);
+      }
+
+      // Coba panggil fungsi RPC atomik PostgreSQL terlebih dahulu
+      const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc("catat_pemberian_habis_pakai", {
+        p_uid_kartu: kartu.uid_kartu,
+        p_alat_id: alat.id,
+        p_jumlah: qty,
+        p_petugas: petugas,
+        p_catatan: catatan ?? "Diproses manual oleh petugas",
+      });
+
+      if (!rpcErr && rpcData) {
+        if (!rpcData.success) {
           return json({
             success: false,
-            error: "stok_habis",
-            message: `Stok tidak cukup. Tersedia: ${alat.stok_tersedia}, diminta: ${qty}`,
+            error: rpcData.error || "gagal_pemberian",
+            message: rpcData.message || "Gagal mencatat pemberian consumable.",
           }, 422);
         }
 
-        // Langsung catat permintaan yang disetujui (karena manual oleh petugas)
-        const permintaanId = `REQ-MANUAL-${Date.now()}`;
-        
-        // 1. Update stok alat
-        const newStok = alat.stok_tersedia - qty;
-        await supabaseAdmin.from("alat").update({ jumlah_total: newStok }).eq("id", alat.id);
+        return json({
+          success: true,
+          jenis: "habis_pakai",
+          jumlah: qty,
+          message: rpcData.message || `${qty} ${alat.satuan || 'unit'} ${alat.nama} berhasil diberikan ke ${kartu.kelas}.`,
+        });
+      }
 
-        // 2. Insert permintaan
-        await supabaseAdmin.from("permintaan_habis_pakai").insert({
+      // Fallback jika migration RPC belum dijalankan di database
+      if (alat.stok_tersedia < qty) {
+        return json({
+          success: false,
+          error: "stok_habis",
+          message: `Stok tidak cukup. Tersedia: ${alat.stok_tersedia}, diminta: ${qty}`,
+        }, 422);
+      }
+
+      const permintaanId = `REQ-MANUAL-${Date.now()}`;
+      const newStok = alat.stok_tersedia - qty;
+
+      // 1. Kurangi stok alat
+      const { error: updateStokErr } = await supabaseAdmin
+        .from("alat")
+        .update({ jumlah_total: newStok })
+        .eq("id", alat.id);
+      if (updateStokErr) throw updateStokErr;
+
+      // 2. Catat ke permintaan_habis_pakai (status 'disetujui' karena manual)
+      const { error: insertReqErr } = await supabaseAdmin
+        .from("permintaan_habis_pakai")
+        .insert({
           id: permintaanId,
           uid_kartu: kartu.uid_kartu,
           kelas: kartu.kelas,
           alat_id: alat.id,
           nama_alat: alat.nama,
+          satuan: alat.satuan || "unit",
           status: "disetujui",
           jumlah: qty,
-          catatan: catatan ?? 'Diproses manual',
-          petugas: petugas,
+          catatan: catatan ?? "Diproses manual oleh petugas",
+          petugas,
           waktu_tap: now,
-          waktu_proses: now
+          waktu_proses: now,
+          created_at: now,
         });
+      if (insertReqErr) throw insertReqErr;
 
-        // 3. Insert stok mutasi
-        await supabaseAdmin.from("stok_mutasi").insert({
+      // 3. Catat mutasi stok
+      const { error: insertMutasiErr } = await supabaseAdmin
+        .from("stok_mutasi")
+        .insert({
           alat_id: alat.id,
           delta: -qty,
           stok_setelah: newStok,
           alasan: "persetujuan",
           permintaan_id: permintaanId,
-          catatan: catatan ?? 'Diproses manual',
-          petugas: petugas
+          catatan: catatan ?? "Diproses manual oleh petugas",
+          petugas,
+          created_at: now,
         });
+      if (insertMutasiErr) throw insertMutasiErr;
 
-        await addTapLog(supabaseAdmin, kartu.uid_kartu, null, "pinjam", "manual", "berhasil", null, kartu.kelas, alat.nama);
+      // PENTING: Operasi manual tidak dicatat ke tap_log (khusus reader RFID)
+      return json({
+        success: true,
+        jenis: "habis_pakai",
+        jumlah: qty,
+        message: `${qty} ${alat.satuan || 'unit'} ${alat.nama} berhasil diberikan ke ${kartu.kelas} secara manual.`,
+      });
+    }
 
-        return json({
-          success: true,
-          jenis: "pinjam",
-          jumlah: qty,
-          message: `${qty} stok ${alat.nama} berhasil diberikan ke ${kartu.kelas} secara manual`,
-        });
-      } else {
-        // Untuk alat sekali pakai, pengembalian manual = restock
-        const newStok = alat.stok_tersedia + qty;
-        await supabaseAdmin.from("alat").update({ jumlah_total: newStok }).eq("id", alat.id);
-
-        await supabaseAdmin.from("stok_mutasi").insert({
-          alat_id: alat.id,
-          delta: qty,
-          stok_setelah: newStok,
-          alasan: "restock",
-          catatan: catatan ?? 'Pengembalian / restock manual',
-          petugas: petugas
-        });
-
-        await addTapLog(supabaseAdmin, kartu.uid_kartu, null, "kembali", "manual", "berhasil", null, kartu.kelas, alat.nama);
-
-        return json({
-          success: true,
-          jenis: "kembali",
-          jumlah: qty,
-          message: `${qty} stok ${alat.nama} berhasil ditambahkan/dikembalikan dari ${kartu.kelas}`,
-        });
-      }
+    // =========================================================
+    // B. BARANG BERTIPE PINJAM (BUKAN CONSUMABLE)
+    // =========================================================
+    if (jenis === "habis_pakai" || jenis === "pemberian") {
+      return json({
+        success: false,
+        error: "bukan_alat_habis_pakai",
+        message: `Alat "${alat.nama}" bukan barang sekali pakai. Gunakan form peminjaman biasa.`,
+      }, 422);
     }
 
     if (jenis === "pinjam") {
-      // ── 3a. Pinjam ──
+      // ── B.1 Peminjaman Manual ──
       if (alat.stok_tersedia < qty) {
         return json({
           success: false,
@@ -190,20 +227,16 @@ Deno.serve(async (req) => {
       const { error: insertErr } = await supabaseAdmin.from("transaksi").insert(rows);
       if (insertErr) throw insertErr;
 
-      // Log tap
-      await addTapLog(supabaseAdmin, kartu.uid_kartu, null, "pinjam", "manual", "berhasil", null, kartu.kelas, alat.nama);
-
+      // PENTING: Operasi manual tidak dicatat ke tap_log (khusus reader RFID)
       return json({
         success: true,
         jenis: "pinjam",
         jumlah: qty,
-        message: `${qty} unit ${alat.nama} berhasil dipinjamkan ke ${kartu.kelas}`,
+        message: `${qty} unit ${alat.nama} berhasil dipinjamkan ke ${kartu.kelas}.`,
       });
 
     } else {
-      // ── 3b. Kembali ──
-      const qty = Math.max(1, Number(jumlah));
-
+      // ── B.2 Pengembalian Manual ──
       const { data: activeTrx, error: trxErr } = await supabaseAdmin
         .from("transaksi")
         .select("id")
@@ -219,7 +252,7 @@ Deno.serve(async (req) => {
         return json({
           success: false,
           error: "tidak_ada_pinjaman",
-          message: `Kartu ${kartu.kelas} tidak memiliki pinjaman aktif untuk alat ini`,
+          message: `Kartu ${kartu.kelas} tidak memiliki pinjaman aktif untuk alat "${alat.nama}".`,
         }, 422);
       }
 
@@ -237,13 +270,12 @@ Deno.serve(async (req) => {
 
       if (updateErr) throw updateErr;
 
-      await addTapLog(supabaseAdmin, kartu.uid_kartu, null, "kembali", "manual", "berhasil", null, kartu.kelas, alat.nama);
-
+      // PENTING: Operasi manual tidak dicatat ke tap_log (khusus reader RFID)
       return json({
         success: true,
         jenis: "kembali",
         jumlah: ids.length,
-        message: `${ids.length} unit ${alat.nama} berhasil dikembalikan dari ${kartu.kelas}`,
+        message: `${ids.length} unit ${alat.nama} berhasil dikembalikan dari ${kartu.kelas}.`,
       });
     }
 
@@ -252,19 +284,3 @@ Deno.serve(async (req) => {
     return json({ success: false, message: "Terjadi kesalahan server", detail: err.message }, 500);
   }
 });
-
-async function addTapLog(supabase, uid_kartu, uid_alat, jenis_tap, jenis_terdeteksi, status, error_code, kelas, nama_alat) {
-  await supabase.from("tap_log").insert({
-    id:               `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    uid_kartu,
-    uid_alat,
-    jenis_tap,
-    jenis_terdeteksi,
-    kelas,
-    nama_alat,
-    status,
-    error_code,
-    is_read:          false,
-    waktu_tap:        new Date().toISOString(),
-  });
-}

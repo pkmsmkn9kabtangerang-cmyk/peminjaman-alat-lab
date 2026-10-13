@@ -46,29 +46,10 @@ async function fetchAlatSekaliPakai() {
   );
 }
 
-async function fetchRiwayatPemberian() {
-  if (isSupabaseConfigured) {
-    const { data, error } = await supabase
-      .from('permintaan_habis_pakai')
-      .select('*')
-      .in('status', ['disetujui'])   // hanya yang sudah selesai diproses
-      .order('waktu_tap', { ascending: false })
-      .limit(20);
-    if (error) throw error;
-    return data ?? [];
-  }
-  // Demo: ambil semua permintaan yang sudah disetujui (RFID + manual)
-  return dbService.getPermintaan()
-    .filter((p) => p.status === 'disetujui')
-    .sort((a, b) => new Date(b.waktu_tap || b.waktu_proses || 0) - new Date(a.waktu_tap || a.waktu_proses || 0))
-    .slice(0, 20);
-}
-
 // ── Komponen Utama ────────────────────────────────────────────
 export default function PemberianSekaliPakai({ user }) {
   const [kartuList, setKartuList] = useState([]);
   const [alatList, setAlatList] = useState([]);
-  const [riwayat, setRiwayat] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedKartu, setSelectedKartu] = useState(null);
   const [selectedAlatId, setSelectedAlatId] = useState('');
@@ -82,14 +63,12 @@ export default function PemberianSekaliPakai({ user }) {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [kartu, alat, rwyt] = await Promise.all([
+      const [kartu, alat] = await Promise.all([
         fetchKartuAktif(),
         fetchAlatSekaliPakai(),
-        fetchRiwayatPemberian(),
       ]);
       setKartuList(kartu);
       setAlatList(alat);
-      setRiwayat(rwyt);
     } catch (err) {
       console.error('[PemberianSekaliPakai] loadData error:', err);
       showFeedback({ type: 'error', title: 'Gagal memuat data.', message: friendlyError(err) });
@@ -164,7 +143,7 @@ export default function PemberianSekaliPakai({ user }) {
         const res = dbService.processManual({
           uid_kartu: selectedKartu.uid_kartu,
           alat_id: selectedAlatId,
-          jenis: 'pinjam',   // untuk habis_pakai, 'pinjam' = kurangi stok & simpan ke permintaan
+          jenis: 'habis_pakai',
           jumlah,
           catatan: catatan.trim() || 'Diproses manual oleh petugas',
           petugas: petugasNama,
@@ -204,24 +183,16 @@ export default function PemberianSekaliPakai({ user }) {
     label: `${a.nama} (sisa: ${a.stok_tersedia} ${a.satuan || 'unit'})`,
   }));
 
-  const FMT = (iso) =>
-    iso
-      ? new Intl.DateTimeFormat('id-ID', {
-        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-      }).format(new Date(iso))
-      : '—';
-
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Pemberian Alat Sekali Pakai"
+        title="Pemberian Alat Sekali Pakai Manual"
         description="Catat pemberian alat consumable (sekali pakai) ke kelas secara manual."
       />
 
       <PageNote title="Cara Penggunaan" icon={IconPackage}>
         <p>
-          Halaman ini khusus untuk mencatat <b>pemberian alat sekali pakai</b> (consumable) seperti kertas lakmus,
-          larutan kimia, pita magnesium, dll. Stok akan langsung dikurangi saat dicatat.
+          Halaman ini khusus untuk mencatat <b>pemberian alat sekali pakai</b> (consumable) bertipe satuan, stok akan langsung dikurangi saat dicatat.
         </p>
         <p className="mt-2 text-blue-800">
           <b>Catatan:</b> Alat sekali pakai <b>tidak perlu dikembalikan</b>. Pemberian ini hanya memotong stok inventaris
@@ -396,46 +367,6 @@ export default function PemberianSekaliPakai({ user }) {
           </Button>
         </div>
       </form>
-
-      {/* ── Riwayat Pemberian Terakhir ── */}
-      {riwayat.length > 0 && (
-        <div className="bg-white border border-main">
-          <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-            <div>
-              <h2 className="font-bold text-base text-gray-800">Riwayat Pemberian Terbaru</h2>
-              <p className="text-sm text-gray-500 mt-0.5">20 pemberian sekali pakai terakhir yang sudah disetujui</p>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-left">
-                  <th className="px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Waktu</th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">Kelas</th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">Alat</th>
-                  <th className="px-4 py-3 font-semibold text-gray-600 text-right">Jumlah</th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">Petugas</th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">Catatan</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {riwayat.map((r) => (
-                  <tr key={r.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{FMT(r.waktu_tap || r.waktu_proses)}</td>
-                    <td className="px-4 py-3 font-medium text-gray-800">{r.kelas || '—'}</td>
-                    <td className="px-4 py-3 text-gray-700">{r.nama_alat || '—'}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-800">
-                      {r.jumlah ?? 1} <span className="text-gray-500 font-normal">{r.satuan || 'unit'}</span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">{r.petugas || '—'}</td>
-                    <td className="px-4 py-3 text-gray-500 max-w-[200px] truncate">{r.catatan || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

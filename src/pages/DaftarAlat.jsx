@@ -95,28 +95,41 @@ export default function DaftarAlatPage() {
     },
     {
       key: 'stok_tersedia',
-      label: 'Stok',
+      label: 'Stok Tersisa',
       sortable: true,
       render: (row) => (
-        <div>
-          <span className={`text-[13px] lg:text-main font-bold ${row.stok_tersedia === 0 ? 'text-red-600' : 'text-main'}`}>
-            {row.stok_tersedia}/{row.jumlah_total}
-          </span>
-          <p className="text-[13px] lg:text-main">tersedia</p>
-        </div>
+        <span className={`font-semibold ${row.stok_tersedia === 0 ? 'text-red-600' : 'text-main'}`}>
+          {row.stok_tersedia} {row.satuan || 'unit'}
+        </span>
       ),
     },
     {
-      key: 'status',
-      label: 'Status',
+      key: 'satuan',
+      label: 'Satuan',
       sortable: true,
-      render: (row) => <Badge status={row.status} />,
+      render: (row) => <span className="text-main font-semibold">{row.satuan || 'unit'}</span>,
+    },
+    {
+      key: 'tipe',
+      label: 'Tipe',
+      sortable: true,
+      render: (row) => (
+        <span className="text-main capitalize font-medium">
+          {row.tipe === 'habis_pakai' ? 'Sekali Pakai' : 'Pinjam'}
+        </span>
+      ),
     },
     {
       key: 'kategori',
       label: 'Kategori',
       sortable: true,
       render: (row) => <span className="text-main capitalize">{row.kategori}</span>,
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      sortable: true,
+      render: (row) => <Badge status={row.status} />,
     },
   ];
 
@@ -136,7 +149,7 @@ export default function DaftarAlatPage() {
         data={filteredData}
         loading={loading}
         searchPlaceholder="Cari Alat..."
-        searchKeys={['nama', 'kode', 'kategori', 'peminjam_kelas']}
+        searchKeys={['nama', 'kode', 'kategori', 'tipe', 'satuan', 'peminjam_kelas']}
         emptyMessage="Belum ada alat yang terdaftar."
         actionButton={
           <button

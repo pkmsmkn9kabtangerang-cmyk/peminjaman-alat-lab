@@ -25,12 +25,12 @@ const STRENGTH_LABEL = ['Sangat lemah', 'Lemah', 'Cukup', 'Kuat', 'Sangat kuat']
 const STRENGTH_COLOR = ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-blue-500', 'bg-green-500'];
 
 export default function GantiPassword({ user }) {
-  const [current, setCurrent]   = useState('');
-  const [newPw, setNewPw]       = useState('');
-  const [confirm, setConfirm]   = useState('');
-  const [showPw, setShowPw]     = useState(false);
-  const [errors, setErrors]     = useState({});
-  const [loading, setLoading]   = useState(false);
+  const [current, setCurrent] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
 
   const pwStrength = strength(newPw);
 
@@ -87,7 +87,7 @@ export default function GantiPassword({ user }) {
   };
 
   return (
-    <div className="space-y-5 max-w-lg">
+    <div className="space-y-5 max-w-full">
       <PageHeader
         title="Ganti Password"
         description="Perbarui password akun Anda. Gunakan password yang kuat dan unik."
@@ -155,7 +155,7 @@ export default function GantiPassword({ user }) {
 
           <div className="flex justify-end pt-4 border-t border-gray-100">
             <Button type="submit" icon={IconKey} disabled={loading} className="w-full sm:w-auto justify-center">
-              {loading ? 'Menyimpan...' : 'Simpan Password'}
+              {loading ? 'Menyimpan Password...' : 'Update Password'}
             </Button>
           </div>
         </form>

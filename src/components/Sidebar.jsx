@@ -14,7 +14,7 @@ import {
   IconKey,
   IconFlask,
 } from '@tabler/icons-react';
-import logoSmk from '../assets/logo-smk.svg';
+import logo from '../assets/logo.png';
 
 const SCHOOL_NAME = import.meta.env.VITE_SCHOOL_NAME ?? 'SMK Negeri';
 
@@ -27,9 +27,9 @@ const MENU_SECTIONS = [
   {
     title: 'Aktivitas RFID',
     items: [
-      { id: 'realtime_card', label: 'Aktivitas Kartu', icon: IconCreditCard, roles: ['admin', 'petugas'] },
+      { id: 'realtime_card', label: 'Aktivitas RFID', icon: IconCreditCard, roles: ['admin', 'petugas'] },
       { id: 'kartu_rfid', label: 'Kelola Kartu', icon: IconIdBadge2, roles: ['admin'] },
-      { id: 'riwayat', label: 'Riwayat', icon: IconHistory, roles: ['admin', 'petugas'] },
+      { id: 'riwayat', label: 'Riwayat Transaksi', icon: IconHistory, roles: ['admin', 'petugas'] },
 
       // { id: 'simulasi_iot', label: 'Simulasi Kartu', icon: IconCpu, roles: ['admin', 'petugas'] },
     ],
@@ -45,9 +45,9 @@ const MENU_SECTIONS = [
   {
     title: 'Transaksi Manual',
     items: [
-      { id: 'peminjaman',   label: 'Peminjaman',           icon: IconHandStop,       roles: ['admin', 'petugas'] },
-      { id: 'pengembalian', label: 'Pengembalian',          icon: IconCornerDownLeft, roles: ['admin', 'petugas'] },
-      { id: 'sekali_pakai', label: 'Sekali Pakai',          icon: IconFlask,          roles: ['admin', 'petugas'] },
+      { id: 'peminjaman', label: 'Peminjaman Manual', icon: IconHandStop, roles: ['admin', 'petugas'] },
+      { id: 'pengembalian', label: 'Pengembalian Manual', icon: IconCornerDownLeft, roles: ['admin', 'petugas'] },
+      { id: 'sekali_pakai', label: 'Alat Sekali Pakai', icon: IconFlask, roles: ['admin', 'petugas'] },
     ],
   },
 ];
@@ -68,7 +68,7 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, unr
         `}
       >
         <div className="px-4 py-3.5 border-b border-main flex items-center gap-3 min-h-14 shrink-0">
-          <img src={logoSmk} alt="Logo sekolah" className="w-8 h-8 object-contain shrink-0" />
+          <img src={logo} alt="Logo SMK" className="w-8 h-8 object-contain shrink-0" />
           <div className="min-w-0">
             <h1 className="font-semibold text-main text-[15px] leading-tight">SIMLAB</h1>
             <p className="text-sm text-muted leading-tight truncate">{SCHOOL_NAME}</p>

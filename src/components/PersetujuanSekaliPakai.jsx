@@ -52,18 +52,28 @@ export default function PersetujuanSekaliPakai({ user }) {
       if (isDemo) {
         const allReq = dbService.getPermintaan();
         const kartuList = dbService.getKartu();
+        const alatList = dbService.getAlat();
 
         const enrich = (item) => {
           const k = kartuList.find((x) => x.uid_kartu === item.uid_kartu);
+          const a = alatList.find((x) => x.id === item.alat_id);
           return {
             ...item,
+            satuan: item.satuan || a?.satuan || 'unit',
             kartu_rfid: { nama_pemegang: k?.nama_pemegang ?? '' },
           };
         };
 
+        const now = Date.now();
+        const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+
         const waiting = allReq.filter((p) => p.status === 'menunggu').map(enrich);
         const history = allReq
-          .filter((p) => p.status !== 'menunggu')
+          .filter((p) => {
+            if (p.status === 'menunggu') return false;
+            const t = new Date(p.waktu_proses || p.waktu_tap || p.created_at || 0).getTime();
+            return (now - t) <= TWENTY_FOUR_HOURS_MS;
+          })
           .sort(
             (a, b) =>
               new Date(b.waktu_proses || b.waktu_tap || 0) -
@@ -85,8 +95,15 @@ export default function PersetujuanSekaliPakai({ user }) {
           }).catch(() => ({ data: [] })),
         ]);
 
+        const now = Date.now();
+        const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+
         setMenungguList(resWaiting?.data ?? []);
-        const nonWaiting = (resHistory?.data ?? []).filter((p) => p.status !== 'menunggu');
+        const nonWaiting = (resHistory?.data ?? []).filter((p) => {
+          if (p.status === 'menunggu') return false;
+          const t = new Date(p.waktu_proses || p.waktu_tap || p.created_at || 0).getTime();
+          return (now - t) <= TWENTY_FOUR_HOURS_MS;
+        });
         setRiwayatList(nonWaiting);
       }
     } catch (err) {
@@ -130,7 +147,8 @@ export default function PersetujuanSekaliPakai({ user }) {
   // ── Helper ambil stok alat saat buka modal setujui ────────────
   const openSetujuModal = async (req) => {
     setSelectedReq(req);
-    setJumlahSetuju('3'); // Default ramah pemakai misal 3 cm
+    const s = (req.satuan || '').toLowerCase();
+    setJumlahSetuju(s === 'cm' ? '10' : '1');
     setCatatanSetuju('');
 
     // Ambil info stok terkini
@@ -348,11 +366,13 @@ export default function PersetujuanSekaliPakai({ user }) {
   const FMT = (iso) =>
     iso
       ? new Intl.DateTimeFormat('id-ID', {
-          day: '2-digit',
-          month: 'short',
-          hour: '2-digit',
-          minute: '2-digit',
-        }).format(new Date(iso))
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(iso))
       : '—';
 
   const pendingCount = menungguList.length;
@@ -376,13 +396,13 @@ export default function PersetujuanSekaliPakai({ user }) {
                     {pendingCount} Menunggu
                   </span>
                 ) : (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                    Semua Beres
+                  <span className="">
+                    {pendingCount} Menunggu
                   </span>
                 )}
               </div>
               <p className="text-[14px] text-muted mt-0.5">
-                Otomatis masuk saat siswa men-tap alat habis pakai (seperti timah solder, kabel, dll.). Petugas dapat menentukan ukuran/jumlah yang disetujui atau membatalkan.
+                Otomatis masuk saat siswa men-tap alat yang di berikan dan sifatnya sekali pakai contonnya kabel. Petugas dapat menentukan ukuran/jumlah yang disetujui atau membatalkan.
               </p>
             </div>
           </div>
@@ -401,18 +421,16 @@ export default function PersetujuanSekaliPakai({ user }) {
         <div className="flex items-center gap-2 mt-4 pt-3 border-t border-amber-200/60">
           <button
             onClick={() => setActiveTab('menunggu')}
-            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-2 ${
-              activeTab === 'menunggu'
-                ? 'bg-amber-600 text-white shadow-xs'
-                : 'text-amber-900 hover:bg-amber-100/70'
-            }`}
+            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-2 ${activeTab === 'menunggu'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-amber-900 hover:bg-amber-100/70'
+              }`}
           >
             <IconClock size={16} />
             Menunggu Persetujuan
             {pendingCount > 0 && (
-              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
-                activeTab === 'menunggu' ? 'bg-white text-amber-700' : 'bg-amber-600 text-white'
-              }`}>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${activeTab === 'menunggu' ? 'bg-white text-amber-700' : 'bg-amber-600 text-white'
+                }`}>
                 {pendingCount}
               </span>
             )}
@@ -420,14 +438,13 @@ export default function PersetujuanSekaliPakai({ user }) {
 
           <button
             onClick={() => setActiveTab('riwayat')}
-            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-2 ${
-              activeTab === 'riwayat'
-                ? 'bg-amber-600 text-white shadow-xs'
-                : 'text-amber-900 hover:bg-amber-100/70'
-            }`}
+            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-2 ${activeTab === 'riwayat'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-amber-900 hover:bg-amber-100/70'
+              }`}
           >
             <IconHistory size={16} />
-            Riwayat Selesai ({riwayatList.length})
+            Riwayat Selesai 24 Jam ({riwayatList.length})
           </button>
         </div>
       </div>
@@ -519,7 +536,7 @@ export default function PersetujuanSekaliPakai({ user }) {
         <div>
           {riwayatList.length === 0 ? (
             <div className="p-8 text-center bg-white">
-              <p className="text-muted text-sm">Belum ada riwayat persetujuan consumable.</p>
+              <p className="text-muted text-sm">Belum ada riwayat persetujuan consumable dalam 24 jam terakhir.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -539,15 +556,16 @@ export default function PersetujuanSekaliPakai({ user }) {
                 <tbody className="divide-y divide-gray-100 bg-white">
                   {riwayatList.map((item) => (
                     <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 text-gray-600 text-xs font-mono whitespace-nowrap">
+                      <td className="px-4 py-3 text-gray-600 text-xs font-semibold whitespace-nowrap">
                         {FMT(item.waktu_proses || item.waktu_tap)}
                       </td>
                       <td className="px-4 py-3 font-medium text-main">{item.kelas}</td>
                       <td className="px-4 py-3 text-gray-800">{item.nama_alat}</td>
                       <td className="px-4 py-3 text-right font-bold text-main whitespace-nowrap">
                         {item.status === 'disetujui' ? (
-                          <span>
-                            {item.jumlah ?? 1} <span className="font-normal text-muted text-xs">{item.satuan || 'unit'}</span>
+                          <span className="inline-flex items-center gap-1 font-bold text-main">
+                            <span>{item.jumlah ?? 1}</span>
+                            <span className="font-semibold text-emerald-700 text-xs">{item.satuan || item.alat?.satuan || 'unit'}</span>
                           </span>
                         ) : (
                           <span className="text-gray-400">—</span>
@@ -570,8 +588,8 @@ export default function PersetujuanSekaliPakai({ user }) {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">{item.petugas || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600 text-xs max-w-[200px] truncate">
+                      <td className="px-4 py-3 font-semibold text-main">{item.petugas || '—'}</td>
+                      <td className="px-4 py-3 font-semibold text-main max-w-[200px] truncate">
                         {item.status === 'ditolak' ? item.alasan_tolak : item.catatan || '—'}
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
@@ -658,17 +676,21 @@ export default function PersetujuanSekaliPakai({ user }) {
                   </span>
 
                   {/* Preset Cepat */}
-                  <div className="flex items-center gap-1.5 ml-auto">
-                    {[1, 2, 3, 5, 10].map((num) => (
+                  <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+                    {(selectedReq?.satuan === 'cm'
+                      ? [5, 10, 20, 50, 100]
+                      : selectedReq?.satuan === 'meter'
+                      ? [1, 2, 3, 5]
+                      : [1, 2, 3, 4, 5]
+                    ).map((num) => (
                       <button
                         key={num}
                         type="button"
                         onClick={() => setJumlahSetuju(String(num))}
-                        className={`px-2.5 py-1.5 text-xs font-bold rounded-lg border transition ${
-                          String(num) === jumlahSetuju
-                            ? 'bg-emerald-600 text-white border-emerald-600'
-                            : 'bg-white hover:bg-gray-100 border-gray-300 text-gray-700'
-                        }`}
+                        className={`px-2.5 py-1.5 text-xs font-bold rounded-lg border transition ${String(num) === jumlahSetuju
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-white hover:bg-gray-100 border-gray-300 text-gray-700'
+                          }`}
                       >
                         {num}
                       </button>

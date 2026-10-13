@@ -50,7 +50,6 @@ async function fetchRiwayat() {
       .order('waktu_pinjam', { ascending: false });
 
     if (error) throw error;
-    // Map to include pemegang field
     return (data || []).map(row => ({
       ...row,
       pemegang: row.kartu_rfid?.nama_pemegang || row.pemegang || '—'
@@ -66,11 +65,45 @@ async function fetchRiwayat() {
   });
 }
 
+async function fetchRiwayatSekaliPakai() {
+  if (isSupabaseConfigured) {
+    const { data, error } = await supabase
+      .from('permintaan_habis_pakai')
+      .select('*, kartu_rfid(nama_pemegang)')
+      .order('created_at', { ascending: false });
+    if (error) {
+      const { data: fallback } = await supabase
+        .from('permintaan_habis_pakai')
+        .select('*, kartu_rfid(nama_pemegang)')
+        .order('waktu_tap', { ascending: false });
+      return (fallback || []).map(r => ({
+        ...r,
+        pemegang: r.kartu_rfid?.nama_pemegang || '—',
+      }));
+    }
+    return (data || []).map(r => ({
+      ...r,
+      pemegang: r.kartu_rfid?.nama_pemegang || '—',
+    }));
+  }
+
+  const req = dbService.getPermintaan();
+  const kartu = dbService.getKartu();
+  return req
+    .sort((a, b) => new Date(b.created_at || b.waktu_proses || b.waktu_tap || 0) - new Date(a.created_at || a.waktu_proses || a.waktu_tap || 0))
+    .map(r => {
+      const k = kartu.find(x => x.uid_kartu === r.uid_kartu);
+      return { ...r, pemegang: k?.nama_pemegang || '—' };
+    });
+}
+
 export default function RiwayatPage() {
   const [data, setData] = useState([]);
+  const [sekaliPakaiData, setSekaliPakaiData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [timeFilter, setTimeFilter] = useState('24h');
   const [customDate, setCustomDate] = useState('');
+  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'pinjam_kembali' | 'sekali_pakai'
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearInput, setClearInput] = useState('');
 
@@ -94,8 +127,12 @@ export default function RiwayatPage() {
   const reloadData = useCallback(async (isRealtimeEvent = false) => {
     if (!isRealtimeEvent) setLoading(true);
     try {
-      const res = await fetchRiwayat();
-      setData(res);
+      const [resTrx, resSekali] = await Promise.all([
+        fetchRiwayat(),
+        fetchRiwayatSekaliPakai(),
+      ]);
+      setData(resTrx);
+      setSekaliPakaiData(resSekali);
     } catch (err) {
       console.error('[Riwayat] fetch error:', err);
     } finally {
@@ -115,10 +152,16 @@ export default function RiwayatPage() {
         clearInterval(t);
       };
     } else {
-      const channel = supabase.channel('transaksi_changes')
+      const ch1 = supabase.channel('transaksi_changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'transaksi' }, () => reloadData(true))
         .subscribe();
-      return () => supabase.removeChannel(channel);
+      const ch2 = supabase.channel('permintaan_changes_riwayat')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'permintaan_habis_pakai' }, () => reloadData(true))
+        .subscribe();
+      return () => {
+        supabase.removeChannel(ch1);
+        supabase.removeChannel(ch2);
+      };
     }
   }, [reloadData]);
 
@@ -179,125 +222,290 @@ export default function RiwayatPage() {
       key: 'pemegang',
       label: 'Pemegang',
       sortable: true,
-      render: (row) => <span className="font-medium text-[13px] lg:text-main">{row.pemegang}</span>,
+      render: (row) => <span className="font-semibold text-[13px] lg:text-main">{row.pemegang || '—'}</span>,
     },
     {
       key: 'kelas',
       label: 'Kelas',
       sortable: true,
-      render: (row) => <span className="text-[13px] lg:text-main font-medium">{row.kelas}</span>,
-    },
-    {
-      key: 'uid_kartu',
-      label: 'UID Kartu',
-      sortable: true,
-      render: (row) => <span className="text-[13px] lg:text-main text-gray-700">{row.uid_kartu}</span>,
+      render: (row) => (
+        <div>
+          <span className="text-[13px] lg:text-main font-medium block">{row.kelas}</span>
+          <span className="text-[11px] text-gray-500">{row.uid_kartu}</span>
+        </div>
+      ),
     },
     {
       key: 'nama_alat',
       label: 'Alat',
       sortable: true,
-      render: (row) => <span className="font-medium text-[13px] lg:text-main">{row.nama_alat}</span>,
+      render: (row) => <span className="font-semibold text-[13px] lg:text-main">{row.nama_alat}</span>,
     },
     {
-      key: 'status_pinjam',
-      label: 'Status Pinjam',
-      render: () => <Badge status="dipinjam" />,
+      key: 'status',
+      label: 'Status',
+      sortable: true,
+      render: (row) => <Badge status={row.status} />,
     },
     {
-      key: 'status_kembali',
-      label: 'Status Kembali',
-      render: (row) => row.status === 'dikembalikan' ? <Badge status="dikembalikan" /> : <span className="text-muted">—</span>,
-    },
-    {
-      key: 'jenis_terdeteksi',
-      label: 'Jenis Deteksi',
+      key: 'sumber',
+      label: 'Sumber',
       sortable: true,
       render: (row) => {
-        const isManual = row.jenis_terdeteksi === 'manual' || row.sumber === 'manual';
-        return <Badge status={isManual ? 'manual' : 'realtime'} />;
+        const isManual = row.sumber === 'manual' || row.jenis_terdeteksi === 'manual';
+        return <Badge status={isManual ? 'manual' : 'realtime'} label={isManual ? 'Manual' : 'RFID'} />;
+      },
+    },
+    {
+      key: 'petugas',
+      label: 'Petugas',
+      sortable: true,
+      render: (row) => <span className="text-[13px] text-gray-700">{row.petugas || '—'}</span>,
+    },
+    {
+      key: 'kondisi',
+      label: 'Kondisi',
+      render: (row) => {
+        const k = row.status === 'dikembalikan' ? (row.kondisi_kembali || 'baik') : (row.kondisi_pinjam || 'baik');
+        return <span className="text-[12px] text-gray-600 capitalize">{k}</span>;
       },
     },
   ];
 
+  const columnsSekaliPakai = [
+    {
+      key: 'waktu',
+      label: 'Waktu',
+      sortable: true,
+      render: (row) => (
+        <span className="font-medium text-[13px] lg:text-main">
+          {FMT(row.waktu_proses || row.waktu_tap || row.created_at)}
+        </span>
+      ),
+    },
+    {
+      key: 'kelas',
+      label: 'Kelas',
+      sortable: true,
+      render: (row) => (
+        <div>
+          <span className="text-[13px] lg:text-main font-bold block">{row.kelas || '—'}</span>
+          <span className="text-[11px] text-gray-500">{row.pemegang || row.uid_kartu}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'nama_alat',
+      label: 'Alat Sekali Pakai',
+      sortable: true,
+      render: (row) => <span className="font-semibold text-[13px] lg:text-main">{row.nama_alat}</span>,
+    },
+    {
+      key: 'jumlah',
+      label: 'Jumlah Diberikan',
+      sortable: true,
+      render: (row) => (
+        <span className="font-bold text-main">
+          {row.jumlah ?? 1} <span className="text-xs font-semibold text-emerald-700">{row.satuan || 'unit'}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      sortable: true,
+      render: (row) => (
+        <Badge
+          status={row.status || 'disetujui'}
+          label={
+            row.status === 'disetujui' ? 'Diberikan' :
+            row.status === 'menunggu' ? 'Menunggu' :
+            row.status === 'ditolak' ? 'Ditolak' : 'Dibatalkan'
+          }
+        />
+      ),
+    },
+    {
+      key: 'petugas',
+      label: 'Petugas',
+      sortable: true,
+      render: (row) => <span className="text-[13px] text-gray-700">{row.petugas || '—'}</span>,
+    },
+    {
+      key: 'catatan',
+      label: 'Catatan',
+      render: (row) => (
+        <span className="text-[12px] text-gray-600 max-w-[200px] truncate block" title={row.catatan || row.alasan_tolak || ''}>
+          {row.catatan || row.alasan_tolak || '—'}
+        </span>
+      ),
+    },
+  ];
+
   return (
-    <div className="space-y-4 sm:space-y-5">
+    <div className="space-y-5">
       <PageHeader
-        title="Riwayat Peminjaman"
-        description="Seluruh riwayat catatan peminjaman dan pengembalian alat lab."
+        title="Riwayat Transaksi"
+        description="Seluruh catatan transaksi peminjaman & pengembalian serta pemberian barang sekali pakai."
       />
 
-      <PageNote title="Informasi Penting" icon={IconMail}>
-        Halaman ini mencatat semua transaksi peminjaman dan pengembalian. Gunakan filter waktu atau tanggal untuk mencari riwayat spesifik dengan lebih mudah.
+      <PageNote title="Informasi Transaksi" icon={IconMail}>
+        Halaman ini memisahkan transaksi peminjaman alat lab (wajib dikembalikan) dan transaksi barang sekali pakai (consumable langsung ke kelas). Anda dapat melihat kedua tabel di bawah ini secara terpisah.
       </PageNote>
 
-      <DataTable
-        columns={columns}
-        data={filteredData}
-        loading={loading}
-        searchPlaceholder="Cari riwayat..."
-        searchKeys={['kelas', 'nama_alat', 'uid_kartu', 'pemegang', 'sumber']}
-        emptyMessage="Belum ada riwayat Peminjaman Alat"
-        actionButton={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => reloadData(false)}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
-              title="Refresh data"
-            >
-              <IconRefresh size={18} />
-            </button>
-            {isAdmin && (
-              <Button
-                variant="danger-soft"
-                icon={IconTrash}
-                onClick={() => {
-                  if (data.length === 0) {
-                    showFeedback({ type: 'warning', title: 'Data kosong', message: 'Tidak ada data riwayat peminjaman untuk dihapus.' });
-                    return;
-                  }
-                  setShowClearModal(true);
-                }}
-                className="w-full md:w-auto justify-center whitespace-nowrap"
-              >
-                Hapus Semua Riwayat
-              </Button>
-            )}
-          </div>
-        }
-        filters={
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-            <FilterDropdown
-              icon={IconClock}
-              value={timeFilter}
-              onChange={(val) => {
-                setTimeFilter(val);
-                if (val !== 'custom') setCustomDate('');
-              }}
-              options={TIME_OPTIONS}
-              className="w-full sm:w-auto"
-            />
+      {/* ── Tab Switcher Pilihan Tampilan ── */}
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab('all')}
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
+            activeTab === 'all'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          Semua Tabel
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('pinjam_kembali')}
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
+            activeTab === 'pinjam_kembali'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          Peminjaman & Pengembalian ({filteredData.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('sekali_pakai')}
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
+            activeTab === 'sekali_pakai'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          Alat Sekali Pakai ({sekaliPakaiData.length})
+        </button>
+      </div>
 
-            {timeFilter === 'custom' && (
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
-                <span className="text-sm font-medium text-gray-600 sm:ml-2">Pilih Tanggal:</span>
-                <div className="relative w-full sm:w-auto">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                    <IconCalendar size={16} />
-                  </div>
-                  <input
-                    type="date"
-                    value={customDate}
-                    onChange={(e) => setCustomDate(e.target.value)}
-                    className="w-full sm:w-auto pl-9 pr-3 h-10 rounded-lg border border-gray-300 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white font-medium text-gray-700"
-                  />
-                </div>
-              </div>
-            )}
+      {/* ── TABEL 1: Peminjaman & Pengembalian ── */}
+      {(activeTab === 'all' || activeTab === 'pinjam_kembali') && (
+        <div className="space-y-3 bg-white p-4 sm:p-5 rounded-2xl border border-main shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
+            <div>
+              <h2 className="text-base font-bold text-gray-800">Tabel Transaksi Peminjaman & Pengembalian</h2>
+              <p className="text-xs text-muted">Khusus transaksi peminjaman dan pengembalian alat praktikum (RFID & Manual).</p>
+            </div>
+            <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-blue-50 text-blue-800 border border-blue-200 self-start sm:self-auto">
+              {filteredData.length} Transaksi
+            </span>
           </div>
-        }
-      />
+
+          <DataTable
+            columns={columns}
+            data={filteredData}
+            loading={loading}
+            searchPlaceholder="Cari riwayat pinjam/kembali..."
+            searchKeys={['kelas', 'nama_alat', 'uid_kartu', 'pemegang', 'sumber']}
+            emptyMessage="Belum ada riwayat Peminjaman Alat"
+            actionButton={
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => reloadData(false)}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                  title="Refresh data"
+                >
+                  <IconRefresh size={18} />
+                </button>
+                {isAdmin && (
+                  <Button
+                    variant="danger-soft"
+                    icon={IconTrash}
+                    onClick={() => {
+                      if (data.length === 0) {
+                        showFeedback({ type: 'warning', title: 'Data kosong', message: 'Tidak ada data riwayat peminjaman untuk dihapus.' });
+                        return;
+                      }
+                      setShowClearModal(true);
+                    }}
+                    className="w-full md:w-auto justify-center whitespace-nowrap"
+                  >
+                    Hapus Riwayat Pinjam
+                  </Button>
+                )}
+              </div>
+            }
+            filters={
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+                <FilterDropdown
+                  icon={IconClock}
+                  value={timeFilter}
+                  onChange={(val) => {
+                    setTimeFilter(val);
+                    if (val !== 'custom') setCustomDate('');
+                  }}
+                  options={TIME_OPTIONS}
+                  className="w-full sm:w-auto"
+                />
+
+                {timeFilter === 'custom' && (
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+                    <span className="text-sm font-medium text-gray-600 sm:ml-2">Pilih Tanggal:</span>
+                    <div className="relative w-full sm:w-auto">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                        <IconCalendar size={16} />
+                      </div>
+                      <input
+                        type="date"
+                        value={customDate}
+                        onChange={(e) => setCustomDate(e.target.value)}
+                        className="w-full sm:w-auto pl-9 pr-3 h-10 rounded-lg border border-gray-300 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white font-medium text-gray-700"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            }
+          />
+        </div>
+      )}
+
+      {/* ── TABEL 2: Alat Sekali Pakai (Consumable) ── */}
+      {(activeTab === 'all' || activeTab === 'sekali_pakai') && (
+        <div className="space-y-3 bg-white p-4 sm:p-5 rounded-2xl border border-main shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
+            <div>
+              <h2 className="text-base font-bold text-gray-800">Tabel Transaksi Alat Sekali Pakai</h2>
+              <p className="text-xs text-muted">Khusus mencatat pemberian dan pengeluaran bahan praktikum consumable ke kelas.</p>
+            </div>
+            <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 self-start sm:self-auto">
+              {sekaliPakaiData.length} Pemberian
+            </span>
+          </div>
+
+          <DataTable
+            columns={columnsSekaliPakai}
+            data={sekaliPakaiData}
+            loading={loading}
+            searchPlaceholder="Cari transaksi sekali pakai..."
+            searchKeys={['kelas', 'nama_alat', 'petugas', 'catatan', 'pemegang', 'satuan']}
+            emptyMessage="Belum ada riwayat transaksi alat sekali pakai."
+            actionButton={
+              <button
+                type="button"
+                onClick={() => reloadData(false)}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                title="Refresh data"
+              >
+                <IconRefresh size={18} />
+              </button>
+            }
+          />
+        </div>
+      )}
 
       <Modal
         isOpen={showClearModal}

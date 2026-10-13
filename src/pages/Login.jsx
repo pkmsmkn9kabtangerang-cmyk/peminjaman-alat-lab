@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { dbService } from '../services/store';
-import logoSmk from '../assets/logo-smk.svg';
+import logo from '../assets/logo.png';
 
 const SCHOOL_NAME = import.meta.env.VITE_SCHOOL_NAME ?? 'SMK Negeri';
 
@@ -240,7 +240,7 @@ export default function LoginPage({ onLoginSuccess }) {
 
         {/* Top */}
         <div className="relative flex items-center gap-3">
-          <img src={logoSmk} alt="Logo SMK" className="w-12 h-12 filter brightness-0 invert" />
+          <img src={logo} alt="Logo SMK" className="w-12 h-12 filter brightness-0 invert" />
           <div>
             <h1 className="text-white font-bold text-lg leading-tight">SISPAS</h1>
             <p className="text-blue-200 text-sm">{SCHOOL_NAME}</p>

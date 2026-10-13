@@ -241,7 +241,7 @@ export const dbService = {
   // --- Tap Log ---
   getTapLog:  () => getStore('tap_log', INITIAL_TAP_LOG),
   saveTapLog: (l) => setStore('tap_log', l),
-  getUnreadCount: () => getStore('tap_log', INITIAL_TAP_LOG).filter((l) => !l.is_read).length,
+  getUnreadCount: () => getStore('tap_log', INITIAL_TAP_LOG).filter((l) => !l.is_read && l.jenis_terdeteksi !== 'manual').length,
   markTapsRead: () => {
     const logs = dbService.getTapLog().map((l) => ({ ...l, is_read: true }));
     setStore('tap_log', logs);
@@ -512,73 +512,133 @@ export const dbService = {
     const alat = dbService.getAlatWithStok().find((a) => a.id === alat_id);
     if (!alat) return { ok: false, error: 'uid_tidak_dikenal' };
 
+    const qty = Math.max(1, Number(jumlah));
+
+    // A. Barang Sekali pakai (Consumable)
     if (alat.tipe === 'habis_pakai') {
+      if (jenis === 'kembali') {
+        return {
+          ok: false,
+          error: 'alat_habis_pakai_tidak_bisa_dikembalikan',
+          message: 'Barang sekali pakai (consumable) langsung diberikan dan tidak perlu dikembalikan.',
+        };
+      }
+
+      if (alat.stok_tersedia < qty) {
+        return { ok: false, error: 'stok_habis', message: `Stok tidak cukup. Tersedia: ${alat.stok_tersedia}, diminta: ${qty}` };
+      }
+
       const now = new Date().toISOString();
       const allAlat = dbService.getAlat();
-      const aIdx = allAlat.findIndex(a => a.id === alat_id);
-      
-      if (jenis === 'pinjam' || jenis === 'habis_pakai' || jenis === 'pemberian') {
-        if (alat.stok_tersedia < jumlah) return { ok: false, error: 'stok_habis' };
-        
-        if (aIdx > -1) {
-          allAlat[aIdx].jumlah_total -= jumlah;
-          allAlat[aIdx].stok_tersedia = allAlat[aIdx].jumlah_total;
-          dbService.saveAlat(allAlat);
-        }
-
-        const allReq = dbService.getPermintaan();
-        allReq.unshift({
-          id: `REQ-MANUAL-${Date.now()}`,
-          uid_kartu, kelas: kartu.kelas,
-          alat_id, nama_alat: alat.nama, satuan: alat.satuan,
-          status: 'disetujui', jumlah, catatan: catatan ?? 'Diproses manual',
-          petugas, waktu_tap: now, waktu_proses: now
-        });
-        dbService.savePermintaan(allReq);
-
-        dbService._addTapLog(uid_kartu, null, 'pinjam', 'manual', 'berhasil', null, kartu.kelas, alat.nama);
-        return { ok: true, jenis, jumlah };
-      } else {
-        if (aIdx > -1) {
-          allAlat[aIdx].jumlah_total += jumlah;
-          allAlat[aIdx].stok_tersedia = allAlat[aIdx].jumlah_total;
-          dbService.saveAlat(allAlat);
-        }
-        dbService._addTapLog(uid_kartu, null, 'kembali', 'manual', 'berhasil', null, kartu.kelas, alat.nama);
-        return { ok: true, jenis, jumlah };
+      const aIdx = allAlat.findIndex((a) => a.id === alat_id);
+      if (aIdx > -1) {
+        allAlat[aIdx].jumlah_total -= qty;
+        allAlat[aIdx].stok_tersedia = allAlat[aIdx].jumlah_total;
+        dbService.saveAlat(allAlat);
       }
+
+      const permintaanId = `REQ-MANUAL-${Date.now()}`;
+      const allReq = dbService.getPermintaan();
+      allReq.unshift({
+        id: permintaanId,
+        uid_kartu,
+        kelas: kartu.kelas,
+        alat_id,
+        nama_alat: alat.nama,
+        satuan: alat.satuan || 'unit',
+        status: 'disetujui',
+        jumlah: qty,
+        catatan: catatan ?? 'Diproses manual oleh petugas',
+        petugas,
+        waktu_tap: now,
+        waktu_proses: now,
+        created_at: now,
+      });
+      dbService.savePermintaan(allReq);
+
+      // Simpan riwayat stok_mutasi
+      const allMutasi = getStore('stok_mutasi', []);
+      allMutasi.unshift({
+        id: `MUT-${Date.now()}`,
+        alat_id: alat.id,
+        delta: -qty,
+        stok_setelah: aIdx > -1 ? allAlat[aIdx].jumlah_total : 0,
+        alasan: 'persetujuan',
+        permintaan_id: permintaanId,
+        catatan: catatan ?? 'Pemberian manual petugas',
+        petugas,
+        created_at: now,
+      });
+      setStore('stok_mutasi', allMutasi);
+
+      // PENTING: Operasi manual TIDAK dicatat ke tap_log (khusus reader RFID)
+      return { ok: true, jenis: 'habis_pakai', jumlah: qty };
+    }
+
+    // B. Barang Bertipe Pinjam
+    if (jenis === 'habis_pakai' || jenis === 'pemberian') {
+      return {
+        ok: false,
+        error: 'bukan_alat_habis_pakai',
+        message: `Alat "${alat.nama}" bukan barang sekali pakai. Gunakan form peminjaman biasa.`,
+      };
     }
 
     const transaksi = dbService.getTransaksi();
 
     if (jenis === 'pinjam') {
-      if (alat.stok_tersedia < jumlah) return { ok: false, error: 'stok_habis' };
-      for (let i = 0; i < jumlah; i++) {
+      if (alat.stok_tersedia < qty) {
+        return { ok: false, error: 'stok_habis', message: `Stok tidak cukup. Tersedia: ${alat.stok_tersedia}, diminta: ${qty}` };
+      }
+      for (let i = 0; i < qty; i++) {
         transaksi.unshift({
-          id: 'TRX-' + Date.now() + '-' + i,
-          uid_kartu, kelas: kartu.kelas,
-          alat_id, nama_alat: alat.nama,
-          status: 'dipinjam', sumber: 'manual',
-          kondisi_pinjam, kondisi_kembali: null,
+          id: `TRX-${Date.now()}-${i}`,
+          uid_kartu,
+          kelas: kartu.kelas,
+          alat_id: alat.id,
+          nama_alat: alat.nama,
+          status: 'dipinjam',
+          sumber: 'manual',
+          kondisi_pinjam: kondisi_pinjam ?? 'baik',
+          kondisi_kembali: null,
           waktu_pinjam: new Date().toISOString(),
-          waktu_kembali: null, petugas, catatan,
+          waktu_kembali: null,
+          petugas,
+          catatan,
+          created_at: new Date().toISOString(),
         });
       }
       setStore('transaksi', transaksi);
-      dbService._addTapLog(uid_kartu, null, 'pinjam', 'manual', 'berhasil', null, kartu.kelas, alat.nama);
-      return { ok: true, jenis, jumlah };
+      // PENTING: Operasi manual TIDAK dicatat ke tap_log (khusus reader RFID)
+      return { ok: true, jenis: 'pinjam', jumlah: qty };
     } else {
       let count = 0;
       const updated = transaksi.map((t) => {
-        if (t.uid_kartu === uid_kartu && t.alat_id === alat_id && t.status === 'dipinjam' && count < jumlah) {
+        if (t.uid_kartu === uid_kartu && t.alat_id === alat_id && t.status === 'dipinjam' && count < qty) {
           count++;
-          return { ...t, status: 'dikembalikan', waktu_kembali: new Date().toISOString(), kondisi_kembali, catatan: catatan ?? t.catatan, petugas: petugas ?? t.petugas };
+          return {
+            ...t,
+            status: 'dikembalikan',
+            waktu_kembali: new Date().toISOString(),
+            kondisi_kembali: kondisi_kembali ?? 'baik',
+            catatan: catatan ?? t.catatan,
+            petugas: petugas ?? t.petugas,
+          };
         }
         return t;
       });
+
+      if (count === 0) {
+        return {
+          ok: false,
+          error: 'tidak_ada_pinjaman',
+          message: `Kartu ${kartu.kelas} tidak memiliki pinjaman aktif untuk alat "${alat.nama}".`,
+        };
+      }
+
       setStore('transaksi', updated);
-      dbService._addTapLog(uid_kartu, null, 'kembali', 'manual', 'berhasil', null, kartu.kelas, alat.nama);
-      return { ok: true, jenis, jumlah: count };
+      // PENTING: Operasi manual TIDAK dicatat ke tap_log (khusus reader RFID)
+      return { ok: true, jenis: 'kembali', jumlah: count };
     }
   },
 

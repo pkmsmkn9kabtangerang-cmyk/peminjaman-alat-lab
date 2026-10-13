@@ -35,7 +35,9 @@ export async function callFunction(name, body, options = {}) {
         'apikey': supabaseAnon,
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       },
-      ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+      ...((body ?? options.body) != null
+        ? { body: JSON.stringify(body ?? options.body) }
+        : {}),
     });
 
     const json = await res.json();
@@ -59,7 +61,7 @@ export async function callFunction(name, body, options = {}) {
  * Di production, ini dilakukan oleh firmware ESP32 (bukan frontend).
  */
 export async function callRfidTap(uid, deviceId = 'web-simulator', deviceKey = 'sim-key') {
-  const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnon) {
@@ -69,10 +71,10 @@ export async function callRfidTap(uid, deviceId = 'web-simulator', deviceKey = '
   const res = await fetch(`${supabaseUrl}/functions/v1/rfid-tap`, {
     method: 'POST',
     headers: {
-      'Content-Type':  'application/json',
-      'apikey':        supabaseAnon,
-      'x-device-id':   deviceId,
-      'x-device-key':  deviceKey,
+      'Content-Type': 'application/json',
+      'apikey': supabaseAnon,
+      'x-device-id': deviceId,
+      'x-device-key': deviceKey,
     },
     body: JSON.stringify({ uid }),
   });
@@ -87,7 +89,7 @@ export async function callRfidTap(uid, deviceId = 'web-simulator', deviceKey = '
   if (!res.ok || json?.ok === false) {
     const err = new Error(json?.message || `HTTP ${res.status}`);
     err.error = json?.error;
-    err.type  = json?.type;
+    err.type = json?.type;
     throw err;
   }
   return json;

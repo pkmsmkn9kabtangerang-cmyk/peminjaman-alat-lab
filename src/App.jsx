@@ -27,7 +27,7 @@ const PAGE_TITLES = {
   realtime_card:      'Aktivitas RFID',
   peminjaman:         'Peminjaman',
   pengembalian:       'Pengembalian',
-  riwayat:            'Riwayat',
+  riwayat:            'Riwayat Transaksi',
   list_alat:          'Daftar Alat',
   inventaris:         'Inventaris',
   kartu_rfid:         'Kartu RFID',
@@ -261,12 +261,12 @@ export default function App() {
       const handle = () => {
         setCurrentUser(dbService.getCurrentUser());
         setUnreadCount(dbService.getUnreadCount());
-        const logs = dbService.getTapLog();
+        const logs = dbService.getTapLog().filter((l) => l.jenis_terdeteksi !== 'manual');
         if (logs.length > prevLogsLen.current) {
           const latest = logs[0];
           if (latest) triggerNotification(latest);
         }
-        prevLogsLen.current = dbService.getTapLog().length;
+        prevLogsLen.current = logs.length;
       };
       window.addEventListener('simlab_storage_updated', handle);
       const interval = setInterval(() => setUnreadCount(dbService.getUnreadCount()), 3000);
@@ -280,11 +280,13 @@ export default function App() {
       .from('tap_log')
       .select('id', { count: 'exact', head: true })
       .eq('is_read', false)
+      .or('jenis_terdeteksi.neq.manual,jenis_terdeteksi.is.null')
       .then(({ count }) => setUnreadCount(count ?? 0));
 
     const channel = supabase
       .channel('app-global-realtime-taps')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tap_log' }, (payload) => {
+        if (payload.new?.jenis_terdeteksi === 'manual') return;
         triggerNotification(payload.new);
         setUnreadCount((n) => n + 1);
       })

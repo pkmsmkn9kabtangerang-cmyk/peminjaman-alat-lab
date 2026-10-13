@@ -101,7 +101,7 @@ export default function DashboardPage({ setCurrentTab, user }) {
       const fetchPromise = Promise.all([
         supabase.from('v_list_barang').select('*'),
         supabase.from('transaksi').select('*, kartu_rfid(nama_pemegang)').order('waktu_pinjam', { ascending: false }).limit(200),
-        supabase.from('tap_log').select('*').order('waktu_tap', { ascending: false }).limit(10),
+        supabase.from('tap_log').select('*').or('jenis_terdeteksi.neq.manual,jenis_terdeteksi.is.null').order('waktu_tap', { ascending: false }).limit(10),
         supabase.from('v_pinjaman_aktif').select('*'),
         supabase.from('permintaan_habis_pakai').select('id', { count: 'exact', head: true }).eq('status', 'menunggu')
       ]);
@@ -253,7 +253,7 @@ export default function DashboardPage({ setCurrentTab, user }) {
 
   const totalActiveItems = useMemo(() => activeCards.reduce((acc, c) => acc + c.items.length, 0), [activeCards]);
   const recentLoans = useMemo(() => transaksi.slice(0, 6), [transaksi]);
-  const recentTaps = useMemo(() => tapLog.slice(0, 6), [tapLog]);
+  const recentTaps = useMemo(() => tapLog.filter((t) => t.jenis_terdeteksi !== 'manual' && t.sumber !== 'manual').slice(0, 6), [tapLog]);
 
   const FMT = (iso) => iso ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso)) : '—';
 
@@ -282,7 +282,6 @@ export default function DashboardPage({ setCurrentTab, user }) {
 
       {/* ── Persetujuan Alat Sekali Pakai ── */}
       <PersetujuanSekaliPakai user={user} />
-
 
       <div className="bg-surface border border-main">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-4 border-b border-main">
