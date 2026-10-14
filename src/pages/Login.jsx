@@ -310,7 +310,7 @@ export default function LoginPage({ onLoginSuccess }) {
           <div className="w-full max-w-md space-y-8">
             {/* Mobile logo */}
             <div className="lg:hidden text-center">
-              <img src={logoSmk} alt="Logo SMK" className="w-12 h-12 mx-auto mb-3" />
+              <img src={logo} alt="Logo SMK" className="w-12 h-12 mx-auto mb-3" />
             </div>
 
             <div>
