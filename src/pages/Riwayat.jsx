@@ -319,8 +319,8 @@ export default function RiwayatPage() {
           status={row.status || 'disetujui'}
           label={
             row.status === 'disetujui' ? 'Diberikan' :
-            row.status === 'menunggu' ? 'Menunggu' :
-            row.status === 'ditolak' ? 'Ditolak' : 'Dibatalkan'
+              row.status === 'menunggu' ? 'Menunggu' :
+                row.status === 'ditolak' ? 'Ditolak' : 'Dibatalkan'
           }
         />
       ),
@@ -358,33 +358,30 @@ export default function RiwayatPage() {
         <button
           type="button"
           onClick={() => setActiveTab('all')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
-            activeTab === 'all'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${activeTab === 'all'
+            ? 'bg-blue-600 text-white shadow-xs'
+            : 'text-gray-600 hover:bg-gray-100'
+            }`}
         >
           Semua Tabel
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('pinjam_kembali')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
-            activeTab === 'pinjam_kembali'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${activeTab === 'pinjam_kembali'
+            ? 'bg-blue-600 text-white shadow-xs'
+            : 'text-gray-600 hover:bg-gray-100'
+            }`}
         >
           Peminjaman & Pengembalian ({filteredData.length})
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('sekali_pakai')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
-            activeTab === 'sekali_pakai'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${activeTab === 'sekali_pakai'
+            ? 'bg-blue-600 text-white shadow-xs'
+            : 'text-gray-600 hover:bg-gray-100'
+            }`}
         >
           Alat Sekali Pakai ({sekaliPakaiData.length})
         </button>
