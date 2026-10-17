@@ -103,11 +103,9 @@ export default function FilterDropdown({
 
       {open && (
         <div
-          className={`absolute z-50 ${
-            openUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
-          } left-0 ${
-            isFullWidth ? 'w-full min-w-full' : 'w-full sm:w-auto min-w-[190px]'
-          } max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-xl shadow-xl py-1 flex flex-col`}
+          className={`absolute z-50 ${openUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+            } left-0 ${isFullWidth ? 'w-full min-w-full' : 'w-full sm:w-auto min-w-[190px]'
+            } max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-xl shadow-xl py-1 flex flex-col`}
           style={{ minWidth: isFullWidth ? '100%' : undefined }}
         >
           {isSearchable && (
