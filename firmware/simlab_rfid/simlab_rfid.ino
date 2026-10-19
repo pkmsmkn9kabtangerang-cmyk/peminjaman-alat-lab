@@ -50,12 +50,21 @@ const char* WIFI_SSID         = "NAMA_WIFI";
 const char* WIFI_PASSWORD     = "PASSWORD_WIFI";
 
 // Sama dengan VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY di web
+<<<<<<< HEAD
 const char* SUPABASE_URL      = "https://xxxxxxxxxxxx.supabase.co";
 const char* SUPABASE_ANON_KEY = "ISI_DENGAN_ANON_KEY_SUPABASE";
 
 // Identitas alat (dikirim di header x-device-id / x-device-key)
 const char* DEVICE_ID         = "esp32-lab-01";
 const char* DEVICE_KEY        = "ganti-dengan-device-key";
+=======
+const char* SUPABASE_URL      = "";
+const char* SUPABASE_ANON_KEY = "";
+
+// Identitas alat (dikirim di header x-device-id / x-device-key)
+const char* DEVICE_ID         = "esp32-lab-01";
+const char* DEVICE_KEY        = "";
+>>>>>>> 028d62c45ddd3887fe1520b33ae7cfe0849739c8
 
 // ================================================================
 //  PIN & PERANGKAT
