@@ -50,12 +50,12 @@ const char* WIFI_SSID         = "NAMA_WIFI";
 const char* WIFI_PASSWORD     = "PASSWORD_WIFI";
 
 // Sama dengan VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY di web
-const char* SUPABASE_URL      = "https://xxxxxxxxxxxx.supabase.co";
-const char* SUPABASE_ANON_KEY = "ISI_DENGAN_ANON_KEY_SUPABASE";
+const char* SUPABASE_URL      = "https://uvbqbzizouiuafjwcezu.supabase.co";
+const char* SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2YnFieml6b3VpdWFmandjZXp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5OTQyMzAsImV4cCI6MjEwNjU3MDIzMH0.l1uEhR9I69OprxgF0T84DBkSn3O36rsz6sFpvGCaCys";
 
 // Identitas alat (dikirim di header x-device-id / x-device-key)
 const char* DEVICE_ID         = "esp32-lab-01";
-const char* DEVICE_KEY        = "ganti-dengan-device-key";
+const char* DEVICE_KEY        = "sim-key";
 
 // ================================================================
 //  PIN & PERANGKAT
@@ -271,7 +271,9 @@ int sendTap(const String& uid, JsonDocument& response) {
   client.setInsecure();  // tanpa verifikasi sertifikat (cukup untuk lab sekolah)
 
   HTTPClient http;
-  String url = String(SUPABASE_URL) + "/functions/v1/rfid-tap";
+  String baseUrl = String(SUPABASE_URL);
+  if (baseUrl.endsWith("/")) baseUrl.remove(baseUrl.length() - 1);
+  String url = baseUrl + "/functions/v1/rfid-tap";
   if (!http.begin(client, url)) {
     Serial.println("[HTTP] Gagal memulai koneksi");
     return -1;
@@ -381,6 +383,10 @@ void handleResponse(int code, JsonDocument& r, const String& uid) {
     showMessage("Sedang Menunggu", "Acc Petugas", 4000);
   } else if (err == "payload_tidak_lengkap") {
     showMessage("Data tdk lengkap", "UID kosong");
+  } else if (err == "device_tidak_diizinkan") {
+    showMessage("Device ditolak", "Cek Device Key");
+  } else if (err == "device_config_error") {
+    showMessage("Config server", "Device Secret");
   } else {
     showMessage("Error server", "HTTP " + String(code));
   }
