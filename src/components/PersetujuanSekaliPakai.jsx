@@ -674,28 +674,6 @@ export default function PersetujuanSekaliPakai({ user }) {
                   <span className="font-semibold text-lg text-gray-700">
                     {selectedReq.satuan || 'unit'}
                   </span>
-
-                  {/* Preset Cepat */}
-                  <div className="flex items-center gap-1.5 ml-auto flex-wrap">
-                    {(selectedReq?.satuan === 'cm'
-                      ? [5, 10, 20, 50, 100]
-                      : selectedReq?.satuan === 'meter'
-                      ? [1, 2, 3, 5]
-                      : [1, 2, 3, 4, 5]
-                    ).map((num) => (
-                      <button
-                        key={num}
-                        type="button"
-                        onClick={() => setJumlahSetuju(String(num))}
-                        className={`px-2.5 py-1.5 text-xs font-bold rounded-lg border transition ${String(num) === jumlahSetuju
-                          ? 'bg-emerald-600 text-white border-emerald-600'
-                          : 'bg-white hover:bg-gray-100 border-gray-300 text-gray-700'
-                          }`}
-                      >
-                        {num}
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
                 {/* Sisa Stok Warning / Info */}

@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { dbService } from '../services/store';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { callFunction } from '../lib/api';
 import Badge from '../components/Badge';
 import Button from '../components/Button';
 import DataTable from '../components/DataTable';
@@ -105,6 +106,7 @@ export default function RiwayatPage() {
   const [customDate, setCustomDate] = useState('');
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'pinjam_kembali' | 'sekali_pakai'
   const [showClearModal, setShowClearModal] = useState(false);
+  const [clearTarget, setClearTarget] = useState('pinjam'); // 'pinjam' | 'sekali_pakai'
   const [clearInput, setClearInput] = useState('');
 
   const [user, setUser] = useState(null);
@@ -186,19 +188,73 @@ export default function RiwayatPage() {
   const handleClearAll = async () => {
     if (clearInput.toLowerCase() !== CONFIRM_TEXT) return;
 
-    if (isSupabaseConfigured) {
-      try {
-        const { error } = await supabase.from('transaksi').delete().neq('id', 0);
-        if (error) throw error;
-        showFeedback({ type: 'success', title: 'Semua riwayat transaksi berhasil dihapus permanen.' });
+    if (clearTarget === 'pinjam') {
+      if (isSupabaseConfigured) {
+        try {
+          let cleared = false;
+          try {
+            const res = await callFunction('manage-transaksi', null, {
+              method: 'DELETE',
+              params: { clear: 'pinjam' },
+            });
+            if (res?.success) cleared = true;
+          } catch (edgeErr) {
+            console.warn('[Riwayat] Edge function clear failed, trying direct delete:', edgeErr);
+          }
+
+          if (!cleared) {
+            // Direct delete: id di tabel transaksi adalah teks, gunakan neq('id', '')
+            const { error: trxErr } = await supabase.from('transaksi').delete().neq('id', '');
+            if (trxErr) throw trxErr;
+          }
+
+          showFeedback({ type: 'success', title: 'Semua riwayat peminjaman & pengembalian berhasil dihapus.' });
+          setData([]);
+          reloadData();
+        } catch (err) {
+          console.error('[Riwayat] clear error:', err);
+          showFeedback({ type: 'error', title: 'Gagal menghapus riwayat peminjaman.', message: friendlyError(err) });
+        }
+      } else {
+        dbService.saveTransaksi([]);
+        setData([]);
         reloadData();
-      } catch (err) {
-        showFeedback({ type: 'error', title: 'Gagal menghapus riwayat.', message: friendlyError(err) });
+        showFeedback({ type: 'success', title: 'Semua riwayat transaksi peminjaman berhasil dihapus.' });
       }
     } else {
-      dbService.saveTransaksi([]);
-      reloadData();
-      showFeedback({ type: 'success', title: 'Semua riwayat transaksi peminjaman berhasil dihapus.' });
+      // clearTarget === 'sekali_pakai'
+      if (isSupabaseConfigured) {
+        try {
+          let cleared = false;
+          try {
+            const res = await callFunction('manage-transaksi', null, {
+              method: 'DELETE',
+              params: { clear: 'sekalipakai' },
+            });
+            if (res?.success) cleared = true;
+          } catch (edgeErr) {
+            console.warn('[Riwayat] Edge function clear sekali pakai failed, trying direct delete:', edgeErr);
+          }
+
+          if (!cleared) {
+            const { error: sekErr } = await supabase.from('permintaan_habis_pakai').delete().neq('status', 'menunggu');
+            if (sekErr) throw sekErr;
+          }
+
+          showFeedback({ type: 'success', title: 'Semua riwayat transaksi alat sekali pakai berhasil dihapus.' });
+          setSekaliPakaiData([]);
+          reloadData();
+        } catch (err) {
+          console.error('[Riwayat] clear sekali pakai error:', err);
+          showFeedback({ type: 'error', title: 'Gagal menghapus riwayat sekali pakai.', message: friendlyError(err) });
+        }
+      } else {
+        const remaining = dbService.getPermintaan().filter((p) => p.status === 'menunggu');
+        dbService.savePermintaan(remaining);
+        setSekaliPakaiData([]);
+        reloadData();
+        showFeedback({ type: 'success', title: 'Semua riwayat alat sekali pakai berhasil dihapus.' });
+      }
     }
 
     setShowClearModal(false);
@@ -222,7 +278,7 @@ export default function RiwayatPage() {
       key: 'pemegang',
       label: 'Pemegang',
       sortable: true,
-      render: (row) => <span className="font-semibold text-[13px] lg:text-main">{row.pemegang || '—'}</span>,
+      render: (row) => <span className="font-semibold text-main">{row.pemegang || '—'}</span>,
     },
     {
       key: 'kelas',
@@ -239,7 +295,7 @@ export default function RiwayatPage() {
       key: 'nama_alat',
       label: 'Alat',
       sortable: true,
-      render: (row) => <span className="font-semibold text-[13px] lg:text-main">{row.nama_alat}</span>,
+      render: (row) => <span className="font-semibold text-main">{row.nama_alat}</span>,
     },
     {
       key: 'status',
@@ -267,7 +323,7 @@ export default function RiwayatPage() {
       label: 'Kondisi',
       render: (row) => {
         const k = row.status === 'dikembalikan' ? (row.kondisi_kembali || 'baik') : (row.kondisi_pinjam || 'baik');
-        return <span className="text-[12px] text-gray-600 capitalize">{k}</span>;
+        return <span className="text-main text-gray-600 capitalize">{k}</span>;
       },
     },
   ];
@@ -426,6 +482,7 @@ export default function RiwayatPage() {
                         showFeedback({ type: 'warning', title: 'Data kosong', message: 'Tidak ada data riwayat peminjaman untuk dihapus.' });
                         return;
                       }
+                      setClearTarget('pinjam');
                       setShowClearModal(true);
                     }}
                     className="w-full md:w-auto justify-center whitespace-nowrap"
@@ -491,14 +548,33 @@ export default function RiwayatPage() {
             searchKeys={['kelas', 'nama_alat', 'petugas', 'catatan', 'pemegang', 'satuan']}
             emptyMessage="Belum ada riwayat transaksi alat sekali pakai."
             actionButton={
-              <button
-                type="button"
-                onClick={() => reloadData(false)}
-                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
-                title="Refresh data"
-              >
-                <IconRefresh size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => reloadData(false)}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                  title="Refresh data"
+                >
+                  <IconRefresh size={18} />
+                </button>
+                {isAdmin && (
+                  <Button
+                    variant="danger-soft"
+                    icon={IconTrash}
+                    onClick={() => {
+                      if (sekaliPakaiData.length === 0) {
+                        showFeedback({ type: 'warning', title: 'Data kosong', message: 'Tidak ada data riwayat sekali pakai untuk dihapus.' });
+                        return;
+                      }
+                      setClearTarget('sekali_pakai');
+                      setShowClearModal(true);
+                    }}
+                    className="w-full md:w-auto justify-center whitespace-nowrap"
+                  >
+                    Hapus Riwayat Sekali Pakai
+                  </Button>
+                )}
+              </div>
             }
           />
         </div>
@@ -510,15 +586,21 @@ export default function RiwayatPage() {
           setShowClearModal(false);
           setClearInput('');
         }}
-        title="Hapus Semua Riwayat"
-        subtitle="Yakin ingin menghapus semua data?"
+        title={clearTarget === 'pinjam' ? 'Hapus Semua Riwayat Pinjam' : 'Hapus Riwayat Sekali Pakai'}
+        subtitle={
+          clearTarget === 'pinjam'
+            ? 'Yakin ingin menghapus seluruh riwayat peminjaman & pengembalian?'
+            : 'Yakin ingin menghapus riwayat transaksi alat sekali pakai?'
+        }
         maxWidth="max-w-md"
       >
         <div className="space-y-4">
           <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
             <h4 className="text-sm font-bold text-red-900 mb-1">Peringatan Penting</h4>
             <p className="text-xs text-red-700 leading-relaxed">
-              Semua data riwayat peminjaman dan pengembalian ({data.length} data) akan dihapus selamanya dan tidak bisa dikembalikan.
+              {clearTarget === 'pinjam'
+                ? `Semua data riwayat peminjaman dan pengembalian (${data.length} data) akan dihapus selamanya dan tidak bisa dikembalikan.`
+                : `Semua data transaksi alat sekali pakai (${sekaliPakaiData.length} data) yang telah diproses akan dihapus selamanya.`}
             </p>
           </div>
 
@@ -542,7 +624,7 @@ export default function RiwayatPage() {
               Batal
             </Button>
             <Button variant="danger" disabled={clearInput.toLowerCase() !== CONFIRM_TEXT} onClick={handleClearAll} className="w-full sm:w-auto justify-center h-11">
-              Hapus Semua Riwayat
+              {clearTarget === 'pinjam' ? 'Hapus Riwayat Pinjam' : 'Hapus Riwayat Sekali Pakai'}
             </Button>
           </div>
         </div>

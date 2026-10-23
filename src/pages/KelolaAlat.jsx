@@ -88,26 +88,64 @@ async function deleteAlat(id) {
   }
 }
 
-async function checkKodeUsed(kode, excludeId) {
-  if (isSupabaseConfigured) {
-    let query = supabase.from('alat').select('id').eq('kode', kode.trim());
-    if (excludeId) query = query.neq('id', excludeId);
-    const { data } = await query.maybeSingle();
-    return !!data;
-  }
-  const current = dbService.getAlat();
-  return current.some((a) => a.kode === kode.trim() && a.id !== excludeId);
-}
+async function checkUidAvailability(uid, excludeAlatId = null) {
+  const cleanUid = (uid || '').trim();
+  if (!cleanUid) return { used: false };
 
-async function checkUidUsed(uid_rfid, excludeId) {
   if (isSupabaseConfigured) {
-    let query = supabase.from('alat').select('id').eq('uid_rfid', uid_rfid.trim());
-    if (excludeId) query = query.neq('id', excludeId);
-    const { data } = await query.maybeSingle();
-    return !!data;
+    // 1. Cek di tabel alat
+    let qAlat = supabase.from('alat').select('id, nama, kode').eq('kode', cleanUid);
+    if (excludeAlatId) qAlat = qAlat.neq('id', excludeAlatId);
+    const { data: existingAlat } = await qAlat.maybeSingle();
+
+    if (existingAlat) {
+      return {
+        used: true,
+        type: 'alat',
+        message: `UID sudah digunakan oleh alat "${existingAlat.nama}" (ID: ${existingAlat.id}).`,
+      };
+    }
+
+    // 2. Cek di tabel kartu_rfid
+    const { data: existingKartu } = await supabase
+      .from('kartu_rfid')
+      .select('uid_kartu, kelas, nama_pemegang')
+      .eq('uid_kartu', cleanUid)
+      .maybeSingle();
+
+    if (existingKartu) {
+      return {
+        used: true,
+        type: 'kartu',
+        message: `UID ini sudah terdaftar sebagai Kartu Kelas "${existingKartu.kelas}".`,
+      };
+    }
+
+    return { used: false };
   }
-  const current = dbService.getAlat();
-  return current.some((a) => a.uid_rfid === uid_rfid.trim() && a.id !== excludeId);
+
+  // Local storage check
+  const allAlat = dbService.getAlat();
+  const foundAlat = allAlat.find(a => a.kode === cleanUid && a.id !== excludeAlatId);
+  if (foundAlat) {
+    return {
+      used: true,
+      type: 'alat',
+      message: `UID sudah digunakan oleh alat "${foundAlat.nama}".`,
+    };
+  }
+
+  const allKartu = dbService.getKartu();
+  const foundKartu = allKartu.find(k => k.uid_kartu === cleanUid);
+  if (foundKartu) {
+    return {
+      used: true,
+      type: 'kartu',
+      message: `UID ini sudah terdaftar sebagai Kartu Kelas "${foundKartu.kelas}".`,
+    };
+  }
+
+  return { used: false };
 }
 
 export default function KelolaAlat() {
@@ -145,15 +183,119 @@ export default function KelolaAlat() {
     return () => supabase.removeChannel(ch);
   }, [reload]);
 
-  const openAdd = () => {
+  useEffect(() => {
+    if (!modal || editItem) return;
+
+    if (isSupabaseConfigured) {
+      const ch = supabase
+        .channel(`kelola-alat-tap-reader-${Date.now()}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'tap_log' },
+          async (payload) => {
+            const scannedUid = (payload.new?.uid_alat || payload.new?.uid_kartu || '').trim();
+            if (scannedUid) {
+              const check = await checkUidAvailability(scannedUid, editItem?.id);
+              setForm((prev) => ({ ...prev, kode: scannedUid }));
+              if (check.used) {
+                setErrors((prev) => ({ ...prev, kode: check.message }));
+                showFeedback({
+                  type: 'error',
+                  title: 'UID Sudah Terdaftar!',
+                  message: check.message,
+                });
+              } else {
+                setErrors((prev) => ({ ...prev, kode: null }));
+                showFeedback({
+                  type: 'success',
+                  title: 'Tag Alat Terdeteksi!',
+                  message: `UID ${scannedUid} berhasil dibaca dari scanner.`,
+                });
+              }
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(ch);
+      };
+    } else {
+      const handleStorageUpdate = async () => {
+        const logs = dbService.getTapLog();
+        if (logs.length > 0) {
+          const latest = logs[0];
+          const scannedUid = (latest.uid_alat || latest.uid_kartu || '').trim();
+          if (scannedUid) {
+            const check = await checkUidAvailability(scannedUid, editItem?.id);
+            setForm((prev) => ({ ...prev, kode: scannedUid }));
+            if (check.used) {
+              setErrors((prev) => ({ ...prev, kode: check.message }));
+              showFeedback({
+                type: 'error',
+                title: 'UID Sudah Terdaftar!',
+                message: check.message,
+              });
+            } else {
+              setErrors((prev) => ({ ...prev, kode: null }));
+              showFeedback({
+                type: 'success',
+                title: 'Tag Alat Terdeteksi!',
+                message: `UID ${scannedUid} berhasil dibaca dari scanner.`,
+              });
+            }
+          }
+        }
+      };
+
+      window.addEventListener('simlab_storage_updated', handleStorageUpdate);
+      return () => {
+        window.removeEventListener('simlab_storage_updated', handleStorageUpdate);
+      };
+    }
+  }, [modal, editItem]);
+
+  const openAdd = async () => {
     setEditItem(null);
     setErrors({});
     setForm({
       ...EMPTY_FORM,
       id: 'ALT-' + Math.floor(100 + Math.random() * 900),
-      kode: 'KD-' + Math.floor(1000 + Math.random() * 9000),
+      kode: '',
     });
     setModal(true);
+
+    if (isSupabaseConfigured) {
+      try {
+        const { data: latestTap } = await supabase
+          .from('tap_log')
+          .select('uid_alat, uid_kartu, waktu_tap')
+          .order('waktu_tap', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (latestTap && latestTap.waktu_tap) {
+          const diffMs = Date.now() - new Date(latestTap.waktu_tap).getTime();
+          if (diffMs < 30000) {
+            const uid = (latestTap.uid_alat || latestTap.uid_kartu || '').trim();
+            if (uid) {
+              const check = await checkUidAvailability(uid);
+              setForm((prev) => ({ ...prev, kode: uid }));
+              if (check.used) {
+                setErrors((prev) => ({ ...prev, kode: check.message }));
+                showFeedback({
+                  type: 'warning',
+                  title: 'UID Baru Saja Ditap Sudah Terdaftar!',
+                  message: check.message,
+                });
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Gagal membaca tap terakhir:', e);
+      }
+    }
   };
 
   const openEdit = (item) => {
@@ -179,8 +321,10 @@ export default function KelolaAlat() {
     if (rusak > total) next.jumlah_rusak = 'Jumlah rusak tidak boleh melebihi jumlah total.';
 
     if (form.kode?.trim()) {
-      const kodeUsed = await checkKodeUsed(form.kode, editItem?.id);
-      if (kodeUsed) next.kode = 'Kode alat tersebut sudah digunakan.';
+      const check = await checkUidAvailability(form.kode, editItem?.id);
+      if (check.used) next.kode = check.message;
+    } else {
+      next.kode = 'Kode tag/stiker RFID alat wajib diisi (tempelkan tag ke scanner).';
     }
     return next;
   };
@@ -366,23 +510,64 @@ export default function KelolaAlat() {
           </FormField>
 
           <FormField
-            label="Kode stiker alat"
+            label="Kode stiker / Tag RFID alat"
             required
-            hint="Kode yang tertera pada stiker alat."
+            hint={
+              editItem
+                ? 'Kode tag RFID alat (tidak bisa diubah).'
+                : 'UID otomatis terisi langsung saat stiker/tag RFID alat di-tap pada scanner reader.'
+            }
             error={errors.kode}
           >
-            <input
-              required
-              value={form.kode || ''}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  kode: e.target.value.toUpperCase().replace(/\s/g, ''),
-                })
-              }
-              className={inputClass}
-              placeholder="Contoh: KD-NomorBebas"
-            />
+            <div className="space-y-2">
+              <div className="relative">
+                <input
+                  required
+                  readOnly
+                  value={form.kode || ''}
+                  className={`${inputClass} bg-gray-50 font-mono text-base font-semibold tracking-wider cursor-not-allowed`}
+                  placeholder={editItem ? 'Kode Tag Alat' : 'Tempelkan tag alat ke reader RFID...'}
+                />
+                {form.kode ? (
+                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-xs ${
+                    errors.kode 
+                      ? 'text-rose-700 bg-rose-50 border border-rose-200' 
+                      : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                  }`}>
+                    <span className={`w-2 h-2 rounded-full ${errors.kode ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
+                    {errors.kode ? 'Duplikat' : 'Terbaca'}
+                  </span>
+                ) : (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                    Menunggu Tap
+                  </span>
+                )}
+              </div>
+
+              {!editItem && (
+                !form.kode ? (
+                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-blue-50/80 border border-blue-200 text-xs text-blue-800">
+                    <span className="relative flex h-3 w-3 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-600"></span>
+                    </span>
+                    <span>
+                      <strong>Scanner Aktif:</strong> Tempelkan stiker / tag RFID alat ke reader. UID akan otomatis terisi tanpa perlu mengetik manual atau melihat serial monitor.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between text-xs px-1 text-gray-500">
+                    <span className={errors.kode ? 'text-rose-600 font-medium flex items-center gap-1' : 'text-emerald-600 font-medium flex items-center gap-1'}>
+                      {errors.kode ? '⚠ Tag sudah terdaftar di sistem' : '✓ UID tag alat berhasil dibaca dari scanner'}
+                    </span>
+                    <span className="text-gray-400">
+                      Tap tag lain jika ingin mengganti
+                    </span>
+                  </div>
+                )
+              )}
+            </div>
           </FormField>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

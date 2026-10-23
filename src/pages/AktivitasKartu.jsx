@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { dbService } from '../services/store';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { callFunction } from '../lib/api';
 import Badge from '../components/Badge';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
@@ -143,6 +144,7 @@ export default function AktivitasKartuPage() {
   const [loading, setLoading] = useState(true);
   const [newIds, setNewIds] = useState(new Set());
   const [showClearModal, setShowClearModal] = useState(false);
+  const [clearTarget, setClearTarget] = useState('rfid'); // 'rfid' | 'sekali_pakai'
   const [clearInput, setClearInput] = useState('');
   const CONFIRM_TEXT = 'hapus semua log';
   const prevLen = useRef(0);
@@ -243,30 +245,113 @@ export default function AktivitasKartuPage() {
       .filter(log => log.jenis_terdeteksi !== 'manual' && log.sumber !== 'manual')
       .map(log => {
         const kartu = kartuList.find(k => k.uid_kartu === log.uid_kartu);
+
+        // Cari status terkini dari permintaan alat sekali pakai
+        let statusSekaliPakai = null;
+        if (log.status === 'menunggu' || log.nama_alat) {
+          const matches = sekaliPakaiToday.filter(req =>
+            req.uid_kartu === log.uid_kartu &&
+            (req.nama_alat === log.nama_alat || req.alat_id === log.uid_alat)
+          );
+
+          if (matches.length > 0) {
+            if (matches.length === 1) {
+              statusSekaliPakai = matches[0].status;
+            } else {
+              const logTime = new Date(log.waktu_tap).getTime();
+              let closest = matches[0];
+              let minDiff = Math.abs(new Date(closest.waktu_tap || closest.created_at).getTime() - logTime);
+              for (let i = 1; i < matches.length; i++) {
+                const diff = Math.abs(new Date(matches[i].waktu_tap || matches[i].created_at).getTime() - logTime);
+                if (diff < minDiff) {
+                  minDiff = diff;
+                  closest = matches[i];
+                }
+              }
+              statusSekaliPakai = closest.status;
+            }
+          }
+        }
+
         return {
           ...log,
           nama_pemegang: kartu?.nama_pemegang || log.nama_pemegang || null,
+          status_sekali_pakai: statusSekaliPakai,
           _isNew: newIds.has(log.id),
         };
       });
-  }, [taps, kartuList, newIds]);
+  }, [taps, kartuList, sekaliPakaiToday, newIds]);
 
   const handleClearAll = async () => {
     if (clearInput.toLowerCase() !== CONFIRM_TEXT) return;
 
-    if (isSupabaseConfigured) {
-      try {
-        const { error } = await supabase.from('tap_log').delete().neq('id', 0); // Hapus semua
-        if (error) throw error;
-        showFeedback({ type: 'success', title: 'Semua log aktivitas tap RFID berhasil dibersihkan.' });
+    if (clearTarget === 'rfid') {
+      if (isSupabaseConfigured) {
+        try {
+          let cleared = false;
+          try {
+            const res = await callFunction('manage-transaksi', null, {
+              method: 'DELETE',
+              params: { clear: 'taplog' },
+            });
+            if (res?.success) cleared = true;
+          } catch (edgeErr) {
+            console.warn('[AktivitasKartu] Edge function clear failed, trying direct delete:', edgeErr);
+          }
+
+          if (!cleared) {
+            // Direct delete: id di tap_log bertipe text (misal "LOG-..."), gunakan neq('id', '') bukan neq('id', 0)
+            const { error } = await supabase.from('tap_log').delete().neq('id', '');
+            if (error) throw error;
+          }
+
+          showFeedback({ type: 'success', title: 'Semua log aktivitas tap RFID berhasil dibersihkan.' });
+          setTaps([]);
+          reloadData();
+        } catch (err) {
+          console.error('[AktivitasKartu] clear error:', err);
+          showFeedback({ type: 'error', title: 'Gagal menghapus log RFID.', message: friendlyError(err) });
+        }
+      } else {
+        dbService.saveTapLog([]);
+        setTaps([]);
         reloadData();
-      } catch (err) {
-        showFeedback({ type: 'error', title: 'Gagal menghapus log.', message: friendlyError(err) });
+        showFeedback({ type: 'success', title: 'Semua log aktivitas tap RFID hari ini berhasil dibersihkan.' });
       }
     } else {
-      dbService.saveTapLog([]);
-      reloadData();
-      showFeedback({ type: 'success', title: 'Semua log aktivitas tap RFID hari ini berhasil dibersihkan.' });
+      // clearTarget === 'sekali_pakai'
+      if (isSupabaseConfigured) {
+        try {
+          let cleared = false;
+          try {
+            const res = await callFunction('manage-transaksi', null, {
+              method: 'DELETE',
+              params: { clear: 'sekalipakai' },
+            });
+            if (res?.success) cleared = true;
+          } catch (edgeErr) {
+            console.warn('[AktivitasKartu] Edge function clear sekali pakai failed, trying direct delete:', edgeErr);
+          }
+
+          if (!cleared) {
+            const { error } = await supabase.from('permintaan_habis_pakai').delete().neq('status', 'menunggu');
+            if (error) throw error;
+          }
+
+          showFeedback({ type: 'success', title: 'Semua log transaksi alat sekali pakai berhasil dibersihkan.' });
+          setSekaliPakaiToday([]);
+          reloadData();
+        } catch (err) {
+          console.error('[AktivitasKartu] clear sekali pakai error:', err);
+          showFeedback({ type: 'error', title: 'Gagal menghapus log sekali pakai.', message: friendlyError(err) });
+        }
+      } else {
+        const remaining = dbService.getPermintaan().filter((p) => p.status === 'menunggu');
+        dbService.savePermintaan(remaining);
+        setSekaliPakaiToday([]);
+        reloadData();
+        showFeedback({ type: 'success', title: 'Semua log transaksi alat sekali pakai hari ini berhasil dibersihkan.' });
+      }
     }
 
     setShowClearModal(false);
@@ -323,6 +408,21 @@ export default function AktivitasKartuPage() {
       key: 'status_alat',
       label: 'Status Alat',
       render: (row) => {
+        if (row.status_sekali_pakai) {
+          if (row.status_sekali_pakai === 'disetujui') {
+            return <Badge status="disetujui" label="Disetujui" />;
+          }
+          if (row.status_sekali_pakai === 'ditolak') {
+            return <Badge status="ditolak" label="Ditolak" />;
+          }
+          if (row.status_sekali_pakai === 'dibatalkan') {
+            return <Badge status="dibatalkan" label="Dibatalkan" />;
+          }
+          if (row.status_sekali_pakai === 'menunggu') {
+            return <Badge status="menunggu" label="Menunggu" />;
+          }
+        }
+
         if (row.status === 'menunggu') {
           return <Badge status="menunggu" label="Menunggu" />;
         }
@@ -359,7 +459,16 @@ export default function AktivitasKartuPage() {
             </div>
           );
         }
-        if (row.status === 'menunggu') {
+        if (row.status_sekali_pakai === 'disetujui') {
+          return <Badge status="berhasil" label="Disetujui" />;
+        }
+        if (row.status_sekali_pakai === 'ditolak') {
+          return <Badge status="ditolak" label="Ditolak" />;
+        }
+        if (row.status_sekali_pakai === 'dibatalkan') {
+          return <Badge status="dibatalkan" label="Dibatalkan" />;
+        }
+        if (row.status === 'menunggu' || row.status_sekali_pakai === 'menunggu') {
           return <Badge status="menunggu" label="Menunggu" />;
         }
         return <Badge status="berhasil" />;
@@ -500,7 +609,7 @@ export default function AktivitasKartuPage() {
             data={filteredData}
             loading={loading}
             searchPlaceholder="Cari aktivitas tap..."
-            searchKeys={['kelas', 'uid_kartu', 'nama_alat', 'jenis_terdeteksi', 'jenis_tap', 'nama_pemegang']}
+            searchKeys={['kelas', 'uid_kartu', 'nama_alat', 'jenis_terdeteksi', 'jenis_tap', 'nama_pemegang', 'status_sekali_pakai']}
             emptyMessage="Belum ada aktivitas tap RFID untuk hari ini"
             actionButton={
               <div className="flex items-center gap-2">
@@ -518,9 +627,10 @@ export default function AktivitasKartuPage() {
                     icon={IconTrash}
                     onClick={() => {
                       if (taps.length === 0) {
-                        showFeedback({ type: 'warning', title: 'Tidak ada data log', message: 'Log masih kosong.' });
+                        showFeedback({ type: 'warning', title: 'Tidak ada data log', message: 'Log RFID masih kosong.' });
                         return;
                       }
+                      setClearTarget('rfid');
                       setShowClearModal(true);
                     }}
                     className="w-full md:w-auto justify-center whitespace-nowrap"
@@ -555,14 +665,33 @@ export default function AktivitasKartuPage() {
             searchKeys={['kelas', 'nama_alat', 'uid_kartu', 'pemegang', 'petugas', 'catatan']}
             emptyMessage="Belum ada transaksi alat sekali pakai untuk hari ini"
             actionButton={
-              <button
-                type="button"
-                onClick={() => reloadData(false)}
-                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
-                title="Refresh data"
-              >
-                <IconRefresh size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => reloadData(false)}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                  title="Refresh data"
+                >
+                  <IconRefresh size={18} />
+                </button>
+                {isAdmin && (
+                  <Button
+                    variant="danger-soft"
+                    icon={IconTrash}
+                    onClick={() => {
+                      if (sekaliPakaiToday.length === 0) {
+                        showFeedback({ type: 'warning', title: 'Tidak ada data log', message: 'Log transaksi sekali pakai masih kosong.' });
+                        return;
+                      }
+                      setClearTarget('sekali_pakai');
+                      setShowClearModal(true);
+                    }}
+                    className="w-full md:w-auto justify-center whitespace-nowrap"
+                  >
+                    Hapus Log Sekali Pakai
+                  </Button>
+                )}
+              </div>
             }
           />
         </div>
@@ -575,8 +704,12 @@ export default function AktivitasKartuPage() {
           setShowClearModal(false);
           setClearInput('');
         }}
-        title="Hapus Semua Log"
-        subtitle="Yakin ingin menghapus semua data?"
+        title={clearTarget === 'rfid' ? 'Hapus Semua Log RFID' : 'Hapus Log Transaksi Sekali Pakai'}
+        subtitle={
+          clearTarget === 'rfid'
+            ? 'Yakin ingin menghapus seluruh log aktivitas tap RFID?'
+            : 'Yakin ingin menghapus riwayat transaksi alat sekali pakai hari ini?'
+        }
         maxWidth="max-w-md"
       >
         <div className="space-y-4">
@@ -585,7 +718,9 @@ export default function AktivitasKartuPage() {
               Peringatan Penting
             </h4>
             <p className="text-xs text-red-700 leading-relaxed">
-              Semua data aktivitas RFID ({taps.length} log) akan dihapus selamanya dan tidak bisa dikembalikan.
+              {clearTarget === 'rfid'
+                ? `Semua data aktivitas RFID (${taps.length} log) akan dihapus selamanya dan tidak bisa dikembalikan.`
+                : `Semua data transaksi alat sekali pakai (${sekaliPakaiToday.length} data) yang telah diproses akan dihapus selamanya.`}
             </p>
           </div>
 
@@ -621,7 +756,7 @@ export default function AktivitasKartuPage() {
               onClick={handleClearAll}
               className="w-full sm:w-auto justify-center h-11"
             >
-              Hapus Semua Log
+              {clearTarget === 'rfid' ? 'Hapus Log RFID' : 'Hapus Log Sekali Pakai'}
             </Button>
           </div>
         </div>

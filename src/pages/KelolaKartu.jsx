@@ -102,16 +102,64 @@ async function deleteKartu(uid_kartu) {
   if (!res.ok) throw new Error(res.message);
 }
 
-async function checkUidUsed(uid_kartu, excludeUid) {
+async function checkCardUidAvailability(uid, excludeUid = null) {
+  const cleanUid = (uid || '').trim();
+  if (!cleanUid) return { used: false };
+
   if (isSupabaseConfigured) {
-    let q = supabase.from('kartu_rfid').select('uid_kartu').eq('uid_kartu', uid_kartu.trim());
+    // 1. Cek di tabel kartu_rfid
+    let q = supabase.from('kartu_rfid').select('uid_kartu, kelas').eq('uid_kartu', cleanUid);
     if (excludeUid) q = q.neq('uid_kartu', excludeUid);
-    const { data } = await q.maybeSingle();
-    return !!data;
+    const { data: existingKartu } = await q.maybeSingle();
+
+    if (existingKartu) {
+      return {
+        used: true,
+        type: 'kartu',
+        message: `UID sudah terdaftar untuk Kelas "${existingKartu.kelas}".`,
+      };
+    }
+
+    // 2. Cek di tabel alat (agar kartu dan tag alat tidak bentrok)
+    const { data: existingAlat } = await supabase
+      .from('alat')
+      .select('id, nama, kode')
+      .eq('kode', cleanUid)
+      .maybeSingle();
+
+    if (existingAlat) {
+      return {
+        used: true,
+        type: 'alat',
+        message: `UID ini sudah digunakan oleh Tag Alat "${existingAlat.nama}" (ID: ${existingAlat.id}).`,
+      };
+    }
+
+    return { used: false };
   }
-  return dbService.getKartu().some(
-    (k) => k.uid_kartu === uid_kartu.trim() && k.uid_kartu !== excludeUid
-  );
+
+  // Local storage check
+  const allKartu = dbService.getKartu();
+  const foundKartu = allKartu.find(k => k.uid_kartu === cleanUid && k.uid_kartu !== excludeUid);
+  if (foundKartu) {
+    return {
+      used: true,
+      type: 'kartu',
+      message: `UID sudah terdaftar untuk Kelas "${foundKartu.kelas}".`,
+    };
+  }
+
+  const allAlat = dbService.getAlat();
+  const foundAlat = allAlat.find(a => a.kode === cleanUid);
+  if (foundAlat) {
+    return {
+      used: true,
+      type: 'alat',
+      message: `UID ini sudah digunakan oleh Tag Alat "${foundAlat.nama}".`,
+    };
+  }
+
+  return { used: false };
 }
 
 export default function KartuRfidPage() {
@@ -180,16 +228,26 @@ export default function KartuRfidPage() {
         .on(
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'tap_log' },
-          (payload) => {
+          async (payload) => {
             const scannedUid = (payload.new?.uid_alat || payload.new?.uid_kartu || '').trim();
             if (scannedUid) {
+              const check = await checkCardUidAvailability(scannedUid, editItem?.uid_kartu);
               setForm((prev) => ({ ...prev, uid_kartu: scannedUid }));
-              setErrors((prev) => ({ ...prev, uid_kartu: null }));
-              showFeedback({
-                type: 'success',
-                title: 'Kartu Terdeteksi!',
-                message: `UID ${scannedUid} berhasil dibaca dari scanner.`,
-              });
+              if (check.used) {
+                setErrors((prev) => ({ ...prev, uid_kartu: check.message }));
+                showFeedback({
+                  type: 'error',
+                  title: 'UID Sudah Terdaftar!',
+                  message: check.message,
+                });
+              } else {
+                setErrors((prev) => ({ ...prev, uid_kartu: null }));
+                showFeedback({
+                  type: 'success',
+                  title: 'Kartu Terdeteksi!',
+                  message: `UID ${scannedUid} berhasil dibaca dari scanner.`,
+                });
+              }
             }
           }
         )
@@ -199,19 +257,29 @@ export default function KartuRfidPage() {
         supabase.removeChannel(ch);
       };
     } else {
-      const handleStorageUpdate = () => {
+      const handleStorageUpdate = async () => {
         const logs = dbService.getTapLog();
         if (logs.length > 0) {
           const latest = logs[0];
           const scannedUid = (latest.uid_alat || latest.uid_kartu || '').trim();
           if (scannedUid) {
+            const check = await checkCardUidAvailability(scannedUid, editItem?.uid_kartu);
             setForm((prev) => ({ ...prev, uid_kartu: scannedUid }));
-            setErrors((prev) => ({ ...prev, uid_kartu: null }));
-            showFeedback({
-              type: 'success',
-              title: 'Kartu Terdeteksi!',
-              message: `UID ${scannedUid} berhasil dibaca dari scanner.`,
-            });
+            if (check.used) {
+              setErrors((prev) => ({ ...prev, uid_kartu: check.message }));
+              showFeedback({
+                type: 'error',
+                title: 'UID Sudah Terdaftar!',
+                message: check.message,
+              });
+            } else {
+              setErrors((prev) => ({ ...prev, uid_kartu: null }));
+              showFeedback({
+                type: 'success',
+                title: 'Kartu Terdeteksi!',
+                message: `UID ${scannedUid} berhasil dibaca dari scanner.`,
+              });
+            }
           }
         }
       };
@@ -248,7 +316,16 @@ export default function KartuRfidPage() {
           if (diffMs < 30000) {
             const uid = (latestTap.uid_alat || latestTap.uid_kartu || '').trim();
             if (uid) {
+              const check = await checkCardUidAvailability(uid);
               setForm((prev) => ({ ...prev, uid_kartu: uid }));
+              if (check.used) {
+                setErrors((prev) => ({ ...prev, uid_kartu: check.message }));
+                showFeedback({
+                  type: 'warning',
+                  title: 'UID Baru Saja Ditap Sudah Terdaftar!',
+                  message: check.message,
+                });
+              }
             }
           }
         }
@@ -268,12 +345,14 @@ export default function KartuRfidPage() {
   const handleSave = async (e) => {
     e.preventDefault();
     const next = {};
-    if (!form.uid_kartu?.trim()) next.uid_kartu = 'Nomor kartu wajib diisi (tempelkan kartu pada scanner reader).';
+    if (!form.uid_kartu?.trim()) {
+      next.uid_kartu = 'Nomor kartu wajib diisi (tempelkan kartu pada scanner reader).';
+    }
     if (!form.kelas?.trim()) next.kelas = 'Kelas wajib diisi.';
 
     if (form.uid_kartu?.trim()) {
-      const used = await checkUidUsed(form.uid_kartu, editItem?.uid_kartu);
-      if (used) next.uid_kartu = 'Nomor kartu tersebut sudah digunakan.';
+      const check = await checkCardUidAvailability(form.uid_kartu, editItem?.uid_kartu);
+      if (check.used) next.uid_kartu = check.message;
     }
 
     setErrors(next);
@@ -476,9 +555,13 @@ export default function KartuRfidPage() {
                   placeholder={editItem ? 'UID Kartu' : 'Tempelkan kartu ke reader RFID...'}
                 />
                 {form.uid_kartu ? (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full shadow-xs">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Terbaca
+                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-xs ${
+                    errors.uid_kartu
+                      ? 'text-rose-700 bg-rose-50 border border-rose-200'
+                      : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                  }`}>
+                    <span className={`w-2 h-2 rounded-full ${errors.uid_kartu ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
+                    {errors.uid_kartu ? 'Duplikat' : 'Terbaca'}
                   </span>
                 ) : (
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
@@ -501,8 +584,8 @@ export default function KartuRfidPage() {
                   </div>
                 ) : (
                   <div className="flex items-center justify-between text-xs px-1 text-gray-500">
-                    <span className="text-emerald-600 font-medium flex items-center gap-1">
-                      ✓ UID identitas kartu berhasil dibaca dari scanner
+                    <span className={errors.uid_kartu ? 'text-rose-600 font-medium flex items-center gap-1' : 'text-emerald-600 font-medium flex items-center gap-1'}>
+                      {errors.uid_kartu ? '⚠ Kartu sudah terdaftar di sistem' : '✓ UID identitas kartu berhasil dibaca dari scanner'}
                     </span>
                     <span className="text-gray-400">
                       Tap kartu lain jika ingin mengganti

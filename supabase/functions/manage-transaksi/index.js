@@ -89,51 +89,38 @@ Deno.serve(async (req) => {
           return json({ success: false, message: "Hanya Admin yang dapat menghapus semua data" }, 403);
         }
 
-        if (clear === "riwayat") {
-          // Cek dulu ada data
-          const { count } = await supabaseAdmin
-            .from("transaksi")
-            .select("id", { count: "exact", head: true });
-
-          if (!count || count === 0) {
-            return json({ success: false, message: "Tidak ada riwayat transaksi yang dapat dihapus" }, 422);
-          }
-
+        if (clear === "riwayat" || clear === "pinjam") {
           const { error: deleteErr } = await supabaseAdmin
             .from("transaksi")
             .delete()
             .neq("id", ""); // delete all rows
 
           if (deleteErr) throw deleteErr;
-          
-          // Hapus permintaan habis pakai yang sudah diproses
-          await supabaseAdmin
+          return json({ success: true, message: "Semua riwayat transaksi peminjaman berhasil dihapus" });
+        }
+
+        if (clear === "sekalipakai" || clear === "sekali_pakai") {
+          // Hapus permintaan habis pakai yang sudah diproses (riwayat)
+          const { error: deleteErr } = await supabaseAdmin
             .from("permintaan_habis_pakai")
             .delete()
             .neq("status", "menunggu");
 
-          return json({ success: true, message: `${count} riwayat transaksi berhasil dihapus` });
+          if (deleteErr) throw deleteErr;
+          return json({ success: true, message: "Semua riwayat alat sekali pakai berhasil dihapus" });
         }
 
         if (clear === "taplog") {
-          const { count } = await supabaseAdmin
-            .from("tap_log")
-            .select("id", { count: "exact", head: true });
-
-          if (!count || count === 0) {
-            return json({ success: false, message: "Tidak ada log tap yang dapat dihapus" }, 422);
-          }
-
           const { error: deleteErr } = await supabaseAdmin
             .from("tap_log")
             .delete()
             .neq("id", "");
 
           if (deleteErr) throw deleteErr;
-          return json({ success: true, message: `${count} log tap berhasil dihapus` });
+          return json({ success: true, message: "Semua log tap berhasil dihapus" });
         }
 
-        return json({ success: false, message: 'Parameter clear harus "riwayat" atau "taplog"' }, 400);
+        return json({ success: false, message: 'Parameter clear harus "riwayat", "pinjam", "sekalipakai", atau "taplog"' }, 400);
       }
 
       // Hapus 1 transaksi — admin only
