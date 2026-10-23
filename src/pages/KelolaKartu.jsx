@@ -171,15 +171,91 @@ export default function KartuRfidPage() {
     return () => supabase.removeChannel(ch);
   }, [reload]);
 
-  const openAdd = () => {
+  useEffect(() => {
+    if (!modal || editItem) return;
+
+    if (isSupabaseConfigured) {
+      const ch = supabase
+        .channel(`kelola-kartu-tap-reader-${Date.now()}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'tap_log' },
+          (payload) => {
+            const scannedUid = (payload.new?.uid_alat || payload.new?.uid_kartu || '').trim();
+            if (scannedUid) {
+              setForm((prev) => ({ ...prev, uid_kartu: scannedUid }));
+              setErrors((prev) => ({ ...prev, uid_kartu: null }));
+              showFeedback({
+                type: 'success',
+                title: 'Kartu Terdeteksi!',
+                message: `UID ${scannedUid} berhasil dibaca dari scanner.`,
+              });
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(ch);
+      };
+    } else {
+      const handleStorageUpdate = () => {
+        const logs = dbService.getTapLog();
+        if (logs.length > 0) {
+          const latest = logs[0];
+          const scannedUid = (latest.uid_alat || latest.uid_kartu || '').trim();
+          if (scannedUid) {
+            setForm((prev) => ({ ...prev, uid_kartu: scannedUid }));
+            setErrors((prev) => ({ ...prev, uid_kartu: null }));
+            showFeedback({
+              type: 'success',
+              title: 'Kartu Terdeteksi!',
+              message: `UID ${scannedUid} berhasil dibaca dari scanner.`,
+            });
+          }
+        }
+      };
+
+      window.addEventListener('simlab_storage_updated', handleStorageUpdate);
+      return () => {
+        window.removeEventListener('simlab_storage_updated', handleStorageUpdate);
+      };
+    }
+  }, [modal, editItem]);
+
+  const openAdd = async () => {
     setEditItem(null);
     setErrors({});
     setForm({
       ...EMPTY_FORM,
-      uid_kartu: 'KARTU-' + Math.random().toString(36).substring(2, 8).toUpperCase(),
+      uid_kartu: '',
       aktif: true,
     });
     setModal(true);
+
+    // Cek apakah baru saja ada kartu yang di-tap di reader dalam 30 detik terakhir
+    if (isSupabaseConfigured) {
+      try {
+        const { data: latestTap } = await supabase
+          .from('tap_log')
+          .select('uid_alat, uid_kartu, waktu_tap')
+          .order('waktu_tap', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (latestTap && latestTap.waktu_tap) {
+          const diffMs = Date.now() - new Date(latestTap.waktu_tap).getTime();
+          if (diffMs < 30000) {
+            const uid = (latestTap.uid_alat || latestTap.uid_kartu || '').trim();
+            if (uid) {
+              setForm((prev) => ({ ...prev, uid_kartu: uid }));
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Gagal membaca tap terakhir:', e);
+      }
+    }
   };
 
   const openEdit = (item) => {
@@ -192,7 +268,7 @@ export default function KartuRfidPage() {
   const handleSave = async (e) => {
     e.preventDefault();
     const next = {};
-    if (!form.uid_kartu?.trim()) next.uid_kartu = 'Nomor kartu wajib diisi.';
+    if (!form.uid_kartu?.trim()) next.uid_kartu = 'Nomor kartu wajib diisi (tempelkan kartu pada scanner reader).';
     if (!form.kelas?.trim()) next.kelas = 'Kelas wajib diisi.';
 
     if (form.uid_kartu?.trim()) {
@@ -384,16 +460,57 @@ export default function KartuRfidPage() {
             label="Nomor kartu (UID)"
             required
             error={errors.uid_kartu}
-            hint={editItem ? 'UID tidak bisa diubah setelah didaftarkan.' : 'Otomatis teracak, bisa edit manual sesuai UID fisik kartu.'}
+            hint={
+              editItem
+                ? 'UID tidak bisa diubah setelah didaftarkan.'
+                : 'UID otomatis terisi langsung saat kartu identitas di-tap pada alat scanner reader.'
+            }
           >
-            <input
-              required
-              value={form.uid_kartu}
-              onChange={(e) => setForm({ ...form, uid_kartu: e.target.value.toUpperCase().replace(/\s/g, '') })}
-              disabled={!!editItem}
-              className={`${inputClass} ${editItem ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
-              placeholder="A1B2C3D4 atau KARTU-XII-RPL1"
-            />
+            <div className="space-y-2">
+              <div className="relative">
+                <input
+                  required
+                  readOnly
+                  value={form.uid_kartu}
+                  className={`${inputClass} bg-gray-50 font-mono text-base font-semibold tracking-wider cursor-not-allowed`}
+                  placeholder={editItem ? 'UID Kartu' : 'Tempelkan kartu ke reader RFID...'}
+                />
+                {form.uid_kartu ? (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full shadow-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Terbaca
+                  </span>
+                ) : (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                    Menunggu Tap
+                  </span>
+                )}
+              </div>
+
+              {!editItem && (
+                !form.uid_kartu ? (
+                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-blue-50/80 border border-blue-200 text-xs text-blue-800">
+                    <span className="relative flex h-3 w-3 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-600"></span>
+                    </span>
+                    <span>
+                      <strong>Scanner Aktif:</strong> Tempelkan kartu kelas ke reader RFID. UID akan otomatis terisi tanpa perlu mengetik manual atau melihat serial monitor.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between text-xs px-1 text-gray-500">
+                    <span className="text-emerald-600 font-medium flex items-center gap-1">
+                      ✓ UID identitas kartu berhasil dibaca dari scanner
+                    </span>
+                    <span className="text-gray-400">
+                      Tap kartu lain jika ingin mengganti
+                    </span>
+                  </div>
+                )
+              )}
+            </div>
           </FormField>
           <FormField label="Kelas" required error={errors.kelas}>
             <input

@@ -414,8 +414,8 @@ export default function AktivitasKartuPage() {
           status={row.status || 'disetujui'}
           label={
             row.status === 'disetujui' ? 'Diberikan' :
-            row.status === 'menunggu' ? 'Menunggu' :
-            row.status === 'ditolak' ? 'Ditolak' : 'Dibatalkan'
+              row.status === 'menunggu' ? 'Menunggu' :
+                row.status === 'ditolak' ? 'Ditolak' : 'Dibatalkan'
           }
         />
       ),
@@ -453,33 +453,30 @@ export default function AktivitasKartuPage() {
         <button
           type="button"
           onClick={() => setActiveTab('all')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
-            activeTab === 'all'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${activeTab === 'all'
+            ? 'bg-blue-600 text-white shadow-xs'
+            : 'text-gray-600 hover:bg-gray-100'
+            }`}
         >
           Semua Aktivitas
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('rfid')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
-            activeTab === 'rfid'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${activeTab === 'rfid'
+            ? 'bg-blue-600 text-white shadow-xs'
+            : 'text-gray-600 hover:bg-gray-100'
+            }`}
         >
           Aktivitas RFID Reader ({filteredData.length})
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('sekali_pakai')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
-            activeTab === 'sekali_pakai'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${activeTab === 'sekali_pakai'
+            ? 'bg-blue-600 text-white shadow-xs'
+            : 'text-gray-600 hover:bg-gray-100'
+            }`}
         >
           Transaksi Sekali Pakai Hari Ini ({sekaliPakaiToday.length})
         </button>
@@ -490,8 +487,8 @@ export default function AktivitasKartuPage() {
         <div className="space-y-3 bg-white p-4 sm:p-5 rounded-2xl border border-main shadow-2xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
             <div>
-              <h2 className="text-base font-bold text-gray-800">Tabel Aktivitas Tap Kartu RFID (Reader ESP32)</h2>
-              <p className="text-xs text-muted">Khusus log scan kartu dan alat dari reader RFID / IoT hari ini.</p>
+              <h2 className="text-base font-bold text-gray-800">Tabel Aktivitas Tap Kartu RFID </h2>
+              <p className="text-xs text-muted">Khusus log scan kartu dan alat dari reader RFID hari ini.</p>
             </div>
             <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-blue-50 text-blue-800 border border-blue-200 self-start sm:self-auto">
               {filteredData.length} Tap Log

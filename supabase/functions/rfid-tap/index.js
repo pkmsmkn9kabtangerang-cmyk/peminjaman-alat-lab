@@ -14,59 +14,93 @@ const SESSION_DURATION_MS = 20 * 1000;
 const RFID_DEVICE_ID = Deno.env.get("RFID_DEVICE_ID") || "esp32-lab-01";
 const RFID_DEVICE_KEY = Deno.env.get("RFID_DEVICE_KEY") || "sim-key";
 
-// Session sementara RFID
-const kartuSessions = new Map();
-
 /* =========================================================
-   SESSION
+   SESSION PERSISTEN DATABASE (rfid_session)
 ========================================================= */
 
-function getSession(uid) {
-  const session = kartuSessions.get(uid);
+async function getActiveSession(supabase, deviceId) {
+  const { data, error } = await supabase
+    .from("rfid_session")
+    .select("*")
+    .eq("device_id", deviceId)
+    .maybeSingle();
 
-  if (!session) return null;
+  if (error) {
+    console.error("getActiveSession error:", error);
+    throw error;
+  }
 
-  if (new Date() > new Date(session.expires)) {
-    kartuSessions.delete(uid);
+  if (!data) return null;
+
+  const now = new Date();
+  if (now > new Date(data.expires_at)) {
+    // Sesi kedaluwarsa, bersihkan dari database
+    const { error: delError } = await supabase
+      .from("rfid_session")
+      .delete()
+      .eq("device_id", deviceId);
+
+    if (delError) {
+      console.error("clear expired session error:", delError);
+    }
     return null;
   }
 
-  return session;
+  return data;
 }
 
-function setSession(uid, jenis, kelas = "") {
-  const expires = new Date(Date.now() + SESSION_DURATION_MS);
+async function setSession(supabase, deviceId, uid_kartu, jenis, kelas = "") {
+  const expires_at = new Date(Date.now() + SESSION_DURATION_MS).toISOString();
+  const updated_at = new Date().toISOString();
 
-  kartuSessions.set(uid, {
-    uid_kartu: uid,
-    jenis,
-    kelas,
-    expires,
-  });
-}
+  const { error } = await supabase
+    .from("rfid_session")
+    .upsert(
+      {
+        device_id: deviceId,
+        uid_kartu,
+        kelas,
+        jenis,
+        expires_at,
+        updated_at,
+      },
+      { onConflict: "device_id" }
+    );
 
-function extendSession(uid) {
-  const session = kartuSessions.get(uid);
-
-  if (session) {
-    session.expires = new Date(Date.now() + SESSION_DURATION_MS);
+  if (error) {
+    console.error("setSession error:", error);
+    throw error;
   }
 }
 
-function clearSession(uid) {
-  kartuSessions.delete(uid);
+async function extendSession(supabase, deviceId) {
+  const expires_at = new Date(Date.now() + SESSION_DURATION_MS).toISOString();
+  const updated_at = new Date().toISOString();
+
+  const { error } = await supabase
+    .from("rfid_session")
+    .update({
+      expires_at,
+      updated_at,
+    })
+    .eq("device_id", deviceId);
+
+  if (error) {
+    console.error("extendSession error:", error);
+    throw error;
+  }
 }
 
-function getActiveSessions() {
-  const now = new Date();
+async function clearSession(supabase, deviceId) {
+  const { error } = await supabase
+    .from("rfid_session")
+    .delete()
+    .eq("device_id", deviceId);
 
-  for (const [uid, session] of kartuSessions.entries()) {
-    if (new Date(session.expires) <= now) {
-      kartuSessions.delete(uid);
-    }
+  if (error) {
+    console.error("clearSession error:", error);
+    throw error;
   }
-
-  return [...kartuSessions.values()];
 }
 
 /* =========================================================
@@ -173,12 +207,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      const activeSessions = getActiveSessions();
-
-      const currentSession =
-        activeSessions.length > 0
-          ? activeSessions[0]
-          : null;
+      const currentSession = await getActiveSession(supabase, deviceId);
 
       /* ===================================================
          KARTU YANG SAMA → SELESAIKAN SESSION
@@ -186,7 +215,7 @@ Deno.serve(async (req) => {
 
       if (currentSession) {
         if (currentSession.uid_kartu === uid) {
-          clearSession(uid);
+          await clearSession(supabase, deviceId);
 
           await addTapLog(
             supabase,
@@ -259,7 +288,7 @@ Deno.serve(async (req) => {
           ? "kembali"
           : "pinjam";
 
-      setSession(uid, jenis, kartu.kelas);
+      await setSession(supabase, deviceId, uid, jenis, kartu.kelas);
 
       await addTapLog(
         supabase,
@@ -332,9 +361,9 @@ Deno.serve(async (req) => {
        8. CEK SESSION KARTU
     ===================================================== */
 
-    const activeSessions = getActiveSessions();
+    const sess = await getActiveSession(supabase, deviceId);
 
-    if (activeSessions.length === 0) {
+    if (!sess) {
       await addTapLog(
         supabase,
         null,
@@ -353,8 +382,6 @@ Deno.serve(async (req) => {
         type: "alat",
       });
     }
-
-    const sess = activeSessions[0];
 
     /* =====================================================
        9. AMBIL KELAS KARTU
@@ -469,7 +496,7 @@ Deno.serve(async (req) => {
         throw insertReqErr;
       }
 
-      extendSession(sess.uid_kartu);
+      await extendSession(supabase, deviceId);
 
       await addTapLog(
         supabase,
@@ -513,7 +540,7 @@ Deno.serve(async (req) => {
     }
 
     /* =====================================================
-       11. JIKA SUDAH DIPINJAM → KEMBALIKAN
+       12. JIKA SUDAH DIPINJAM → KEMBALIKAN
     ===================================================== */
 
     if (activeTrx) {
@@ -531,7 +558,7 @@ Deno.serve(async (req) => {
         throw updateError;
       }
 
-      extendSession(sess.uid_kartu);
+      await extendSession(supabase, deviceId);
 
       await addTapLog(
         supabase,
@@ -555,7 +582,7 @@ Deno.serve(async (req) => {
     }
 
     /* =====================================================
-       12. BELUM DIPINJAM → CEK STOK
+       13. BELUM DIPINJAM → CEK STOK
     ===================================================== */
 
     if (alat.stok_tersedia <= 0) {
@@ -579,7 +606,7 @@ Deno.serve(async (req) => {
     }
 
     /* =====================================================
-       13. BUAT TRANSAKSI PEMINJAMAN
+       14. BUAT TRANSAKSI PEMINJAMAN
     ===================================================== */
 
     const trxId =
@@ -609,13 +636,13 @@ Deno.serve(async (req) => {
     }
 
     /* =====================================================
-       14. PERPANJANG SESSION
+       15. PERPANJANG SESSION
     ===================================================== */
 
-    extendSession(sess.uid_kartu);
+    await extendSession(supabase, deviceId);
 
     /* =====================================================
-       15. LOG BERHASIL
+       16. LOG BERHASIL
     ===================================================== */
 
     await addTapLog(
@@ -631,7 +658,7 @@ Deno.serve(async (req) => {
     );
 
     /* =====================================================
-       16. RESPONSE KE ESP32
+       17. RESPONSE KE ESP32
     ===================================================== */
 
     return json({
