@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
     if (method === "PUT") {
       if (!id) return json({ success: false, message: "Parameter id diperlukan" }, 400);
 
-      if (!["admin", "petugas"].includes(profile.role)) {
+      if (!["super_admin", "admin", "petugas"].includes(profile.role)) {
         return json({ success: false, message: "Akses ditolak" }, 403);
       }
 
@@ -83,10 +83,10 @@ Deno.serve(async (req) => {
 
     // ── DELETE ──
     if (method === "DELETE") {
-      // Hapus semua harus admin
+      // Hapus semua harus admin atau super_admin
       if (clear) {
-        if (profile.role !== "admin") {
-          return json({ success: false, message: "Hanya Admin yang dapat menghapus semua data" }, 403);
+        if (!["admin", "super_admin"].includes(profile.role)) {
+          return json({ success: false, message: "Hanya Admin atau Super Admin yang dapat menghapus semua data" }, 403);
         }
 
         if (clear === "riwayat" || clear === "pinjam") {
@@ -126,8 +126,8 @@ Deno.serve(async (req) => {
       // Hapus 1 transaksi — admin only
       if (!id) return json({ success: false, message: "Parameter id diperlukan" }, 400);
 
-      if (profile.role !== "admin") {
-        return json({ success: false, message: "Hanya Admin yang dapat menghapus transaksi" }, 403);
+      if (!["admin", "super_admin"].includes(profile.role)) {
+        return json({ success: false, message: "Hanya Admin atau Super Admin yang dapat menghapus transaksi" }, 403);
       }
 
       const { error: deleteErr } = await supabaseAdmin

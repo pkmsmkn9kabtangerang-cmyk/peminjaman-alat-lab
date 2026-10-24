@@ -242,11 +242,6 @@ export default function KartuRfidPage() {
                 });
               } else {
                 setErrors((prev) => ({ ...prev, uid_kartu: null }));
-                showFeedback({
-                  type: 'success',
-                  title: 'Kartu Terdeteksi!',
-                  message: `UID ${scannedUid} berhasil dibaca dari scanner.`,
-                });
               }
             }
           }
@@ -274,11 +269,6 @@ export default function KartuRfidPage() {
               });
             } else {
               setErrors((prev) => ({ ...prev, uid_kartu: null }));
-              showFeedback({
-                type: 'success',
-                title: 'Kartu Terdeteksi!',
-                message: `UID ${scannedUid} berhasil dibaca dari scanner.`,
-              });
             }
           }
         }
@@ -583,7 +573,7 @@ export default function KartuRfidPage() {
                     </span>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between text-xs px-1 text-gray-500">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs px-1 text-gray-500">
                     <span className={errors.uid_kartu ? 'text-rose-600 font-medium flex items-center gap-1' : 'text-emerald-600 font-medium flex items-center gap-1'}>
                       {errors.uid_kartu ? '⚠ Kartu sudah terdaftar di sistem' : '✓ UID identitas kartu berhasil dibaca dari scanner'}
                     </span>

@@ -12,6 +12,14 @@
 // ── Seed Data sesuai schema PLAN.md ───────────────────────────
 const INITIAL_USERS = [
   {
+    uid: 'usr-superadmin-1',
+    nama: 'Super Admin',
+    email: 'superadmin@smk.sch.id',
+    role: 'super_admin',
+    aktif: true,
+    created_at: new Date().toISOString(),
+  },
+  {
     uid: 'usr-admin-1',
     nama: 'Administrator Lab',
     email: 'admin@smk.sch.id',

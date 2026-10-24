@@ -23,34 +23,34 @@ import { IconBell, IconX, IconCheck, IconAlertTriangle, IconMenu2 } from '@table
 
 // ── Internal tab keys (tidak berubah) ────────────────────────
 const PAGE_TITLES = {
-  dashboard:          'Dashboard',
-  realtime_card:      'Aktivitas RFID',
-  peminjaman:         'Peminjaman',
-  pengembalian:       'Pengembalian',
-  riwayat:            'Riwayat Transaksi',
-  list_alat:          'Daftar Alat',
-  inventaris:         'Inventaris',
-  kartu_rfid:         'Kartu RFID',
-  pengguna:           'Pengguna',
-  simulasi_iot:       'Simulasi Kartu',
-  ganti_password:     'Ganti Password',
-  sekali_pakai:       'Pemberian Sekali Pakai',
+  dashboard: 'Dashboard',
+  realtime_card: 'Aktivitas Transaksi',
+  peminjaman: 'Peminjaman Manual',
+  pengembalian: 'Pengembalian Manual',
+  riwayat: 'Riwayat Transaksi',
+  list_alat: 'Daftar Alat',
+  inventaris: 'Kelola Alat',
+  kartu_rfid: 'Kelola Kartu',
+  pengguna: 'Kelola Pengguna',
+  simulasi_iot: 'Simulasi Kartu',
+  ganti_password: 'Ganti Password',
+  sekali_pakai: 'Alat Sekali Pakai Manual',
 };
 
 // ── URL mapping: tab key → clean pathname ─────────────────────
 const TAB_TO_PATH = {
-  dashboard:          '/dashboard',
-  realtime_card:      '/aktivitas-rfid',
-  peminjaman:         '/peminjaman',
-  pengembalian:       '/pengembalian',
-  riwayat:            '/riwayat',
-  list_alat:          '/daftar-alat',
-  inventaris:         '/inventaris',
-  kartu_rfid:         '/kartu-rfid',
-  pengguna:           '/pengguna',
-  simulasi_iot:       '/simulasi-iot',
-  ganti_password:     '/ganti-password',
-  sekali_pakai:       '/sekali-pakai',
+  dashboard: '/dashboard',
+  realtime_card: '/aktivitas-rfid',
+  peminjaman: '/peminjaman',
+  pengembalian: '/pengembalian',
+  riwayat: '/riwayat',
+  list_alat: '/daftar-alat',
+  inventaris: '/inventaris',
+  kartu_rfid: '/kartu-rfid',
+  pengguna: '/pengguna',
+  simulasi_iot: '/simulasi-iot',
+  ganti_password: '/ganti-password',
+  sekali_pakai: '/sekali-pakai',
 };
 
 // Reverse map: pathname → tab key
@@ -389,8 +389,8 @@ export default function App() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-3 text-gray-500">
           <svg className="animate-spin h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
           </svg>
           <p className="text-sm font-medium">Memuat aplikasi...</p>
         </div>
@@ -406,10 +406,10 @@ export default function App() {
   // ── Render: Wajib Ganti Password ─────────────────────────────
   if (currentUser.wajib_ganti_password) {
     return <ChangePasswordMandiri
-             user={currentUser}
-             onSuccess={() => setCurrentUser({...currentUser, wajib_ganti_password: false})}
-             onCancel={handleLogout}
-           />;
+      user={currentUser}
+      onSuccess={() => setCurrentUser({ ...currentUser, wajib_ganti_password: false })}
+      onCancel={handleLogout}
+    />;
   }
 
   // ── Render: Main app ─────────────────────────────────────────
@@ -432,16 +432,22 @@ export default function App() {
         setMobileMenuOpen={setMobileMenuOpen}
       />
 
-      <main className="flex-1 md:ml-[232px] min-h-screen flex flex-col min-w-0">
-        <header className="min-h-14 md:min-h-16 bg-surface border-b border-main px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-3 min-w-0">
+      <main className="flex-1 md:ml-[68px] min-h-screen flex flex-col min-w-0 transition-all duration-300">
+        <header className="min-h-14 md:min-h-16 bg-surface border-b border-main px-3 sm:px-6 flex items-center justify-between sticky top-0 z-20">
+          <div className="flex items-center gap-2.5 min-w-0">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="md:hidden p-1.5 -ml-1.5 text-muted hover:text-main hover:bg-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              className="md:hidden p-2 -ml-1 text-muted hover:text-main hover:bg-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
               aria-label="Buka menu navigasi"
             >
               <IconMenu2 className="w-6 h-6" />
             </button>
+            <div className="md:hidden flex items-center gap-2 min-w-0">
+              <span className="font-bold text-main text-base tracking-tight shrink-0">SISPAS</span>
+              <span className="text-xs text-muted truncate max-w-[130px] sm:max-w-none">
+                {PAGE_TITLES[currentTab] || ''}
+              </span>
+            </div>
           </div>
           <button
             id="btn-bell-notifikasi"
@@ -457,21 +463,21 @@ export default function App() {
           </button>
         </header>
 
-        <div className="p-4 sm:p-6 flex-1 min-w-0">
+        <div className="p-3 sm:p-6 flex-1 min-w-0 overflow-x-hidden">
           <div className={currentTab === 'dashboard' ? 'block' : 'hidden'}>
             <Dashboard setCurrentTab={handleTabChange} user={currentUser} />
           </div>
-          {currentTab === 'realtime_card'  && <AktivitasKartu />}
-          {currentTab === 'peminjaman'     && <Peminjaman user={currentUser} />}
-          {currentTab === 'pengembalian'   && <Pengembalian user={currentUser} />}
-          {currentTab === 'riwayat'        && <Riwayat />}
-          {currentTab === 'list_alat'      && <DaftarAlat />}
-          {currentTab === 'inventaris'     && <KelolaAlat />}
-          {currentTab === 'kartu_rfid'     && <KelolaKartu />}
-          {currentTab === 'pengguna'       && <KelolaPetugas currentUser={currentUser} />}
-          {currentTab === 'simulasi_iot'   && <SimulasiKartu />}
+          {currentTab === 'realtime_card' && <AktivitasKartu />}
+          {currentTab === 'peminjaman' && <Peminjaman user={currentUser} />}
+          {currentTab === 'pengembalian' && <Pengembalian user={currentUser} />}
+          {currentTab === 'riwayat' && <Riwayat />}
+          {currentTab === 'list_alat' && <DaftarAlat />}
+          {currentTab === 'inventaris' && <KelolaAlat />}
+          {currentTab === 'kartu_rfid' && <KelolaKartu />}
+          {currentTab === 'pengguna' && <KelolaPetugas currentUser={currentUser} />}
+          {currentTab === 'simulasi_iot' && <SimulasiKartu />}
           {currentTab === 'ganti_password' && <GantiPassword user={currentUser} />}
-          {currentTab === 'sekali_pakai'   && <PemberianSekaliPakai user={currentUser} />}
+          {currentTab === 'sekali_pakai' && <PemberianSekaliPakai user={currentUser} />}
         </div>
       </main>
     </div>

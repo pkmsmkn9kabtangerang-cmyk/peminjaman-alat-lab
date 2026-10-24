@@ -24,8 +24,8 @@ Deno.serve(async (req) => {
   if (auth.error) return auth.error;
   const { supabaseAdmin, profile } = auth;
 
-  // Hanya admin & petugas
-  if (!["admin", "petugas"].includes(profile.role)) {
+  // Hanya super_admin, admin & petugas
+  if (!["super_admin", "admin", "petugas"].includes(profile.role)) {
     return json({ success: false, message: "Akses ditolak" }, 403);
   }
 
@@ -108,8 +108,8 @@ Deno.serve(async (req) => {
       }
 
       if (aksi === "batalkan") {
-        if (profile.role !== "admin") {
-          return json({ success: false, message: "Hanya admin yang dapat membatalkan persetujuan" }, 403);
+        if (!["admin", "super_admin"].includes(profile.role)) {
+          return json({ success: false, message: "Hanya admin atau super admin yang dapat membatalkan persetujuan" }, 403);
         }
 
         const { data, error } = await supabaseAdmin.rpc("batalkan_permintaan_habis_pakai", {

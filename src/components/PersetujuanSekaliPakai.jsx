@@ -402,7 +402,6 @@ export default function PersetujuanSekaliPakai({ user }) {
                 )}
               </div>
               <p className="text-[14px] text-muted mt-0.5">
-                Otomatis masuk saat siswa men-tap alat yang di berikan dan sifatnya sekali pakai contonnya kabel. Petugas dapat menentukan ukuran/jumlah yang disetujui atau membatalkan.
               </p>
             </div>
           </div>
@@ -418,10 +417,10 @@ export default function PersetujuanSekaliPakai({ user }) {
         </div>
 
         {/* ── Tabs Navigation ── */}
-        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-amber-200/60">
+        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-amber-200/60 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap pb-1">
           <button
             onClick={() => setActiveTab('menunggu')}
-            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-2 ${activeTab === 'menunggu'
+            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-2 shrink-0 whitespace-nowrap ${activeTab === 'menunggu'
               ? 'bg-amber-600 text-white shadow-xs'
               : 'text-amber-900 hover:bg-amber-100/70'
               }`}
@@ -438,7 +437,7 @@ export default function PersetujuanSekaliPakai({ user }) {
 
           <button
             onClick={() => setActiveTab('riwayat')}
-            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-2 ${activeTab === 'riwayat'
+            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-2 shrink-0 whitespace-nowrap ${activeTab === 'riwayat'
               ? 'bg-amber-600 text-white shadow-xs'
               : 'text-amber-900 hover:bg-amber-100/70'
               }`}
@@ -459,7 +458,7 @@ export default function PersetujuanSekaliPakai({ user }) {
               </div>
               <h3 className="font-semibold text-main text-base">Tidak ada permintaan menunggu</h3>
               <p className="text-sm text-muted max-w-md mx-auto mt-1">
-                Semua permintaan alat sekali pakai sudah disetujui atau ditolak. Saat siswa men-tap RFID di scanner IoT, permintaan baru akan langsung muncul di sini.
+                Semua permintaan alat sekali pakai sudah disetujui atau ditolak, permintaan baru akan langsung muncul di sini
               </p>
             </div>
           ) : (
@@ -536,7 +535,7 @@ export default function PersetujuanSekaliPakai({ user }) {
         <div>
           {riwayatList.length === 0 ? (
             <div className="p-8 text-center bg-white">
-              <p className="text-muted text-sm">Belum ada riwayat persetujuan consumable dalam 24 jam terakhir.</p>
+              <p className="text-muted text-sm">Belum ada riwayat persetujuan Alat sekali pakai dalam 24 jam terakhir.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -636,9 +635,9 @@ export default function PersetujuanSekaliPakai({ user }) {
             </div>
 
             {/* Body */}
-            <div className="p-6 space-y-5">
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
               {/* Info Card */}
-              <div className="grid grid-cols-2 gap-3 p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 sm:p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm">
                 <div>
                   <span className="text-xs text-muted block">Alat Sekali Pakai</span>
                   <span className="font-bold text-main text-base block mt-0.5">{selectedReq.nama_alat}</span>
@@ -678,7 +677,7 @@ export default function PersetujuanSekaliPakai({ user }) {
 
                 {/* Sisa Stok Warning / Info */}
                 {stokAlatInfo && (
-                  <div className="mt-2 text-xs flex items-center justify-between text-gray-600">
+                  <div className="mt-2 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-gray-600">
                     <span>Sisa stok saat ini: <b>{stokAlatInfo.stok_tersedia} {selectedReq.satuan || 'unit'}</b></span>
                     <span>
                       Stok setelah disetujui:{' '}
@@ -706,12 +705,12 @@ export default function PersetujuanSekaliPakai({ user }) {
             </div>
 
             {/* Footer Buttons */}
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
+            <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-gray-50 border-t border-gray-100 flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-2.5 sm:gap-3">
               <button
                 type="button"
                 onClick={closeModals}
                 disabled={processing}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl text-sm font-semibold transition"
+                className="w-full sm:w-auto px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl text-sm font-semibold transition text-center"
               >
                 Batal
               </button>
@@ -719,7 +718,7 @@ export default function PersetujuanSekaliPakai({ user }) {
                 type="button"
                 onClick={handleSetujui}
                 disabled={processing || !jumlahSetuju || parseInt(jumlahSetuju, 10) <= 0}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition flex items-center gap-2 shadow-xs"
+                className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-xs"
               >
                 <IconCheck size={18} />
                 {processing ? 'Memproses...' : 'Setujui & Potong Stok'}
@@ -791,12 +790,12 @@ export default function PersetujuanSekaliPakai({ user }) {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
+            <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-gray-50 border-t border-gray-100 flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-2.5 sm:gap-3">
               <button
                 type="button"
                 onClick={closeModals}
                 disabled={processing}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl text-sm font-semibold transition"
+                className="w-full sm:w-auto px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl text-sm font-semibold transition text-center"
               >
                 Kembali
               </button>
@@ -804,7 +803,7 @@ export default function PersetujuanSekaliPakai({ user }) {
                 type="button"
                 onClick={handleTolak}
                 disabled={processing || !alasanTolak.trim()}
-                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition flex items-center gap-2 shadow-xs"
+                className="w-full sm:w-auto px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-xs"
               >
                 <IconX size={18} />
                 {processing ? 'Menolak...' : 'Tolak Permintaan'}
@@ -816,7 +815,7 @@ export default function PersetujuanSekaliPakai({ user }) {
 
       {/* ── MODAL 3: BATALKAN PERSETUJUAN (Revert Stock) ── */}
       {showBatalModal && selectedReq && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Header */}
             <div className="px-6 py-4 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
@@ -835,7 +834,7 @@ export default function PersetujuanSekaliPakai({ user }) {
             </div>
 
             {/* Body */}
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4">
               <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl text-sm text-amber-900 space-y-1">
                 <p>
                   Permintaan: <b>{selectedReq.nama_alat}</b> ({selectedReq.kelas})
@@ -863,12 +862,12 @@ export default function PersetujuanSekaliPakai({ user }) {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
+            <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-gray-50 border-t border-gray-100 flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-2.5 sm:gap-3">
               <button
                 type="button"
                 onClick={closeModals}
                 disabled={processing}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl text-sm font-semibold transition"
+                className="w-full sm:w-auto px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl text-sm font-semibold transition text-center"
               >
                 Tutup
               </button>
@@ -876,7 +875,7 @@ export default function PersetujuanSekaliPakai({ user }) {
                 type="button"
                 onClick={handleBatalkanPersetujuan}
                 disabled={processing}
-                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition flex items-center gap-2 shadow-xs"
+                className="w-full sm:w-auto px-5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-xs"
               >
                 <IconHistory size={18} />
                 {processing ? 'Membatalkan...' : 'Ya, Batalkan & Kembalikan Stok'}

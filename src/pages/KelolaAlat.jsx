@@ -206,11 +206,6 @@ export default function KelolaAlat() {
                 });
               } else {
                 setErrors((prev) => ({ ...prev, kode: null }));
-                showFeedback({
-                  type: 'success',
-                  title: 'Tag Alat Terdeteksi!',
-                  message: `UID ${scannedUid} berhasil dibaca dari scanner.`,
-                });
               }
             }
           }
@@ -238,11 +233,6 @@ export default function KelolaAlat() {
               });
             } else {
               setErrors((prev) => ({ ...prev, kode: null }));
-              showFeedback({
-                type: 'success',
-                title: 'Tag Alat Terdeteksi!',
-                message: `UID ${scannedUid} berhasil dibaca dari scanner.`,
-              });
             }
           }
         }
@@ -557,7 +547,7 @@ export default function KelolaAlat() {
                     </span>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between text-xs px-1 text-gray-500">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs px-1 text-gray-500">
                     <span className={errors.kode ? 'text-rose-600 font-medium flex items-center gap-1' : 'text-emerald-600 font-medium flex items-center gap-1'}>
                       {errors.kode ? '⚠ Tag sudah terdaftar di sistem' : '✓ UID tag alat berhasil dibaca dari scanner'}
                     </span>

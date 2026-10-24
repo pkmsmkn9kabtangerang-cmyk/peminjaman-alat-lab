@@ -45,13 +45,27 @@ Deno.serve(async (req) => {
       return json({ success: false, message: 'Profil requester tidak ditemukan' }, 403);
     }
 
-    if (requesterProfile.role !== 'admin') {
-      return json({ success: false, message: 'Hanya Admin yang dapat menambah petugas' }, 403);
+    if (requesterProfile.role !== 'admin' && requesterProfile.role !== 'super_admin') {
+      return json({ success: false, message: 'Hanya Admin atau Super Admin yang dapat menambah pengguna' }, 403);
     }
 
     // ── 5. Parse body request ──
     const body = await req.json();
-    const { nama_lengkap, nip, email, username } = body;
+    const { nama_lengkap, nip, email, username, role: requestedRole } = body;
+
+    // Tentukan role yang akan dibuat
+    let targetRole = 'petugas';
+    if (requesterProfile.role === 'super_admin') {
+      // Super admin boleh membuat admin atau petugas (TIDAK boleh buat super_admin lagi)
+      if (requestedRole === 'admin') {
+        targetRole = 'admin';
+      } else {
+        targetRole = 'petugas';
+      }
+    } else {
+      // Admin biasa hanya boleh membuat petugas
+      targetRole = 'petugas';
+    }
 
     // ── 6. Validasi input ──
     if (!nama_lengkap?.trim()) {
@@ -81,7 +95,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (existingNip) {
-      return json({ success: false, message: 'NIP sudah digunakan oleh petugas lain' }, 409);
+      return json({ success: false, message: 'NIP sudah digunakan oleh pengguna lain' }, 409);
     }
 
     // ── 9. Cek duplikat username ──
@@ -103,7 +117,7 @@ Deno.serve(async (req) => {
           nama_lengkap: nama_lengkap.trim(),
           username:     username.trim().toLowerCase(),
           nip:          nip.trim(),
-          role:         'petugas', // Selalu paksa role petugas!
+          role:         targetRole,
         },
         redirectTo: `${Deno.env.get('SITE_URL')}/auth/set-password`,
       }
@@ -125,7 +139,7 @@ Deno.serve(async (req) => {
         nip:          nip.trim(),
         username:     username.trim().toLowerCase(),
         email:        email.trim(),
-        role:         'petugas', // Paksa 'petugas', TIDAK dari body!
+        role:         targetRole,
         is_verified:  false,     // Belum diverifikasi (belum set password)
         created_at:   new Date().toISOString(),
       });
@@ -134,12 +148,13 @@ Deno.serve(async (req) => {
       // Rollback: hapus auth user jika insert profile gagal
       await supabaseAdmin.auth.admin.deleteUser(newUser.user.id);
       console.error('Insert profile gagal, rollback auth user:', insertError);
-      return json({ success: false, message: 'Gagal menyimpan profil petugas. Coba lagi.' }, 500);
+      return json({ success: false, message: 'Gagal menyimpan profil pengguna. Coba lagi.' }, 500);
     }
 
+    const roleLabel = targetRole === 'admin' ? 'Admin' : 'Petugas';
     return json({
       success: true,
-      message: 'Petugas berhasil ditambahkan. Email undangan telah dikirim.',
+      message: `${roleLabel} berhasil ditambahkan. Email undangan telah dikirim.`,
     });
 
   } catch (err) {

@@ -26,12 +26,15 @@ const EMPTY_FORM = {
 };
 
 // ── Data access: Supabase jika ada, localStorage jika tidak ──
-async function fetchUsers(selfUid) {
+async function fetchUsers(selfUid, currentRole) {
   if (isSupabaseConfigured) {
+    // super_admin: tampilkan admin + petugas
+    // admin: tampilkan petugas saja
+    const allowedRoles = currentRole === 'super_admin' ? ['admin', 'petugas'] : ['petugas'];
     const { data, error } = await supabase
       .from('profiles')
       .select('id, nama_lengkap, username, nip, email, role, is_verified, created_at')
-      .eq('role', 'petugas')
+      .in('role', allowedRoles)
       .order('created_at', { ascending: false });
     if (error) throw error;
     // Normalisasi field
@@ -50,10 +53,18 @@ async function fetchUsers(selfUid) {
         created_at: u.created_at,
       }));
   }
-  return dbService.getUsers().filter((u) => u.role === 'petugas' && u.uid !== selfUid);
+  const allowedRoles = currentRole === 'super_admin' ? ['admin', 'petugas'] : ['petugas'];
+  return dbService.getUsers().filter((u) => allowedRoles.includes(u.role) && u.uid !== selfUid);
+}
+
+function getRoleLabel(role) {
+  if (role === 'super_admin') return 'Super Admin';
+  if (role === 'admin') return 'Admin';
+  return 'Petugas lab';
 }
 
 export default function PenggunaPage({ currentUser }) {
+  const isSuperAdmin = (currentUser?.role || dbService.getCurrentUser()?.role) === 'super_admin';
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
@@ -72,7 +83,8 @@ export default function PenggunaPage({ currentUser }) {
     setLoading(true);
     try {
       const selfUid = currentUser?.uid || dbService.getCurrentUser()?.uid;
-      const data = await fetchUsers(selfUid);
+      const selfRole = currentUser?.role || dbService.getCurrentUser()?.role || 'admin';
+      const data = await fetchUsers(selfUid, selfRole);
       setUsers(data);
     } catch (err) {
       console.error('[KelolaPetugas] reload error:', err);
@@ -149,24 +161,29 @@ export default function PenggunaPage({ currentUser }) {
           if (!res?.success) throw new Error(res?.message || 'Gagal memperbarui profil.');
           showFeedback({ type: 'success', title: 'Perubahan berhasil disimpan.' });
         } else {
-          // Tambah petugas baru via create-petugas edge function
+          // Tambah pengguna baru via create-petugas edge function
+          const roleToCreate = form.role || 'petugas';
           const res = await callFunction('create-petugas', {
             nama_lengkap: form.nama.trim(),
             username: form.username.trim().toLowerCase(),
             nip: form.nip.trim(),
             email: form.email.trim(),
+            role: roleToCreate,
           });
-          if (!res?.success) throw new Error(res?.message || 'Gagal menambahkan petugas.');
+          const label = roleToCreate === 'admin' ? 'Admin' : 'Petugas';
+          if (!res?.success) throw new Error(res?.message || `Gagal menambahkan ${label.toLowerCase()}.`);
           showFeedback({
             type: 'success',
-            title: 'Petugas berhasil ditambahkan.',
-            message: 'Email undangan telah dikirim ke petugas.',
+            title: `${label} berhasil ditambahkan.`,
+            message: `Email undangan telah dikirim ke ${label.toLowerCase()}.`,
           });
         }
       } else {
         // Mode demo localStorage
         const current = dbService.getUsers();
         const fakeEmail = `${form.username.trim().toLowerCase()}@sekolah.internal`;
+        const roleToCreate = form.role || 'petugas';
+        const label = roleToCreate === 'admin' ? 'Admin' : 'Petugas';
 
         if (editItem) {
           const updated = current.map((u) =>
@@ -179,13 +196,12 @@ export default function PenggunaPage({ currentUser }) {
             ...form,
             uid: form.uid,
             email: fakeEmail,
-            role: 'petugas',
-            is_verified: false, // Demo: petugas baru dianggap belum aktif
-            // aktif: true,
+            role: roleToCreate,
+            is_verified: false, // Demo: pengguna baru dianggap belum aktif
             created_at: new Date().toISOString(),
           });
           dbService.saveUsers(current);
-          showFeedback({ type: 'success', title: 'Petugas berhasil ditambahkan.' });
+          showFeedback({ type: 'success', title: `${label} berhasil ditambahkan.` });
         }
       }
 
@@ -325,42 +341,50 @@ export default function PenggunaPage({ currentUser }) {
       key: 'role',
       label: 'Peran',
       sortable: true,
-      render: (row) => <span>{row.role === 'admin' ? 'Admin' : 'Petugas lab'}</span>,
+      render: (row) => <span>{getRoleLabel(row.role)}</span>,
     },
     {
       key: 'aksi',
       label: 'Tindakan',
-      render: (row) => (
-        <div className="flex items-center gap-1 justify-end">
-          <button type="button" onClick={() => openEdit(row)} className="table-action table-action-edit">Edit</button>
-          {row.is_verified === false && (
-            <button
-              type="button"
-              onClick={() => setResendTarget(row)}
-              className="table-action"
-              title="Kirim ulang undangan"
-            >
-              <IconSend size={13} className="inline mr-1" />
-              Kirim ulang
-            </button>
-          )}
-          <button type="button" onClick={() => requestDelete(row)} className="table-action table-action-danger">Hapus</button>
-        </div>
-      ),
+      render: (row) => {
+        const isSuperAdmin = currentUser?.role === 'super_admin';
+        // Admin biasa tidak boleh edit/hapus sesama admin atau super_admin
+        const canManage = isSuperAdmin || (currentUser?.role === 'admin' && row.role === 'petugas');
+        if (!canManage) {
+          return <span className="text-muted text-xs">—</span>;
+        }
+        return (
+          <div className="flex items-center gap-1 justify-end">
+            <button type="button" onClick={() => openEdit(row)} className="table-action table-action-edit">Edit</button>
+            {row.is_verified === false && (
+              <button
+                type="button"
+                onClick={() => setResendTarget(row)}
+                className="table-action"
+                title="Kirim ulang undangan"
+              >
+                <IconSend size={13} className="inline mr-1" />
+                Kirim ulang
+              </button>
+            )}
+            <button type="button" onClick={() => requestDelete(row)} className="table-action table-action-danger">Hapus</button>
+          </div>
+        );
+      },
     },
   ];
 
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Pengguna"
-        description="Tambah, Edit & Hapus akun petugas lab"
+        title="Kelola Pengguna"
+        description={currentUser?.role === 'super_admin' ? 'Tambah, Edit & Hapus akun admin dan petugas lab' : 'Tambah, Edit & Hapus akun petugas lab'}
       />
 
       {isSupabaseConfigured && (
         <PageNote title="Informasi Penting" icon={IconMail}>
-          <p>Saat ingin menambahkan petugas baru, tolong masukkan email dengan benar. Nantinya email tersebut akan menerima undangan otomatis agar petugas dapat login dan mengatur kata sandinya sendiri.</p>
-          <p className="mt-2 text-amber-800"> Petugas dengan status <span className="font-semibold">Menunggu aktivasi</span> belum membuka link undangan dan belum membuat password. Link undangan kedaluwarsa dalam <b>24 jam</b> gunakan tombol <b>Kirim ulang</b> untuk mengirim ulang undangan.</p>
+          <p>Saat ingin menambahkan pengguna baru, tolong masukkan email dengan benar. Nantinya email tersebut akan menerima undangan otomatis agar pengguna dapat login dan mengatur kata sandinya sendiri.</p>
+          <p className="mt-2 text-amber-800"> Pengguna dengan status <span className="font-semibold">Menunggu aktivasi</span> belum membuka link undangan dan belum membuat password. Link undangan kedaluwarsa dalam <b>24 jam</b> gunakan tombol <b>Kirim ulang</b> untuk mengirim ulang undangan.</p>
         </PageNote>
       )}
 
@@ -370,8 +394,8 @@ export default function PenggunaPage({ currentUser }) {
         loading={loading}
         searchKeys={['nama', 'username', 'nip', 'email']}
         searchPlaceholder="Cari nama atau NIP..."
-        emptyMessage="Belum ada petugas"
-        emptyDescription="Petugas yang ditambahkan akan muncul di sini."
+        emptyMessage={currentUser?.role === 'super_admin' ? 'Belum ada pengguna' : 'Belum ada petugas'}
+        emptyDescription="Pengguna yang ditambahkan akan muncul di sini."
         actionButton={
           <div className="flex items-center gap-2">
             <button
@@ -383,7 +407,7 @@ export default function PenggunaPage({ currentUser }) {
               <IconRefresh size={18} />
             </button>
             <Button icon={IconPlus} onClick={openAdd} className="w-full md:w-auto justify-center">
-              Tambah petugas
+              {currentUser?.role === 'super_admin' ? 'Tambah pengguna' : 'Tambah petugas'}
             </Button>
           </div>
         }
@@ -392,10 +416,10 @@ export default function PenggunaPage({ currentUser }) {
       <Modal
         isOpen={modal}
         onClose={() => !saving && setModal(false)}
-        title={editItem ? 'Ubah petugas' : 'Tambah petugas'}
+        title={editItem ? (editItem.role === 'admin' ? 'Ubah admin' : 'Ubah petugas') : (currentUser?.role === 'super_admin' ? 'Tambah pengguna' : 'Tambah petugas')}
         subtitle={
           editItem
-            ? 'Perbarui data petugas, lalu simpan.'
+            ? 'Perbarui data pengguna, lalu simpan.'
             : isSupabaseConfigured
               ? 'Kolom bertanda * wajib diisi. Email undangan akan dikirim otomatis.'
               : 'Kolom bertanda * wajib diisi.'
@@ -451,30 +475,33 @@ export default function PenggunaPage({ currentUser }) {
             </FormField>
           )}
 
-          <FormField label="Peran" required>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                <IconShieldCheck size={18} />
+          {isSuperAdmin && (
+            <FormField label="Peran" required>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                  <IconShieldCheck size={18} />
+                </div>
+                <select
+                  value={form.role}
+                  onChange={(e) => setForm({ ...form, role: e.target.value })}
+                  className={`${inputClass} pl-9 pr-8 bg-white appearance-none cursor-pointer`}
+                >
+                  <option value="petugas">Petugas lab</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-gray-400">
+                  <IconChevronDown size={16} />
+                </div>
               </div>
-              <select
-                value={form.role}
-                onChange={(e) => setForm({ ...form, role: e.target.value })}
-                className={`${inputClass} pl-9 pr-8 bg-white appearance-none cursor-pointer`}
-              >
-                <option value="petugas">Petugas lab</option>
-              </select>
-              <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-gray-400">
-                <IconChevronDown size={16} />
-              </div>
-            </div>
-          </FormField>
+            </FormField>
+          )}
 
           <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 pt-3 border-t border-gray-200">
             <Button variant="secondary" onClick={() => setModal(false)} disabled={saving} className="w-full sm:w-auto justify-center">
               Batal
             </Button>
             <Button type="submit" disabled={saving} className="w-full sm:w-auto justify-center">
-              {saving ? 'Menyimpan...' : (editItem ? 'Simpan perubahan' : 'Simpan petugas')}
+              {saving ? 'Menyimpan...' : (editItem ? 'Simpan perubahan' : (currentUser?.role === 'super_admin' ? 'Simpan pengguna' : 'Simpan petugas'))}
             </Button>
           </div>
         </form>

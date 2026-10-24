@@ -124,7 +124,7 @@ export default function RiwayatPage() {
     }
   }, []);
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   const reloadData = useCallback(async (isRealtimeEvent = false) => {
     if (!isRealtimeEvent) setLoading(true);
@@ -160,9 +160,11 @@ export default function RiwayatPage() {
       const ch2 = supabase.channel('permintaan_changes_riwayat')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'permintaan_habis_pakai' }, () => reloadData(true))
         .subscribe();
+      const polling = setInterval(() => reloadData(true), 3000);
       return () => {
         supabase.removeChannel(ch1);
         supabase.removeChannel(ch2);
+        clearInterval(polling);
       };
     }
   }, [reloadData]);
@@ -410,11 +412,11 @@ export default function RiwayatPage() {
       </PageNote>
 
       {/* ── Tab Switcher Pilihan Tampilan ── */}
-      <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-2 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap">
         <button
           type="button"
           onClick={() => setActiveTab('all')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${activeTab === 'all'
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition shrink-0 whitespace-nowrap ${activeTab === 'all'
             ? 'bg-blue-600 text-white shadow-xs'
             : 'text-gray-600 hover:bg-gray-100'
             }`}
@@ -424,22 +426,22 @@ export default function RiwayatPage() {
         <button
           type="button"
           onClick={() => setActiveTab('pinjam_kembali')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${activeTab === 'pinjam_kembali'
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'pinjam_kembali'
             ? 'bg-blue-600 text-white shadow-xs'
             : 'text-gray-600 hover:bg-gray-100'
             }`}
         >
-          Peminjaman & Pengembalian ({filteredData.length})
+          Riwayat Peminjaman & Pengembalian ({filteredData.length})
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('sekali_pakai')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${activeTab === 'sekali_pakai'
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'sekali_pakai'
             ? 'bg-blue-600 text-white shadow-xs'
             : 'text-gray-600 hover:bg-gray-100'
             }`}
         >
-          Alat Sekali Pakai ({sekaliPakaiData.length})
+          Riwayat Alat Sekali Pakai ({sekaliPakaiData.length})
         </button>
       </div>
 
@@ -449,7 +451,7 @@ export default function RiwayatPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
             <div>
               <h2 className="text-base font-bold text-gray-800">Tabel Transaksi Peminjaman & Pengembalian</h2>
-              <p className="text-xs text-muted">Khusus transaksi peminjaman dan pengembalian alat praktikum (RFID & Manual).</p>
+              <p className="text-main text-muted">Khusus transaksi peminjaman dan pengembalian alat praktikum.</p>
             </div>
             <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-blue-50 text-blue-800 border border-blue-200 self-start sm:self-auto">
               {filteredData.length} Transaksi
@@ -533,7 +535,7 @@ export default function RiwayatPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
             <div>
               <h2 className="text-base font-bold text-gray-800">Tabel Transaksi Alat Sekali Pakai</h2>
-              <p className="text-xs text-muted">Khusus mencatat pemberian dan pengeluaran bahan praktikum consumable ke kelas.</p>
+              <p className="text-xs lg:text-main text-muted">Khusus mencatat pemberian dan pengeluaran bahan praktikum consumable ke kelas.</p>
             </div>
             <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 self-start sm:self-auto">
               {sekaliPakaiData.length} Pemberian

@@ -236,7 +236,7 @@ export default function DashboardPage({ setCurrentTab, user }) {
     }
 
     const durationInterval = setInterval(() => setTick((t) => t + 1), 30000);
-    const polling = setInterval(reloadData, 10000); // reduced polling frequency since we have realtime
+    const polling = setInterval(reloadData, 3000); // polling lebih cepat 3 detik
 
     return () => {
       if (channel) supabase.removeChannel(channel);
@@ -265,7 +265,7 @@ export default function DashboardPage({ setCurrentTab, user }) {
           Selamat datang, {user?.nama ?? 'Pengguna'}
         </h1>
         <p className="text-[15px] text-muted mt-1">
-          {user?.role === 'admin' ? 'Admin' : 'Petugas lab'} · ringkasan peminjaman alat laboratorium hari ini.
+          {user?.role === 'super_admin' ? 'Super Admin' : user?.role === 'admin' ? 'Admin' : 'Petugas lab'} · ringkasan peminjaman alat laboratorium hari ini.
         </p>
       </div>
 
@@ -375,7 +375,7 @@ export default function DashboardPage({ setCurrentTab, user }) {
 
         <div className="bg-surface border border-main">
           <div className="px-4 sm:px-5 py-4 border-b border-main flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-main">Aktivitas RFID</h2>
+            <h2 className="text-lg font-semibold text-main">Aktivitas Transaksi</h2>
             <button
               onClick={() => setCurrentTab('realtime_card')}
               className="text-[15px] font-semibold text-[#1E5AAB] hover:underline"
@@ -385,7 +385,7 @@ export default function DashboardPage({ setCurrentTab, user }) {
           </div>
           {recentTaps.length === 0 ? (
             <div className="px-5 py-8">
-              <p className="font-semibold text-main">Belum ada aktivitas RFID</p>
+              <p className="font-semibold text-main">Belum ada aktivitas Kartu</p>
               <p className="text-[15px] text-muted mt-1">Aktivitas kartu yang masuk akan muncul di sini.</p>
             </div>
           ) : (

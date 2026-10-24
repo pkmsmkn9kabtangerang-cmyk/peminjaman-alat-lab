@@ -62,11 +62,12 @@ export function AuthProvider({ children }) {
     setSession(null);
   }
 
-  const isAdmin   = profile?.role === 'admin';
-  const isPetugas = profile?.role === 'petugas' || isAdmin;
+  const isSuperAdmin = profile?.role === 'super_admin';
+  const isAdmin      = profile?.role === 'admin' || isSuperAdmin;
+  const isPetugas    = profile?.role === 'petugas' || isAdmin;
 
   return (
-    <AuthContext.Provider value={{ session, profile, loading, isAdmin, isPetugas, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, profile, loading, isSuperAdmin, isAdmin, isPetugas, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

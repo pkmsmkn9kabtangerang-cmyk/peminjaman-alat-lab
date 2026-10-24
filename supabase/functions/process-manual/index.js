@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
   if (auth.error) return auth.error;
   const { supabaseAdmin, profile } = auth;
 
-  if (!["admin", "petugas"].includes(profile.role)) {
+  if (!["super_admin", "admin", "petugas"].includes(profile.role)) {
     return json({ success: false, message: "Akses ditolak" }, 403);
   }
 

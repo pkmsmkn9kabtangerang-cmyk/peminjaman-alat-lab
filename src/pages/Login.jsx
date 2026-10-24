@@ -423,14 +423,22 @@ export default function LoginPage({ onLoginSuccess }) {
             {!isSupabaseConfigured && (
               <div className="border-t border-gray-200 pt-6 mt-8">
                 <p className="text-sm text-center text-gray-500 mb-4">Masuk Otomatis (Hanya untuk Demo)</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <button
+                    id="btn-quick-super-admin"
+                    type="button"
+                    onClick={() => quickLogin('super_admin')}
+                    className="py-3 border border-purple-200 bg-purple-50 rounded-xl text-sm font-bold text-purple-700 hover:bg-purple-100 transition"
+                  >
+                    Super Admin
+                  </button>
                   <button
                     id="btn-quick-admin"
                     type="button"
                     onClick={() => quickLogin('admin')}
                     className="py-3 border border-blue-200 bg-blue-50 rounded-xl text-sm font-bold text-blue-700 hover:bg-blue-100 transition"
                   >
-                    Masuk sebagai Admin
+                    Admin
                   </button>
                   <button
                     id="btn-quick-petugas"
@@ -438,7 +446,7 @@ export default function LoginPage({ onLoginSuccess }) {
                     onClick={() => quickLogin('petugas')}
                     className="py-3 border border-gray-200 bg-gray-50 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-100 transition"
                   >
-                    Masuk sebagai Petugas
+                    Petugas
                   </button>
                 </div>
               </div>

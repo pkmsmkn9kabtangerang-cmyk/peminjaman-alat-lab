@@ -164,7 +164,7 @@ export default function AktivitasKartuPage() {
     }
   }, []);
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   const reloadData = useCallback(async (isRealtimeEvent = false) => {
     if (!isRealtimeEvent) setLoading(true);
@@ -221,7 +221,7 @@ export default function AktivitasKartuPage() {
         clearInterval(t);
       };
     } else {
-      // Supabase realtime
+      // Supabase realtime + polling fallback 3 detik
       const ch1 = supabase.channel('tap_log_changes')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tap_log' }, (payload) => {
           if (payload.new?.jenis_terdeteksi === 'manual') return;
@@ -233,9 +233,11 @@ export default function AktivitasKartuPage() {
           reloadData(true);
         })
         .subscribe();
+      const polling = setInterval(() => reloadData(true), 3000);
       return () => {
         supabase.removeChannel(ch1);
         supabase.removeChannel(ch2);
+        clearInterval(polling);
       };
     }
   }, [reloadData]);
@@ -549,8 +551,8 @@ export default function AktivitasKartuPage() {
   return (
     <div className="space-y-4 sm:space-y-5">
       <PageHeader
-        title="Aktivitas Kartu RFID & Alat"
-        description="Data aktivitas tap kartu RFID realtime hari ini serta transaksi alat sekali pakai."
+        title="Aktivitas Kartu & Alat Sekali Pakai"
+        description="Data aktivitas tap kartu realtime serta transaksi alat sekali pakai hari ini"
       />
 
       <PageNote title="Informasi Pemisahan Aktivitas" icon={IconMail}>
@@ -558,11 +560,11 @@ export default function AktivitasKartuPage() {
       </PageNote>
 
       {/* ── Tab Switcher Pilihan Tampilan ── */}
-      <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-2 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap">
         <button
           type="button"
           onClick={() => setActiveTab('all')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${activeTab === 'all'
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition shrink-0 whitespace-nowrap ${activeTab === 'all'
             ? 'bg-blue-600 text-white shadow-xs'
             : 'text-gray-600 hover:bg-gray-100'
             }`}
@@ -572,22 +574,22 @@ export default function AktivitasKartuPage() {
         <button
           type="button"
           onClick={() => setActiveTab('rfid')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${activeTab === 'rfid'
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'rfid'
             ? 'bg-blue-600 text-white shadow-xs'
             : 'text-gray-600 hover:bg-gray-100'
             }`}
         >
-          Aktivitas RFID Reader ({filteredData.length})
+          Aktivitas Transaksi Kartu ({filteredData.length})
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('sekali_pakai')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${activeTab === 'sekali_pakai'
+          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'sekali_pakai'
             ? 'bg-blue-600 text-white shadow-xs'
             : 'text-gray-600 hover:bg-gray-100'
             }`}
         >
-          Transaksi Sekali Pakai Hari Ini ({sekaliPakaiToday.length})
+          Aktivitas Transaksi Sekali Pakai ({sekaliPakaiToday.length})
         </button>
       </div>
 
@@ -596,8 +598,8 @@ export default function AktivitasKartuPage() {
         <div className="space-y-3 bg-white p-4 sm:p-5 rounded-2xl border border-main shadow-2xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
             <div>
-              <h2 className="text-base font-bold text-gray-800">Tabel Aktivitas Tap Kartu RFID </h2>
-              <p className="text-xs text-muted">Khusus log scan kartu dan alat dari reader RFID hari ini.</p>
+              <h2 className="text-base font-bold text-gray-800">Tabel Aktivitas Transaksi Kartu  </h2>
+              <p className="text-xs text-muted">Khusus log scan kartu dan alat hari ini.</p>
             </div>
             <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-blue-50 text-blue-800 border border-blue-200 self-start sm:self-auto">
               {filteredData.length} Tap Log
@@ -610,7 +612,7 @@ export default function AktivitasKartuPage() {
             loading={loading}
             searchPlaceholder="Cari aktivitas tap..."
             searchKeys={['kelas', 'uid_kartu', 'nama_alat', 'jenis_terdeteksi', 'jenis_tap', 'nama_pemegang', 'status_sekali_pakai']}
-            emptyMessage="Belum ada aktivitas tap RFID untuk hari ini"
+            emptyMessage="Belum ada aktivitas Transaksi Kartu untuk hari ini"
             actionButton={
               <div className="flex items-center gap-2">
                 <button
@@ -649,8 +651,8 @@ export default function AktivitasKartuPage() {
         <div className="space-y-3 bg-white p-4 sm:p-5 rounded-2xl border border-main shadow-2xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
             <div>
-              <h2 className="text-base font-bold text-gray-800">Tabel Transaksi Alat Sekali Pakai (Hari Ini)</h2>
-              <p className="text-xs text-muted">Khusus catatan pemberian alat consumable kepada kelas yang diproses hari ini.</p>
+              <h2 className="text-base font-bold text-gray-800">Tabel Transaksi Alat Sekali Pakai</h2>
+              <p className="text-xs  text-muted">Khusus catatan pemberian alat sekali Pakai untuk siswa hari ini</p>
             </div>
             <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 self-start sm:self-auto">
               {sekaliPakaiToday.length} Transaksi
@@ -719,7 +721,7 @@ export default function AktivitasKartuPage() {
             </h4>
             <p className="text-xs text-red-700 leading-relaxed">
               {clearTarget === 'rfid'
-                ? `Semua data aktivitas RFID (${taps.length} log) akan dihapus selamanya dan tidak bisa dikembalikan.`
+                ? `Semua data aktivitas Kartu (${taps.length} log) akan dihapus selamanya dan tidak bisa dikembalikan.`
                 : `Semua data transaksi alat sekali pakai (${sekaliPakaiToday.length} data) yang telah diproses akan dihapus selamanya.`}
             </p>
           </div>

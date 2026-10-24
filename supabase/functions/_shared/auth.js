@@ -44,13 +44,21 @@ export async function requireAuth(req, requiredRole = null) {
     return { error: json({ success: false, message: "Profil tidak ditemukan" }, 403) };
   }
 
-  if (requiredRole && profile.role !== requiredRole) {
-    return {
-      error: json(
-        { success: false, message: `Hanya ${requiredRole} yang dapat melakukan aksi ini` },
-        403
-      ),
-    };
+  if (requiredRole) {
+    const allowedRoles = Array.isArray(requiredRole)
+      ? requiredRole
+      : requiredRole === "admin"
+      ? ["admin", "super_admin"]
+      : [requiredRole];
+
+    if (!allowedRoles.includes(profile.role)) {
+      return {
+        error: json(
+          { success: false, message: `Hanya ${requiredRole} yang dapat melakukan aksi ini` },
+          403
+        ),
+      };
+    }
   }
 
   // Admin client untuk operasi yang butuh service role

@@ -30,8 +30,8 @@ Deno.serve(async (req) => {
   const { supabaseAdmin, profile } = auth;
 
   const isWrite = ["POST", "PUT", "DELETE"].includes(method);
-  if (isWrite && profile.role !== "admin") {
-    return json({ success: false, message: "Hanya Admin yang dapat mengubah data kartu" }, 403);
+  if (isWrite && !["admin", "super_admin"].includes(profile.role)) {
+    return json({ success: false, message: "Hanya Admin atau Super Admin yang dapat mengubah data kartu" }, 403);
   }
 
   try {

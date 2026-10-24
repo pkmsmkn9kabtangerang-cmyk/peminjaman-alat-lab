@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
     if (method === "GET") {
       // Pengguna biasa hanya boleh lihat diri sendiri
       if (id) {
-        if (profile.role !== "admin" && id !== profile.id) {
+        if (!["admin", "super_admin"].includes(profile.role) && id !== profile.id) {
           return json({ success: false, message: "Akses ditolak" }, 403);
         }
 
@@ -46,15 +46,22 @@ Deno.serve(async (req) => {
         return json({ success: true, data });
       }
 
-      // List semua → admin only
-      if (profile.role !== "admin") {
+      // List semua → admin & super_admin only
+      if (!["admin", "super_admin"].includes(profile.role)) {
         return json({ success: false, message: "Akses ditolak" }, 403);
       }
 
-      const { data, error } = await supabaseAdmin
+      let query = supabaseAdmin
         .from("profiles")
         .select("id, nama_lengkap, nip, username, email, role, created_at")
         .order("created_at", { ascending: false });
+
+      // Admin biasa hanya boleh melihat petugas
+      if (profile.role === "admin") {
+        query = query.eq("role", "petugas");
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       return json({ success: true, data });
@@ -64,15 +71,18 @@ Deno.serve(async (req) => {
     if (method === "PUT") {
       if (!id) return json({ success: false, message: "Parameter id diperlukan" }, 400);
 
-      // Admin bisa update siapa saja, petugas hanya diri sendiri (dan tidak bisa ganti role)
-      if (profile.role !== "admin" && id !== profile.id) {
+      const isSuperAdmin = profile.role === "super_admin";
+      const isAdmin = profile.role === "admin";
+
+      // Bukan admin/super_admin hanya boleh update diri sendiri
+      if (!isSuperAdmin && !isAdmin && id !== profile.id) {
         return json({ success: false, message: "Akses ditolak" }, 403);
       }
 
       const body = await req.json();
       const { nama_lengkap, nip, username, email, role } = body;
 
-      // Cek pengguna ada
+      // Cek pengguna target ada
       const { data: existing } = await supabaseAdmin
         .from("profiles")
         .select("id, role")
@@ -81,14 +91,28 @@ Deno.serve(async (req) => {
 
       if (!existing) return json({ success: false, message: "Pengguna tidak ditemukan" }, 404);
 
-      // Petugas tidak bisa ganti role siapapun
-      if (role && profile.role !== "admin") {
-        return json({ success: false, message: "Anda tidak dapat mengubah role" }, 403);
+      // Admin biasa tidak boleh mengubah data super_admin atau sesama admin (kecuali diri sendiri)
+      if (isAdmin && id !== profile.id && existing.role !== "petugas") {
+        return json({ success: false, message: "Admin hanya dapat mengubah data petugas" }, 403);
       }
 
-      // Validasi role
-      if (role && !["admin", "petugas"].includes(role)) {
-        return json({ success: false, message: 'Role harus "admin" atau "petugas"' }, 400);
+      // Validasi perubahan role:
+      if (role && role !== existing.role) {
+        // Hanya super_admin yang boleh mengubah role
+        if (!isSuperAdmin) {
+          return json({ success: false, message: "Hanya Super Admin yang dapat mengubah role" }, 403);
+        }
+        // Super admin tidak boleh mengubah target menjadi super_admin (hanya boleh 1 super_admin)
+        if (role === "super_admin") {
+          return json({ success: false, message: "Tidak dapat mengubah role menjadi super_admin" }, 400);
+        }
+        // Tidak boleh mengubah role super_admin itu sendiri
+        if (existing.role === "super_admin") {
+          return json({ success: false, message: "Role Super Admin tidak dapat diubah" }, 403);
+        }
+        if (!["admin", "petugas"].includes(role)) {
+          return json({ success: false, message: 'Role harus "admin" atau "petugas"' }, 400);
+        }
       }
 
       // Cek duplikat NIP (kecuali diri sendiri)
@@ -120,7 +144,9 @@ Deno.serve(async (req) => {
       if (nip          !== undefined) payload.nip          = nip.trim();
       if (username     !== undefined) payload.username     = username.trim().toLowerCase();
       if (email        !== undefined) payload.email        = email.trim();
-      if (role         !== undefined) payload.role         = role;
+      if (role         !== undefined && isSuperAdmin && existing.role !== "super_admin") {
+        payload.role = role;
+      }
 
       const { data: updated, error: updateErr } = await supabaseAdmin
         .from("profiles")
@@ -137,8 +163,11 @@ Deno.serve(async (req) => {
     if (method === "DELETE") {
       if (!id) return json({ success: false, message: "Parameter id diperlukan" }, 400);
 
-      if (profile.role !== "admin") {
-        return json({ success: false, message: "Hanya Admin yang dapat menghapus pengguna" }, 403);
+      const isSuperAdmin = profile.role === "super_admin";
+      const isAdmin = profile.role === "admin";
+
+      if (!isSuperAdmin && !isAdmin) {
+        return json({ success: false, message: "Hanya Admin atau Super Admin yang dapat menghapus pengguna" }, 403);
       }
 
       // Jangan hapus diri sendiri
@@ -146,14 +175,24 @@ Deno.serve(async (req) => {
         return json({ success: false, message: "Anda tidak dapat menghapus akun sendiri" }, 422);
       }
 
-      // Cek pengguna ada
+      // Cek pengguna target ada
       const { data: existing } = await supabaseAdmin
         .from("profiles")
-        .select("id")
+        .select("id, role")
         .eq("id", id)
         .maybeSingle();
 
       if (!existing) return json({ success: false, message: "Pengguna tidak ditemukan" }, 404);
+
+      // Super admin tidak boleh dihapus
+      if (existing.role === "super_admin") {
+        return json({ success: false, message: "Akun Super Admin tidak dapat dihapus" }, 403);
+      }
+
+      // Admin biasa hanya boleh menghapus petugas
+      if (isAdmin && existing.role !== "petugas") {
+        return json({ success: false, message: "Admin hanya dapat menghapus akun petugas" }, 403);
+      }
 
       // Hapus dari auth (cascade akan hapus profile via FK)
       const { error: deleteErr } = await supabaseAdmin.auth.admin.deleteUser(id);
@@ -169,8 +208,11 @@ Deno.serve(async (req) => {
         return json({ success: false, message: "Parameter id dan aksi=reset-password diperlukan" }, 400);
       }
 
-      if (profile.role !== "admin") {
-        return json({ success: false, message: "Hanya Admin yang dapat melakukan reset password" }, 403);
+      const isSuperAdmin = profile.role === "super_admin";
+      const isAdmin = profile.role === "admin";
+
+      if (!isSuperAdmin && !isAdmin) {
+        return json({ success: false, message: "Hanya Admin atau Super Admin yang dapat melakukan reset password" }, 403);
       }
 
       if (id === profile.id) {
@@ -187,8 +229,13 @@ Deno.serve(async (req) => {
         return json({ success: false, error: "pengguna_tidak_ditemukan", message: "Pengguna tidak ditemukan" }, 404);
       }
 
-      if (targetProfile.role !== "petugas") {
-        return json({ success: false, error: "hanya_petugas", message: "Hanya dapat mereset password role petugas" }, 422);
+      if (targetProfile.role === "super_admin") {
+        return json({ success: false, error: "tidak_dapat_reset_superadmin", message: "Tidak dapat mereset password Super Admin" }, 422);
+      }
+
+      // Admin biasa hanya boleh reset password petugas
+      if (isAdmin && targetProfile.role !== "petugas") {
+        return json({ success: false, error: "hanya_petugas", message: "Admin hanya dapat mereset password role petugas" }, 422);
       }
 
       // Generate random password (length 14)

@@ -10,6 +10,7 @@ export default function ConfirmDialog({
   message,
   confirmLabel = 'Hapus',
   confirmVariant = 'danger',
+  icon: CustomIcon,
   loading = false,
   children,
 }) {
@@ -18,7 +19,7 @@ export default function ConfirmDialog({
       isOpen={isOpen}
       onClose={onClose}
       title={title}
-      icon={IconAlertTriangle}
+      icon={CustomIcon || IconAlertTriangle}
       iconVariant={confirmVariant === 'danger' ? 'danger' : 'warning'}
       maxWidth="max-w-md"
     >

@@ -182,9 +182,9 @@ export default function DataTable({
         </table>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 text-[15px] border-t border-main bg-white text-gray-700">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-[15px] border-t border-main bg-white text-gray-700">
         <div className="flex items-center justify-between sm:justify-start w-full sm:w-auto gap-2">
-          <span className="text-muted">Baris per halaman</span>
+          <span className="text-muted whitespace-nowrap">Baris per halaman</span>
           <div className="relative inline-flex items-center">
             <select
               value={pageSize}
@@ -192,7 +192,7 @@ export default function DataTable({
                 setPageSize(Number(e.target.value));
                 setPage(1);
               }}
-              className="bg-white border border-gray-300 pl-3 pr-7 py-1.5 rounded font-medium text-gray-800 text-[15px] min-h-10 focus:outline-none focus:ring-2 focus:ring-blue-700/20 focus:border-blue-700 appearance-none cursor-pointer"
+              className="bg-white border border-gray-300 pl-2.5 pr-6 py-1 rounded font-medium text-gray-800 text-xs sm:text-[15px] h-8 sm:min-h-10 focus:outline-none focus:ring-2 focus:ring-blue-700/20 focus:border-blue-700 appearance-none cursor-pointer"
             >
               {[5, 10, 15, 20, 25].map((size) => (
                 <option key={size} value={size}>
@@ -200,14 +200,14 @@ export default function DataTable({
                 </option>
               ))}
             </select>
-            <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-gray-500">
+            <div className="absolute inset-y-0 right-0 pr-1.5 flex items-center pointer-events-none text-gray-500">
               <IconChevronDown size={14} />
             </div>
           </div>
         </div>
 
-        <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3">
-          <span className="text-muted">
+        <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2 sm:gap-3">
+          <span className="text-muted whitespace-nowrap">
             {sorted.length > 0
               ? `${(currentPage - 1) * pageSize + 1}–${Math.min(
                 currentPage * pageSize,
@@ -220,23 +220,23 @@ export default function DataTable({
             <button
               disabled={currentPage <= 1}
               onClick={() => setPage((p) => p - 1)}
-              className="px-3 min-h-10 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:pointer-events-none"
+              className="w-8 h-8 sm:w-auto sm:px-3 sm:min-h-10 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center shrink-0"
               title="Halaman sebelumnya"
               aria-label="Halaman sebelumnya"
             >
-              <IconChevronLeft size={18} />
+              <IconChevronLeft size={16} />
             </button>
-            <span className="px-2 font-medium text-gray-800 min-w-[48px] text-center">
+            <span className="px-1.5 sm:px-2 font-medium text-gray-800 min-w-[36px] sm:min-w-[48px] text-center text-xs sm:text-[15px]">
               {currentPage} / {totalPages}
             </span>
             <button
               disabled={currentPage >= totalPages}
               onClick={() => setPage((p) => p + 1)}
-              className="px-3 min-h-10 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:pointer-events-none"
+              className="w-8 h-8 sm:w-auto sm:px-3 sm:min-h-10 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center shrink-0"
               title="Halaman selanjutnya"
               aria-label="Halaman selanjutnya"
             >
-              <IconChevronRight size={18} />
+              <IconChevronRight size={16} />
             </button>
           </div>
         </div>
