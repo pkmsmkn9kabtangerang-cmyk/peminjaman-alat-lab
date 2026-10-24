@@ -1,9 +1,10 @@
 // src/pages/DashboardPage.jsx
 // Dashboard: ringkasan stok, pinjaman aktif, dan aktivitas terbaru
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { dbService } from '../services/store';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { isOnline, isNetworkError, registerOnlineSync } from '../lib/networkStatus';
 import StatCard from '../components/StatCard';
 import Badge from '../components/Badge';
 import PageNote from '../components/PageNote';
@@ -68,7 +69,7 @@ function groupPinjamanByKartu(rows) {
 
 let activeCardsCache = null;
 
-export default function DashboardPage({ setCurrentTab, user }) {
+export default function DashboardPage({ setCurrentTab, user, isActive = true }) {
   const [alat, setAlat] = useState(() => dbService.getAlatWithStok());
   const [transaksi, setTransaksi] = useState(() => dbService.getTransaksi());
   const [tapLog, setTapLog] = useState(() => dbService.getTapLog());
@@ -82,8 +83,13 @@ export default function DashboardPage({ setCurrentTab, user }) {
   });
 
   const [, setTick] = useState(0);
+  const isReloadingRef = useRef(false);
 
   const reloadData = useCallback(async () => {
+    if (!isOnline()) return;
+    if (isReloadingRef.current) return;
+    isReloadingRef.current = true;
+
     if (!isSupabaseConfigured) {
       setAlat(dbService.getAlatWithStok());
       setTransaksi(dbService.getTransaksi());
@@ -93,11 +99,11 @@ export default function DashboardPage({ setCurrentTab, user }) {
       const localGrouped = groupPinjamanByKartu(dbService.getPinjamanAktif());
       setActiveCards(localGrouped);
       activeCardsCache = localGrouped;
+      isReloadingRef.current = false;
       return;
     }
 
     try {
-      // Fetch concurrently with a 2-second timeout so dashboard stays responsive
       const fetchPromise = Promise.all([
         supabase.from('v_list_barang').select('*'),
         supabase.from('transaksi').select('*, kartu_rfid(nama_pemegang)').order('waktu_pinjam', { ascending: false }).limit(200),
@@ -106,21 +112,23 @@ export default function DashboardPage({ setCurrentTab, user }) {
         supabase.from('permintaan_habis_pakai').select('id', { count: 'exact', head: true }).eq('status', 'menunggu')
       ]);
 
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000));
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
 
       const [resAlat, resTrx, resTap, resPinjamanAktif, resPermintaan] = await Promise.race([fetchPromise, timeoutPromise]);
 
-      if (!resAlat.error) setAlat(resAlat.data);
-      if (!resTrx.error) setTransaksi(resTrx.data.map(t => ({ ...t, pemegang: t.kartu_rfid?.nama_pemegang || t.pemegang })));
-      if (!resTap.error) setTapLog(resTap.data);
-      if (!resPermintaan.error) setPermintaanMenunggu(resPermintaan.count || 0);
-      if (!resPinjamanAktif.error) {
+      if (!resAlat.error && resAlat.data) setAlat(resAlat.data);
+      if (!resTrx.error && resTrx.data) setTransaksi(resTrx.data.map(t => ({ ...t, pemegang: t.kartu_rfid?.nama_pemegang || t.pemegang })));
+      if (!resTap.error && resTap.data) setTapLog(resTap.data);
+      if (!resPermintaan.error && typeof resPermintaan.count === 'number') setPermintaanMenunggu(resPermintaan.count);
+      if (!resPinjamanAktif.error && resPinjamanAktif.data) {
         const grouped = groupPinjamanByKartu(resPinjamanAktif.data);
         setActiveCards(grouped);
         activeCardsCache = grouped;
       }
     } catch (e) {
-      // timeout or network err, just keep what we have (local cache)
+      // jika offline atau timeout, pertahankan data terakhir
+    } finally {
+      isReloadingRef.current = false;
     }
   }, []);
 
@@ -217,34 +225,60 @@ export default function DashboardPage({ setCurrentTab, user }) {
   }, []);
 
   useEffect(() => {
-    reloadData();
+    if (isActive) {
+      reloadData();
+    }
 
     let channel = null;
+    let unregisterSync = () => {};
+
     if (isSupabaseConfigured) {
       channel = supabase.channel('dashboard-realtime')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'transaksi' }, (payload) => {
           if (payload.eventType === 'INSERT') handleRealtimeInsert(payload.new);
           if (payload.eventType === 'UPDATE') handleRealtimeUpdate(payload.new);
-          reloadData();
+          if (isActive) reloadData();
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tap_log' }, () => reloadData())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'alat' }, () => reloadData())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'permintaan_habis_pakai' }, () => reloadData())
-        .subscribe();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tap_log' }, () => {
+          if (isActive) reloadData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'alat' }, () => {
+          if (isActive) reloadData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'permintaan_habis_pakai' }, () => {
+          if (isActive) reloadData();
+        })
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[Realtime dashboard] channel status:', status);
+          }
+        });
+
+      // Sinkronisasi otomatis SEKALI saat koneksi internet pulih kembali
+      unregisterSync = registerOnlineSync(() => {
+        if (isActive) reloadData();
+      });
     } else {
       window.addEventListener('simlab_storage_updated', reloadData);
     }
 
     const durationInterval = setInterval(() => setTick((t) => t + 1), 30000);
-    const polling = setInterval(reloadData, 3000); // polling lebih cepat 3 detik
+
+    // Safety polling hanya setiap 30 detik saat online, tab visible, dan dashboard aktif
+    const polling = setInterval(() => {
+      if (isActive && isOnline() && typeof document !== 'undefined' && !document.hidden) {
+        reloadData();
+      }
+    }, 30000);
 
     return () => {
       if (channel) supabase.removeChannel(channel);
       if (!isSupabaseConfigured) window.removeEventListener('simlab_storage_updated', reloadData);
+      unregisterSync();
       clearInterval(durationInterval);
       clearInterval(polling);
     };
-  }, [reloadData, handleRealtimeInsert, handleRealtimeUpdate]);
+  }, [isActive, reloadData, handleRealtimeInsert, handleRealtimeUpdate]);
 
   const totalAlat = alat.length; // jumlah jenis alat yang terdaftar
   const totalTersedia = alat.reduce((s, a) => s + (a.stok_tersedia || 0), 0);

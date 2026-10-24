@@ -1,7 +1,7 @@
 // src/pages/DaftarAlat.jsx
 // List Barang: stok, status, kartu/kelas peminjam
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { dbService } from '../services/store';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import Badge from '../components/Badge';
@@ -12,6 +12,8 @@ import PageHeader from '../components/PageHeader';
 import PageNote from '../components/PageNote';
 import { friendlyError } from '../lib/feedback';
 
+import { isOnline, isNetworkError, registerOnlineSync } from '../lib/networkStatus';
+
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Semua Status' },
   { value: 'tersedia', label: 'Tersedia' },
@@ -21,12 +23,19 @@ const STATUS_OPTIONS = [
 
 async function fetchListBarang() {
   if (isSupabaseConfigured) {
-    const { data, error } = await supabase
-      .from('v_list_barang')
-      .select('*')
-      .order('nama');
-    if (error) throw error;
-    return data ?? [];
+    if (!isOnline()) return null;
+    try {
+      const { data, error } = await supabase
+        .from('v_list_barang')
+        .select('*')
+        .order('nama');
+      if (error) throw error;
+      return data ?? [];
+    } catch (err) {
+      if (isNetworkError(err)) return null;
+      console.warn('[DaftarAlat] fetch error:', err?.message || err);
+      return null;
+    }
   }
   return dbService.getListBarang();
 }
@@ -35,16 +44,27 @@ export default function DaftarAlatPage() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  const isReloadingRef = useRef(false);
 
   const reload = useCallback(async (isRealtimeEvent = false) => {
+    if (!isOnline()) {
+      setLoading(false);
+      return;
+    }
+    if (isReloadingRef.current) return;
+    isReloadingRef.current = true;
+
     if (!isRealtimeEvent) setLoading(true);
     try {
       const result = await fetchListBarang();
-      setData(result);
+      if (result !== null) setData(result);
     } catch (err) {
-      console.error('[DaftarAlat] fetch error:', err);
+      if (!isNetworkError(err)) {
+        console.error('[DaftarAlat] fetch error:', err);
+      }
     } finally {
       setLoading(false);
+      isReloadingRef.current = false;
     }
   }, []);
 
@@ -54,23 +74,44 @@ export default function DaftarAlatPage() {
     if (!isSupabaseConfigured) {
       const handleStorage = () => reload(true);
       window.addEventListener('simlab_storage_updated', handleStorage);
-      const t = setInterval(() => reload(true), 3000);
       return () => {
         window.removeEventListener('simlab_storage_updated', handleStorage);
-        clearInterval(t);
       };
     } else {
       // Subscribe realtime (jika alat diedit atau transaksi bertambah/berkurang)
       const chAlat = supabase.channel('alat-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'alat' }, () => reload(true))
-        .subscribe();
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[Realtime alat-changes] status:', status);
+          }
+        });
+
       const chTrx = supabase.channel('trx-changes-listalat')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'transaksi' }, () => reload(true))
-        .subscribe();
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[Realtime trx-changes-listalat] status:', status);
+          }
+        });
+
+      // Sinkronisasi otomatis SEKALI saat online pulih
+      const unregisterSync = registerOnlineSync(() => {
+        reload(true);
+      });
+
+      // Background safety check setiap 30 detik saat online & tab aktif
+      const safetyTimer = setInterval(() => {
+        if (isOnline() && typeof document !== 'undefined' && !document.hidden) {
+          reload(true);
+        }
+      }, 30000);
 
       return () => {
         supabase.removeChannel(chAlat);
         supabase.removeChannel(chTrx);
+        unregisterSync();
+        clearInterval(safetyTimer);
       };
     }
   }, [reload]);

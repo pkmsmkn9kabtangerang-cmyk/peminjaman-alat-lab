@@ -469,7 +469,7 @@ export default function PenggunaPage({ currentUser }) {
                 value={form.email || ''}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className={inputClass}
-                placeholder="petugas@sekolah.sch.id"
+                placeholder="nama@gmail.com"
                 disabled={!!editItem} // Email tidak bisa diubah setelah dibuat
               />
             </FormField>

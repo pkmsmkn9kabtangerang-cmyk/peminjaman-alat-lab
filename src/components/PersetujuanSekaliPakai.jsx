@@ -4,7 +4,7 @@
 // Petugas/Admin bisa input jumlah/cm yang diberikan -> setujui (potong stok) atau tolak.
 // Petugas/Admin juga dapat membatalkan persetujuan di tab Riwayat (stok dikembalikan).
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   IconCheck,
   IconX,
@@ -20,6 +20,7 @@ import { callFunction } from '../lib/api';
 import { dbService } from '../services/store';
 import Badge from './Badge';
 import { showFeedback, friendlyError } from '../lib/feedback';
+import { isOnline, isNetworkError, registerOnlineSync } from '../lib/networkStatus';
 
 export default function PersetujuanSekaliPakai({ user }) {
   const isDemo = !isSupabaseConfigured;
@@ -45,8 +46,17 @@ export default function PersetujuanSekaliPakai({ user }) {
   const [catatanBatal, setCatatanBatal] = useState('');
   const [processing, setProcessing] = useState(false);
 
+  const isFetchingRef = useRef(false);
+
   // ── Fetch data ──────────────────────────────────────────────
   const fetchData = useCallback(async () => {
+    if (!isOnline()) {
+      setLoading(false);
+      return;
+    }
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
     setLoading(true);
     try {
       if (isDemo) {
@@ -89,32 +99,43 @@ export default function PersetujuanSekaliPakai({ user }) {
           callFunction('manage-permintaan', undefined, {
             method: 'GET',
             params: { status: 'menunggu' },
-          }).catch(() => ({ data: [] })),
+          }).catch((err) => {
+            if (isNetworkError(err)) return null;
+            return { data: [] };
+          }),
           callFunction('manage-permintaan', undefined, {
             method: 'GET',
-          }).catch(() => ({ data: [] })),
+          }).catch((err) => {
+            if (isNetworkError(err)) return null;
+            return { data: [] };
+          }),
         ]);
 
         const now = Date.now();
         const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
-        setMenungguList(resWaiting?.data ?? []);
-        const nonWaiting = (resHistory?.data ?? []).filter((p) => {
-          if (p.status === 'menunggu') return false;
-          const t = new Date(p.waktu_proses || p.waktu_tap || p.created_at || 0).getTime();
-          return (now - t) <= TWENTY_FOUR_HOURS_MS;
-        });
-        setRiwayatList(nonWaiting);
+        if (resWaiting?.data) setMenungguList(resWaiting.data);
+        if (resHistory?.data) {
+          const nonWaiting = resHistory.data.filter((p) => {
+            if (p.status === 'menunggu') return false;
+            const t = new Date(p.waktu_proses || p.waktu_tap || p.created_at || 0).getTime();
+            return (now - t) <= TWENTY_FOUR_HOURS_MS;
+          });
+          setRiwayatList(nonWaiting);
+        }
       }
     } catch (err) {
-      console.error('[PersetujuanSekaliPakai] fetch error:', err);
-      showFeedback({
-        type: 'error',
-        title: 'Gagal memuat data permintaan consumable.',
-        message: friendlyError(err),
-      });
+      if (!isNetworkError(err)) {
+        console.error('[PersetujuanSekaliPakai] fetch error:', err);
+        showFeedback({
+          type: 'error',
+          title: 'Gagal memuat data permintaan consumable.',
+          message: friendlyError(err),
+        });
+      }
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
   }, [isDemo]);
 
@@ -135,8 +156,21 @@ export default function PersetujuanSekaliPakai({ user }) {
           { event: '*', schema: 'public', table: 'alat' },
           () => fetchData()
         )
-        .subscribe();
-      return () => supabase.removeChannel(ch);
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[Realtime permintaan_dashboard] status:', status);
+          }
+        });
+
+      // Sinkronisasi otomatis SEKALI saat koneksi internet pulih
+      const unregisterSync = registerOnlineSync(() => {
+        fetchData();
+      });
+
+      return () => {
+        supabase.removeChannel(ch);
+        unregisterSync();
+      };
     } else {
       const handler = () => fetchData();
       window.addEventListener('simlab_storage_updated', handler);

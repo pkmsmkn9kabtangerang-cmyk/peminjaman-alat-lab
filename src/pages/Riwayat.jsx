@@ -32,6 +32,8 @@ const FMT = (iso) => {
 
 const CONFIRM_TEXT = 'hapus semua riwayat';
 
+import { isOnline, isNetworkError, registerOnlineSync } from '../lib/networkStatus';
+
 const TIME_OPTIONS = [
   { value: '1h', label: '1 Jam Terakhir' },
   { value: '5h', label: '5 Jam Terakhir' },
@@ -42,19 +44,26 @@ const TIME_OPTIONS = [
 
 async function fetchRiwayat() {
   if (isSupabaseConfigured) {
-    const { data, error } = await supabase
-      .from('transaksi')
-      .select(`
-        *,
-        kartu_rfid ( nama_pemegang )
-      `)
-      .order('waktu_pinjam', { ascending: false });
+    if (!isOnline()) return null;
+    try {
+      const { data, error } = await supabase
+        .from('transaksi')
+        .select(`
+          *,
+          kartu_rfid ( nama_pemegang )
+        `)
+        .order('waktu_pinjam', { ascending: false });
 
-    if (error) throw error;
-    return (data || []).map(row => ({
-      ...row,
-      pemegang: row.kartu_rfid?.nama_pemegang || row.pemegang || '—'
-    }));
+      if (error) throw error;
+      return (data || []).map(row => ({
+        ...row,
+        pemegang: row.kartu_rfid?.nama_pemegang || row.pemegang || '—'
+      }));
+    } catch (err) {
+      if (isNetworkError(err)) return null;
+      console.warn('[Riwayat] fetchRiwayat error:', err?.message || err);
+      return null;
+    }
   }
 
   // Local fallback
@@ -68,24 +77,38 @@ async function fetchRiwayat() {
 
 async function fetchRiwayatSekaliPakai() {
   if (isSupabaseConfigured) {
-    const { data, error } = await supabase
-      .from('permintaan_habis_pakai')
-      .select('*, kartu_rfid(nama_pemegang)')
-      .order('created_at', { ascending: false });
-    if (error) {
-      const { data: fallback } = await supabase
+    if (!isOnline()) return null;
+    try {
+      const { data, error } = await supabase
         .from('permintaan_habis_pakai')
         .select('*, kartu_rfid(nama_pemegang)')
-        .order('waktu_tap', { ascending: false });
-      return (fallback || []).map(r => ({
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        // HANYA jalankan fallback waktu_tap jika kolom created_at belum ada di schema database
+        if (error.code === '42703') {
+          const { data: fallback } = await supabase
+            .from('permintaan_habis_pakai')
+            .select('*, kartu_rfid(nama_pemegang)')
+            .order('waktu_tap', { ascending: false });
+          return (fallback || []).map(r => ({
+            ...r,
+            pemegang: r.kartu_rfid?.nama_pemegang || '—',
+          }));
+        }
+        if (isNetworkError(error)) return null;
+        console.warn('[Riwayat] fetchRiwayatSekaliPakai error:', error.message);
+        return null;
+      }
+      return (data || []).map(r => ({
         ...r,
         pemegang: r.kartu_rfid?.nama_pemegang || '—',
       }));
+    } catch (err) {
+      if (isNetworkError(err)) return null;
+      console.warn('[Riwayat] fetchRiwayatSekaliPakai error:', err?.message || err);
+      return null;
     }
-    return (data || []).map(r => ({
-      ...r,
-      pemegang: r.kartu_rfid?.nama_pemegang || '—',
-    }));
   }
 
   const req = dbService.getPermintaan();
@@ -108,6 +131,7 @@ export default function RiwayatPage() {
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearTarget, setClearTarget] = useState('pinjam'); // 'pinjam' | 'sekali_pakai'
   const [clearInput, setClearInput] = useState('');
+  const isReloadingRef = useRef(false);
 
   const [user, setUser] = useState(null);
 
@@ -116,7 +140,8 @@ export default function RiwayatPage() {
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session?.user) {
           supabase.from('profiles').select('role').eq('id', session.user.id).single()
-            .then(({ data }) => setUser({ role: data?.role }));
+            .then(({ data }) => setUser({ role: data?.role }))
+            .catch(() => {});
         }
       });
     } else {
@@ -127,18 +152,28 @@ export default function RiwayatPage() {
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   const reloadData = useCallback(async (isRealtimeEvent = false) => {
+    if (!isOnline()) {
+      setLoading(false);
+      return;
+    }
+    if (isReloadingRef.current) return;
+    isReloadingRef.current = true;
+
     if (!isRealtimeEvent) setLoading(true);
     try {
       const [resTrx, resSekali] = await Promise.all([
         fetchRiwayat(),
         fetchRiwayatSekaliPakai(),
       ]);
-      setData(resTrx);
-      setSekaliPakaiData(resSekali);
+      if (resTrx !== null) setData(resTrx);
+      if (resSekali !== null) setSekaliPakaiData(resSekali);
     } catch (err) {
-      console.error('[Riwayat] fetch error:', err);
+      if (!isNetworkError(err)) {
+        console.error('[Riwayat] fetch error:', err);
+      }
     } finally {
       setLoading(false);
+      isReloadingRef.current = false;
     }
   }, []);
 
@@ -148,23 +183,43 @@ export default function RiwayatPage() {
     if (!isSupabaseConfigured) {
       const handleStorage = () => reloadData(true);
       window.addEventListener('simlab_storage_updated', handleStorage);
-      const t = setInterval(() => reloadData(true), 3000);
       return () => {
         window.removeEventListener('simlab_storage_updated', handleStorage);
-        clearInterval(t);
       };
     } else {
       const ch1 = supabase.channel('transaksi_changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'transaksi' }, () => reloadData(true))
-        .subscribe();
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[Realtime transaksi] status:', status);
+          }
+        });
+
       const ch2 = supabase.channel('permintaan_changes_riwayat')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'permintaan_habis_pakai' }, () => reloadData(true))
-        .subscribe();
-      const polling = setInterval(() => reloadData(true), 3000);
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[Realtime permintaan_riwayat] status:', status);
+          }
+        });
+
+      // Sinkronisasi otomatis SEKALI saat koneksi internet pulih kembali
+      const unregisterSync = registerOnlineSync(() => {
+        reloadData(true);
+      });
+
+      // Background safety catch-up: hanya berjalan jika online dan tab aktif (setiap 30 detik)
+      const safetyTimer = setInterval(() => {
+        if (isOnline() && typeof document !== 'undefined' && !document.hidden) {
+          reloadData(true);
+        }
+      }, 30000);
+
       return () => {
         supabase.removeChannel(ch1);
         supabase.removeChannel(ch2);
-        clearInterval(polling);
+        unregisterSync();
+        clearInterval(safetyTimer);
       };
     }
   }, [reloadData]);

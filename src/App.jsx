@@ -20,6 +20,8 @@ import PemberianSekaliPakai from './pages/PemberianSekaliPakai';
 import GantiPassword from './pages/GantiPassword';
 import SetPassword from './pages/SetPassword';
 import { IconBell, IconX, IconCheck, IconAlertTriangle, IconMenu2 } from '@tabler/icons-react';
+import NetworkStatusBanner from './components/NetworkStatusBanner';
+import { isOnline, registerOnlineSync } from './lib/networkStatus';
 
 // ── Internal tab keys (tidak berubah) ────────────────────────
 const PAGE_TITLES = {
@@ -276,12 +278,21 @@ export default function App() {
       };
     }
 
-    supabase
-      .from('tap_log')
-      .select('id', { count: 'exact', head: true })
-      .eq('is_read', false)
-      .or('jenis_terdeteksi.neq.manual,jenis_terdeteksi.is.null')
-      .then(({ count }) => setUnreadCount(count ?? 0));
+    const fetchUnread = () => {
+      if (!isOnline()) return;
+      supabase
+        .from('tap_log')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_read', false)
+        .or('jenis_terdeteksi.neq.manual,jenis_terdeteksi.is.null')
+        .then(({ count, error }) => {
+          if (!error && count !== null) setUnreadCount(count ?? 0);
+        })
+        .catch(() => {});
+    };
+
+    fetchUnread();
+    const unregisterSync = registerOnlineSync(fetchUnread);
 
     const channel = supabase
       .channel('app-global-realtime-taps')
@@ -292,11 +303,14 @@ export default function App() {
       })
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR') {
-          console.warn('[Realtime] channel error. Reconnecting...');
+          console.warn('[Realtime] channel error. Waiting for reconnection...');
         }
       });
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      unregisterSync();
+      supabase.removeChannel(channel);
+    };
   }, [authState, triggerNotification]);
 
   // ── Tab & URL management ─────────────────────────────────────
@@ -313,7 +327,11 @@ export default function App() {
     setMobileMenuOpen(false);
     if (tab === 'realtime_card') {
       if (isSupabaseConfigured) {
-        supabase.rpc('mark_taps_read').then(() => setUnreadCount(0));
+        if (isOnline()) {
+          supabase.rpc('mark_taps_read').then(() => setUnreadCount(0)).catch(() => {});
+        } else {
+          setUnreadCount(0);
+        }
       } else {
         dbService.markTapsRead();
         setUnreadCount(0);
@@ -463,9 +481,11 @@ export default function App() {
           </button>
         </header>
 
+        <NetworkStatusBanner />
+
         <div className="p-3 sm:p-6 flex-1 min-w-0 overflow-x-hidden">
           <div className={currentTab === 'dashboard' ? 'block' : 'hidden'}>
-            <Dashboard setCurrentTab={handleTabChange} user={currentUser} />
+            <Dashboard setCurrentTab={handleTabChange} user={currentUser} isActive={currentTab === 'dashboard'} />
           </div>
           {currentTab === 'realtime_card' && <AktivitasKartu />}
           {currentTab === 'peminjaman' && <Peminjaman user={currentUser} />}

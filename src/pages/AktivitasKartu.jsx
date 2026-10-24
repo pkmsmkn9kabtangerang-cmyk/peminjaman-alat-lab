@@ -49,19 +49,27 @@ const FORMAT_WIB = (iso) => {
   }).format(date);
 };
 
+import { isOnline, isNetworkError, registerOnlineSync } from '../lib/networkStatus';
+
 async function fetchTapLog() {
   if (isSupabaseConfigured) {
-    const todayStr = TODAY_WIB();
+    if (!isOnline()) return null;
+    try {
+      const todayStr = TODAY_WIB();
+      const { data, error } = await supabase
+        .from('tap_log')
+        .select('*')
+        .or('jenis_terdeteksi.neq.manual,jenis_terdeteksi.is.null')
+        .gte('waktu_tap', `${todayStr}T00:00:00+07:00`)
+        .order('waktu_tap', { ascending: false });
 
-    const { data, error } = await supabase
-      .from('tap_log')
-      .select('*')
-      .or('jenis_terdeteksi.neq.manual,jenis_terdeteksi.is.null')
-      .gte('waktu_tap', `${todayStr}T00:00:00+07:00`)
-      .order('waktu_tap', { ascending: false });
-
-    if (error) throw error;
-    return (data ?? []).filter(d => d.jenis_terdeteksi !== 'manual' && d.sumber !== 'manual');
+      if (error) throw error;
+      return (data ?? []).filter(d => d.jenis_terdeteksi !== 'manual' && d.sumber !== 'manual');
+    } catch (err) {
+      if (isNetworkError(err)) return null;
+      console.warn('[AktivitasKartu] fetchTapLog error:', err?.message || err);
+      return null;
+    }
   }
 
   return dbService
@@ -81,38 +89,58 @@ async function fetchTapLog() {
 
 async function fetchKartuList() {
   if (isSupabaseConfigured) {
-    const { data, error } = await supabase
-      .from('kartu_rfid')
-      .select('uid_kartu, nama_pemegang');
-    if (error) return [];
-    return data ?? [];
+    if (!isOnline()) return null;
+    try {
+      const { data, error } = await supabase
+        .from('kartu_rfid')
+        .select('uid_kartu, nama_pemegang');
+      if (error) throw error;
+      return data ?? [];
+    } catch (err) {
+      if (isNetworkError(err)) return null;
+      return null;
+    }
   }
   return dbService.getKartu();
 }
 
 async function fetchSekaliPakaiHariIni() {
   if (isSupabaseConfigured) {
-    const todayStr = TODAY_WIB();
-    const { data, error } = await supabase
-      .from('permintaan_habis_pakai')
-      .select('*, kartu_rfid(nama_pemegang)')
-      .gte('created_at', `${todayStr}T00:00:00+07:00`)
-      .order('created_at', { ascending: false });
-    if (error) {
-      const { data: fallback } = await supabase
+    if (!isOnline()) return null;
+    try {
+      const todayStr = TODAY_WIB();
+      const { data, error } = await supabase
         .from('permintaan_habis_pakai')
         .select('*, kartu_rfid(nama_pemegang)')
-        .order('waktu_tap', { ascending: false })
-        .limit(30);
-      return (fallback || []).map(r => ({
+        .gte('created_at', `${todayStr}T00:00:00+07:00`)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        // HANYA jalankan fallback waktu_tap jika kolom created_at belum ada di schema database
+        if (error.code === '42703') {
+          const { data: fallback } = await supabase
+            .from('permintaan_habis_pakai')
+            .select('*, kartu_rfid(nama_pemegang)')
+            .order('waktu_tap', { ascending: false })
+            .limit(30);
+          return (fallback || []).map(r => ({
+            ...r,
+            pemegang: r.kartu_rfid?.nama_pemegang || '—',
+          }));
+        }
+        if (isNetworkError(error)) return null;
+        console.warn('[AktivitasKartu] fetchSekaliPakai error:', error.message);
+        return null;
+      }
+      return (data || []).map(r => ({
         ...r,
         pemegang: r.kartu_rfid?.nama_pemegang || '—',
       }));
+    } catch (err) {
+      if (isNetworkError(err)) return null;
+      console.warn('[AktivitasKartu] fetchSekaliPakaiHariIni error:', err?.message || err);
+      return null;
     }
-    return (data || []).map(r => ({
-      ...r,
-      pemegang: r.kartu_rfid?.nama_pemegang || '—',
-    }));
   }
 
   const all = dbService.getPermintaan();
@@ -148,6 +176,7 @@ export default function AktivitasKartuPage() {
   const [clearInput, setClearInput] = useState('');
   const CONFIRM_TEXT = 'hapus semua log';
   const prevLen = useRef(0);
+  const isReloadingRef = useRef(false);
 
   // Ambil user dari Supabase auth session, atau fallback
   const [user, setUser] = useState(null);
@@ -156,7 +185,8 @@ export default function AktivitasKartuPage() {
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session?.user) {
           supabase.from('profiles').select('role').eq('id', session.user.id).single()
-            .then(({ data }) => setUser({ role: data?.role }));
+            .then(({ data }) => setUser({ role: data?.role }))
+            .catch(() => {});
         }
       });
     } else {
@@ -167,6 +197,13 @@ export default function AktivitasKartuPage() {
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   const reloadData = useCallback(async (isRealtimeEvent = false) => {
+    if (!isOnline()) {
+      setLoading(false);
+      return;
+    }
+    if (isReloadingRef.current) return;
+    isReloadingRef.current = true;
+
     if (!isRealtimeEvent) setLoading(true);
     try {
       const [logsData, kartuData, sekaliData] = await Promise.all([
@@ -174,12 +211,13 @@ export default function AktivitasKartuPage() {
         fetchKartuList(),
         fetchSekaliPakaiHariIni(),
       ]);
-      setTaps(logsData);
-      setKartuList(kartuData);
-      setSekaliPakaiToday(sekaliData);
 
-      if (logsData.length > prevLen.current && prevLen.current > 0) {
-        // Asumsi data baru selalu di awal (karena descending)
+      // Pertahankan data sebelumnya jika terjadi gangguan koneksi (null)
+      if (logsData !== null) setTaps(logsData);
+      if (kartuData !== null) setKartuList(kartuData);
+      if (sekaliData !== null) setSekaliPakaiToday(sekaliData);
+
+      if (logsData && logsData.length > prevLen.current && prevLen.current > 0) {
         const added = logsData.slice(0, logsData.length - prevLen.current).map((l) => l.id);
         setNewIds((prev) => new Set([...prev, ...added]));
         setTimeout(() => {
@@ -188,26 +226,34 @@ export default function AktivitasKartuPage() {
             added.forEach((id) => next.delete(id));
             return next;
           });
-        }, 12000); // Tanda 'BARU' aktif 12 detik
+        }, 12000);
       }
-      prevLen.current = logsData.length;
+      if (logsData) prevLen.current = logsData.length;
     } catch (err) {
-      console.error('[AktivitasKartu] load error:', err);
+      if (!isNetworkError(err)) {
+        console.error('[AktivitasKartu] load error:', err);
+      }
     } finally {
       setLoading(false);
+      isReloadingRef.current = false;
     }
   }, []);
 
   useEffect(() => {
     reloadData();
 
-    // Mark as read (update UI flag)
+    // Mark as read jika online
     if (isSupabaseConfigured) {
-      supabase
-        .rpc('mark_taps_read')
-        .then(({ error }) => {
-          if (error) console.error('[AktivitasKartu] mark taps read error:', error);
-        });
+      if (isOnline()) {
+        supabase
+          .rpc('mark_taps_read')
+          .then(({ error }) => {
+            if (error && !isNetworkError(error)) {
+              console.error('[AktivitasKartu] mark taps read error:', error);
+            }
+          })
+          .catch(() => {});
+      }
     } else {
       dbService.markTapsRead();
     }
@@ -215,29 +261,52 @@ export default function AktivitasKartuPage() {
     if (!isSupabaseConfigured) {
       const handleStorage = () => reloadData(true);
       window.addEventListener('simlab_storage_updated', handleStorage);
-      const t = setInterval(() => reloadData(true), 3000);
       return () => {
         window.removeEventListener('simlab_storage_updated', handleStorage);
-        clearInterval(t);
       };
     } else {
-      // Supabase realtime + polling fallback 3 detik
+      // Supabase Realtime listeners
       const ch1 = supabase.channel('tap_log_changes')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tap_log' }, (payload) => {
           if (payload.new?.jenis_terdeteksi === 'manual') return;
           reloadData(true);
         })
-        .subscribe();
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[Realtime tap_log] channel status:', status);
+          }
+        });
+
       const ch2 = supabase.channel('permintaan_changes_aktivitaskartu')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'permintaan_habis_pakai' }, () => {
           reloadData(true);
         })
-        .subscribe();
-      const polling = setInterval(() => reloadData(true), 3000);
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[Realtime permintaan] channel status:', status);
+          }
+        });
+
+      // Sinkronisasi otomatis SEKALI saat koneksi internet pulih kembali
+      const unregisterSync = registerOnlineSync(() => {
+        reloadData(true);
+        if (isSupabaseConfigured) {
+          supabase.rpc('mark_taps_read').catch(() => {});
+        }
+      });
+
+      // Background safety catch-up: hanya berjalan jika online dan tab aktif (setiap 30 detik)
+      const safetyTimer = setInterval(() => {
+        if (isOnline() && typeof document !== 'undefined' && !document.hidden) {
+          reloadData(true);
+        }
+      }, 30000);
+
       return () => {
         supabase.removeChannel(ch1);
         supabase.removeChannel(ch2);
-        clearInterval(polling);
+        unregisterSync();
+        clearInterval(safetyTimer);
       };
     }
   }, [reloadData]);
