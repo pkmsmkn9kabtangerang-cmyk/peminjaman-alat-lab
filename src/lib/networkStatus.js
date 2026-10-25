@@ -18,7 +18,7 @@ export function isNetworkError(err) {
   if (!isOnline()) return true;
   const str = String(err?.message ?? err?.code ?? err ?? '').toLowerCase();
   return (
-    str.includes('failed to fetch') ||
+    str.includes('Koneksi kamu bermasalah') ||
     str.includes('network') ||
     str.includes('internet_disconnected') ||
     str.includes('aborterror') ||
@@ -82,7 +82,7 @@ if (typeof window !== 'undefined') {
  * Mengembalikan fungsi cleanup untuk unregister.
  */
 export function registerOnlineSync(callback) {
-  if (typeof callback !== 'function') return () => {};
+  if (typeof callback !== 'function') return () => { };
   reconnectCallbacks.add(callback);
   return () => {
     reconnectCallbacks.delete(callback);
@@ -93,7 +93,7 @@ export function registerOnlineSync(callback) {
  * Hook atau subscription untuk mendengarkan perubahan status jaringan
  */
 export function subscribeNetworkStatus(callback) {
-  if (typeof callback !== 'function') return () => {};
+  if (typeof callback !== 'function') return () => { };
   onlineListeners.add(callback);
   offlineListeners.add(callback);
   // Panggil langsung status saat ini

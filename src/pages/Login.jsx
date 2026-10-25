@@ -335,7 +335,7 @@ export default function LoginPage({ onLoginSuccess }) {
               {/* Username */}
               <div>
                 <label htmlFor="username-login" className="block text-sm font-bold text-gray-700 mb-2">
-                  Nama Pengguna {isSupabaseConfigured ? 'atau Email' : '(Username)'}
+                  {isSupabaseConfigured ? 'Email' : '(Username)'}
                 </label>
                 <input
                   id="username-login"
@@ -347,7 +347,7 @@ export default function LoginPage({ onLoginSuccess }) {
                   }}
                   autoComplete="username"
                   required
-                  placeholder={isSupabaseConfigured ? 'username atau email@kamu.com' : 'Contoh: admin'}
+                  placeholder={isSupabaseConfigured ? 'EmailKamu@gmail.com' : 'Contoh: admin'}
                   className={`w-full px-5 py-4 rounded-xl border text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.username ? 'border-red-400 bg-red-50' : 'border-gray-300'
                     }`}
                 />

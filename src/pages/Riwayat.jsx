@@ -1,7 +1,7 @@
 // src/pages/RiwayatPage.jsx
 // Riwayat Peminjaman: Filter Waktu, Pemegang, Kelas, Status Pisah berstandar SaaS
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { dbService } from '../services/store';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { callFunction } from '../lib/api';
@@ -141,7 +141,7 @@ export default function RiwayatPage() {
         if (session?.user) {
           supabase.from('profiles').select('role').eq('id', session.user.id).single()
             .then(({ data }) => setUser({ role: data?.role }))
-            .catch(() => {});
+            .catch(() => { });
         }
       });
     } else {
