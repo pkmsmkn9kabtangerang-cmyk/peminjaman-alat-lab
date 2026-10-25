@@ -398,36 +398,54 @@ export default function App() {
 
   // ── Render: Halaman /auth/* ──────────────────────────────────
   if (isAuthRoute) {
-    return <SetPassword />;
+    return (
+      <>
+        <NetworkStatusBanner />
+        <SetPassword />
+      </>
+    );
   }
 
   // ── Render: Loading ──────────────────────────────────────────
   if (authState === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-3 text-gray-500">
-          <svg className="animate-spin h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-          </svg>
-          <p className="text-sm font-medium">Memuat aplikasi...</p>
+      <>
+        <NetworkStatusBanner />
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="flex flex-col items-center gap-3 text-gray-500">
+            <svg className="animate-spin h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+            </svg>
+            <p className="text-sm font-medium">Memuat aplikasi...</p>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   // ── Render: Login page ───────────────────────────────────────
   if (authState === 'unauthenticated' || !currentUser) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <>
+        <NetworkStatusBanner />
+        <Login onLoginSuccess={handleLoginSuccess} />
+      </>
+    );
   }
 
   // ── Render: Wajib Ganti Password ─────────────────────────────
   if (currentUser.wajib_ganti_password) {
-    return <ChangePasswordMandiri
-      user={currentUser}
-      onSuccess={() => setCurrentUser({ ...currentUser, wajib_ganti_password: false })}
-      onCancel={handleLogout}
-    />;
+    return (
+      <>
+        <NetworkStatusBanner />
+        <ChangePasswordMandiri
+          user={currentUser}
+          onSuccess={() => setCurrentUser({ ...currentUser, wajib_ganti_password: false })}
+          onCancel={handleLogout}
+        />
+      </>
+    );
   }
 
   // ── Render: Main app ─────────────────────────────────────────

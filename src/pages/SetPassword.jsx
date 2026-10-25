@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { showFeedback } from '../lib/feedback';
+import { showFeedback, friendlyError } from '../lib/feedback';
+import { isOnline, isNetworkError } from '../lib/networkStatus';
 import Button from '../components/Button';
 import FormField, { inputClass } from '../components/FormField';
 import { IconKey, IconShieldCheck } from '@tabler/icons-react';
@@ -34,7 +35,10 @@ export default function SetPassword() {
     // The session should be available if the token was valid.
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (error) {
-        showFeedback({ type: 'error', title: 'Sesi tidak valid', message: error.message });
+        const msg = isNetworkError(error)
+          ? 'Koneksi internet terputus. Pastikan jaringan Anda tersambung dan coba buka tautan kembali.'
+          : friendlyError(error, 'Sesi tidak valid. Silakan minta tautan reset ulang.');
+        showFeedback({ type: 'error', title: 'Sesi tidak valid', message: msg });
       } else if (session) {
         setSessionInfo(session);
       }
@@ -69,12 +73,17 @@ export default function SetPassword() {
       return;
     }
 
+    if (!isOnline()) {
+      showFeedback({ type: 'error', title: 'Tidak ada koneksi', message: 'Koneksi internet Anda terputus. Periksa jaringan dan coba lagi.' });
+      return;
+    }
+
     setLoading(true);
     try {
       const { error } = await supabase.auth.updateUser({ password: newPw });
       if (error) throw error;
       
-      showFeedback({ type: 'success', title: 'Password berhasil diatur.', message: 'Anda sekarang dapat menggunakan sistem.' });
+      showFeedback({ type: 'success', title: 'Password berhasil diatur.', message: 'Anda sekarang dapat masuk ke sistem.' });
       
       // Update 'wajib_ganti_password' and 'is_verified' flags
       await supabase.from('profiles').update({ wajib_ganti_password: false, is_verified: true }).eq('id', sessionInfo.user.id);
@@ -83,11 +92,15 @@ export default function SetPassword() {
       window.location.href = '/';
     } catch (err) {
       console.error('[SetPassword] error:', err);
-      showFeedback({ type: 'error', title: 'Gagal mengatur password.', message: err.message });
+      const msg = isNetworkError(err)
+        ? 'Koneksi internet terputus. Periksa jaringan dan coba lagi.'
+        : friendlyError(err, 'Gagal menyimpan password. Silakan coba lagi.');
+      showFeedback({ type: 'error', title: 'Gagal mengatur password.', message: msg });
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="min-h-screen bg-main flex items-center justify-center p-4">

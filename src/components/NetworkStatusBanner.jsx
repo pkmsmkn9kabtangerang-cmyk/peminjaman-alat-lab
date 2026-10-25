@@ -2,16 +2,16 @@
 // Indikator visual status koneksi internet & pemulihan sinkronisasi data
 
 import { useState, useEffect } from 'react';
-import { IconWifiOff, IconRefresh, IconCheck } from '@tabler/icons-react';
-import { subscribeNetworkStatus } from '../lib/networkStatus';
+import { IconWifiOff, IconRefresh, IconCheck, IconX } from '@tabler/icons-react';
+import { subscribeNetworkStatus, isOnline } from '../lib/networkStatus';
 
 export default function NetworkStatusBanner() {
-  const [online, setOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [online, setOnline] = useState(() => isOnline());
   const [reconnecting, setReconnecting] = useState(false);
   const [showRestored, setShowRestored] = useState(false);
 
   useEffect(() => {
-    let wasOffline = !navigator.onLine;
+    let wasOffline = !isOnline();
 
     const unsubscribe = subscribeNetworkStatus((isOnlineNow, isReconnectingNow) => {
       setOnline(isOnlineNow);
@@ -35,20 +35,20 @@ export default function NetworkStatusBanner() {
     return () => unsubscribe();
   }, []);
 
-  // 1. Kondisi Offline
+  // 1. Kondisi Offline (Melayang di paling atas layar, selalu terlihat di semua halaman)
   if (!online) {
     return (
       <div
         role="alert"
-        className="bg-amber-600 text-white px-3.5 py-2 text-xs sm:text-sm font-medium flex items-center justify-between shadow-sm sticky top-14 md:top-16 z-30 transition-all animate-in fade-in slide-in-from-top-1"
+        className="fixed top-0 left-0 right-0 z-[100] bg-amber-600 text-white px-4 py-2.5 text-xs sm:text-sm font-medium flex items-center justify-between shadow-md border-b border-amber-700 animate-in fade-in slide-in-from-top-1"
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <IconWifiOff size={18} className="shrink-0 animate-pulse text-amber-200" />
+        <div className="flex items-center gap-2.5 min-w-0">
+          <IconWifiOff size={19} className="shrink-0 animate-pulse text-amber-200" />
           <span className="truncate">
-            <strong>Koneksi terputus.</strong> Menampilkan data tersimpan. Menunggu jaringan kembali...
+            <strong>Koneksi internet terputus.</strong> Menampilkan data tersimpan. Menunggu jaringan kembali...
           </span>
         </div>
-        <span className="text-[11px] bg-amber-700/80 px-2 py-0.5 rounded font-semibold uppercase tracking-wider shrink-0 ml-2">
+        <span className="text-[11px] bg-amber-800/90 text-amber-100 px-2.5 py-0.5 rounded-full font-semibold uppercase tracking-wider shrink-0 ml-2">
           Offline
         </span>
       </div>
@@ -60,15 +60,15 @@ export default function NetworkStatusBanner() {
     return (
       <div
         role="status"
-        className="bg-blue-600 text-white px-3.5 py-2 text-xs sm:text-sm font-medium flex items-center justify-between shadow-sm sticky top-14 md:top-16 z-30 transition-all animate-in fade-in slide-in-from-top-1"
+        className="fixed top-0 left-0 right-0 z-[100] bg-blue-600 text-white px-4 py-2.5 text-xs sm:text-sm font-medium flex items-center justify-between shadow-md border-b border-blue-700 animate-in fade-in slide-in-from-top-1"
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <IconRefresh size={18} className="shrink-0 animate-spin text-blue-200" />
+        <div className="flex items-center gap-2.5 min-w-0">
+          <IconRefresh size={19} className="shrink-0 animate-spin text-blue-200" />
           <span className="truncate">
             Koneksi internet kembali. Memperbarui data terbaru dari server...
           </span>
         </div>
-        <span className="text-[11px] bg-blue-700/80 px-2 py-0.5 rounded font-semibold uppercase tracking-wider shrink-0 ml-2">
+        <span className="text-[11px] bg-blue-800/90 text-blue-100 px-2.5 py-0.5 rounded-full font-semibold uppercase tracking-wider shrink-0 ml-2">
           Sinkronisasi
         </span>
       </div>
@@ -80,19 +80,20 @@ export default function NetworkStatusBanner() {
     return (
       <div
         role="status"
-        className="bg-emerald-600 text-white px-3.5 py-2 text-xs sm:text-sm font-medium flex items-center justify-between shadow-sm sticky top-14 md:top-16 z-30 transition-all animate-in fade-in slide-in-from-top-1 duration-300"
+        className="fixed top-0 left-0 right-0 z-[100] bg-emerald-600 text-white px-4 py-2.5 text-xs sm:text-sm font-medium flex items-center justify-between shadow-md border-b border-emerald-700 animate-in fade-in slide-in-from-top-1 duration-300"
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <IconCheck size={18} className="shrink-0 text-emerald-200" />
+        <div className="flex items-center gap-2.5 min-w-0">
+          <IconCheck size={19} className="shrink-0 text-emerald-200" />
           <span className="truncate">
-            Koneksi pulih. Data transaksi dan aktivitas telah disinkronkan.
+            Koneksi internet pulih. Data transaksi dan aktivitas telah disinkronkan.
           </span>
         </div>
         <button
           onClick={() => setShowRestored(false)}
-          className="text-emerald-200 hover:text-white text-xs underline shrink-0 ml-2 cursor-pointer"
+          className="text-emerald-100 hover:text-white p-1 rounded transition-colors shrink-0 ml-2 cursor-pointer"
+          title="Tutup pemberitahuan"
         >
-          Tutup
+          <IconX size={16} />
         </button>
       </div>
     );

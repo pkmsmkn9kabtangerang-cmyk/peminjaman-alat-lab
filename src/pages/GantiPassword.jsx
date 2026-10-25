@@ -8,7 +8,8 @@ import PageNote from '../components/PageNote';
 import FormField, { inputClass } from '../components/FormField';
 import Button from '../components/Button';
 import { IconKey, IconShieldCheck } from '@tabler/icons-react';
-import { showFeedback } from '../lib/feedback';
+import { showFeedback, friendlyError } from '../lib/feedback';
+import { isOnline, isNetworkError } from '../lib/networkStatus';
 
 const MIN_PW = 8;
 
@@ -50,16 +51,30 @@ export default function GantiPassword({ user }) {
     setErrors(errs);
     if (Object.keys(errs).length > 0) return;
 
+    if (!isSupabaseConfigured && !isOnline()) {
+      showFeedback({ type: 'error', title: 'Tidak ada koneksi', message: 'Koneksi internet Anda terputus. Periksa jaringan dan coba lagi.' });
+      return;
+    }
+
     setLoading(true);
     try {
       if (isSupabaseConfigured) {
+        if (!isOnline()) {
+          showFeedback({ type: 'error', title: 'Tidak ada koneksi', message: 'Koneksi internet Anda terputus. Periksa jaringan dan coba lagi.' });
+          setLoading(false);
+          return;
+        }
         // Verifikasi password lama
         const { error: reAuthErr } = await supabase.auth.signInWithPassword({
           email: user.email,
           password: current,
         });
         if (reAuthErr) {
-          setErrors({ current: 'Password saat ini tidak sesuai.' });
+          if (isNetworkError(reAuthErr)) {
+            showFeedback({ type: 'error', title: 'Tidak ada koneksi', message: 'Koneksi internet Anda terputus. Periksa jaringan dan coba lagi.' });
+          } else {
+            setErrors({ current: 'Password saat ini tidak sesuai.' });
+          }
           setLoading(false);
           return;
         }
@@ -80,7 +95,10 @@ export default function GantiPassword({ user }) {
       setConfirm('');
     } catch (err) {
       console.error('[GantiPassword] error:', err);
-      showFeedback({ type: 'error', title: 'Gagal mengganti password.', message: err.message });
+      const msg = isNetworkError(err)
+        ? 'Koneksi internet Anda terputus. Periksa jaringan dan coba lagi.'
+        : friendlyError(err, 'Gagal mengganti password. Silakan coba lagi.');
+      showFeedback({ type: 'error', title: 'Gagal mengganti password.', message: msg });
     } finally {
       setLoading(false);
     }

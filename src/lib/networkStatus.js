@@ -1,31 +1,64 @@
 // src/lib/networkStatus.js
 // Pengelola status koneksi jaringan dan sinkronisasi pemulihan data SISPAS
 
-let onlineListeners = new Set();
-let offlineListeners = new Set();
-let reconnectCallbacks = new Set();
-let isReconnectingTimeout = null;
+let manualOffline = false;
 let isReconnecting = false;
+let isReconnectingTimeout = null;
+const listeners = new Set();
+const reconnectCallbacks = new Set();
 
 // Cek apakah browser sedang memiliki koneksi internet
 export function isOnline() {
-  return typeof navigator !== 'undefined' ? Boolean(navigator.onLine) : true;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return false;
+  }
+  return !manualOffline;
 }
 
 // Cek apakah suatu error disebabkan oleh koneksi jaringan yang terputus / offline
 export function isNetworkError(err) {
   if (!err) return false;
   if (!isOnline()) return true;
-  const str = String(err?.message ?? err?.code ?? err ?? '').toLowerCase();
+  const str = String(err?.message ?? err?.code ?? err?.error_description ?? err ?? '').toLowerCase();
   return (
-    str.includes('Koneksi kamu bermasalah') ||
+    str.includes('failed to fetch') ||
+    str.includes('fetch failed') ||
+    str.includes('load failed') ||
     str.includes('network') ||
-    str.includes('internet_disconnected') ||
+    str.includes('internet') ||
     str.includes('aborterror') ||
     str.includes('timeout') ||
     str.includes('offline') ||
-    str.includes('connection refused')
+    str.includes('connection refused') ||
+    str.includes('koneksi') ||
+    str.includes('err_') ||
+    str.includes('net::')
   );
+}
+
+// Lapor manual jika ada request yang gagal akibat masalah jaringan
+export function reportNetworkError() {
+  if (!manualOffline) {
+    manualOffline = true;
+    notifyListeners();
+  }
+}
+
+// Lapor manual jika request jaringan berhasil kembali
+export function reportNetworkSuccess() {
+  if (manualOffline) {
+    manualOffline = false;
+    notifyListeners();
+  }
+}
+
+function notifyListeners() {
+  const online = isOnline();
+  listeners.forEach((fn) => {
+    try {
+      fn(online, isReconnecting);
+    } catch (_) { /* noop */ }
+  });
 }
 
 // Trigger semua callback sinkronisasi saat koneksi pulih kembali
@@ -53,25 +86,17 @@ function triggerReconnectSync() {
   }, 400);
 }
 
-function notifyListeners() {
-  const online = isOnline();
-  const listeners = online ? onlineListeners : offlineListeners;
-  listeners.forEach((fn) => {
-    try {
-      fn(online, isReconnecting);
-    } catch (_) { /* noop */ }
-  });
-}
-
 // Inisialisasi event listener browser global
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
     console.info('[Network] Internet terhubung kembali.');
+    manualOffline = false;
     triggerReconnectSync();
   });
 
   window.addEventListener('offline', () => {
     console.warn('[Network] Internet terputus. Beralih ke mode offline.');
+    manualOffline = true;
     isReconnecting = false;
     notifyListeners();
   });
@@ -94,13 +119,11 @@ export function registerOnlineSync(callback) {
  */
 export function subscribeNetworkStatus(callback) {
   if (typeof callback !== 'function') return () => { };
-  onlineListeners.add(callback);
-  offlineListeners.add(callback);
+  listeners.add(callback);
   // Panggil langsung status saat ini
   callback(isOnline(), isReconnecting);
   return () => {
-    onlineListeners.delete(callback);
-    offlineListeners.delete(callback);
+    listeners.delete(callback);
   };
 }
 
@@ -113,10 +136,12 @@ export async function safeFetch(fetchFn, fallbackData = null) {
     return fallbackData;
   }
   try {
-    return await fetchFn();
+    const result = await fetchFn();
+    reportNetworkSuccess();
+    return result;
   } catch (err) {
     if (isNetworkError(err)) {
-      // Tangani error jaringan secara senyap tanpa merusak state data
+      reportNetworkError();
       return fallbackData;
     }
     throw err;

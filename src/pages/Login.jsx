@@ -2,9 +2,12 @@
 // Login split-layout: kiri visual lab SMK, kanan form login
 // Logic: Supabase Auth jika terkonfigurasi, fallback ke localStorage demo
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { dbService } from '../services/store';
+import { isOnline, isNetworkError, reportNetworkError, reportNetworkSuccess, subscribeNetworkStatus } from '../lib/networkStatus';
+import { friendlyError } from '../lib/feedback';
+import { IconWifiOff } from '@tabler/icons-react';
 import logo from '../assets/logo.png';
 
 const SCHOOL_NAME = import.meta.env.VITE_SCHOOL_NAME ?? 'SMK Negeri';
@@ -44,6 +47,16 @@ export default function LoginPage({ onLoginSuccess }) {
   const [forgotError, setForgotError] = useState('');
   const [forgotSuccess, setForgotSuccess] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [online, setOnline] = useState(() => isOnline());
+
+  useEffect(() => {
+    return subscribeNetworkStatus((isOnlineNow) => {
+      setOnline(isOnlineNow);
+      if (isOnlineNow) {
+        setGlobalError((prev) => (prev.includes('koneksi') ? '' : prev));
+      }
+    });
+  }, []);
 
   const handleForgotPassword = async (e) => {
     e.preventDefault();
@@ -61,6 +74,11 @@ export default function LoginPage({ onLoginSuccess }) {
       setForgotSuccess('Mode demo: Fitur lupa password tidak tersedia. Hubungi admin untuk reset password.');
       return;
     }
+    if (!isOnline()) {
+      setForgotError('Tidak dapat mengirim email karena koneksi internet Anda terputus. Periksa jaringan dan coba lagi.');
+      return;
+    }
+
     setForgotLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
@@ -69,7 +87,12 @@ export default function LoginPage({ onLoginSuccess }) {
       if (error) throw error;
       setForgotSuccess('Link reset password telah dikirim ke email Anda. Periksa inbox dan folder spam.');
     } catch (err) {
-      setForgotError(err.message || 'Gagal mengirim email. Coba lagi.');
+      if (isNetworkError(err)) {
+        reportNetworkError();
+        setForgotError('Tidak dapat mengirim email karena koneksi internet Anda terputus. Periksa jaringan dan coba lagi.');
+      } else {
+        setForgotError(friendlyError(err, 'Gagal mengirim email reset password. Silakan coba lagi.'));
+      }
     } finally {
       setForgotLoading(false);
     }
@@ -78,6 +101,12 @@ export default function LoginPage({ onLoginSuccess }) {
   const handleLogin = async (e) => {
     e.preventDefault();
     setGlobalError('');
+
+    // Validasi koneksi internet sebelum submit
+    if (!isOnline()) {
+      setGlobalError('Tidak bisa masuk, koneksi internet Anda tidak tersambung. Silakan periksa jaringan dan coba lagi.');
+      return;
+    }
 
     // Validasi form
     const validationErrors = validateForm(username, password);
@@ -102,13 +131,17 @@ export default function LoginPage({ onLoginSuccess }) {
 
           if (profileErr) {
             console.error('[Login] profiles lookup error:', profileErr);
+            if (isNetworkError(profileErr)) {
+              reportNetworkError();
+              setGlobalError('Tidak bisa masuk, koneksi internet Anda tidak tersambung. Silakan periksa jaringan dan coba lagi.');
+              setLoading(false);
+              return;
+            }
           }
 
           if (profileData?.email) {
             loginEmail = profileData.email;
           } else {
-            // Coba fallback: username as email prefix @smk.sch.id
-            // tapi ini boleh gagal, biarkan signInWithPassword yang tolak
             setErrors({ username: 'Nama pengguna tidak ditemukan.' });
             setLoading(false);
             return;
@@ -121,16 +154,19 @@ export default function LoginPage({ onLoginSuccess }) {
         });
 
         if (error) {
-          if (
+          if (isNetworkError(error)) {
+            reportNetworkError();
+            setGlobalError('Tidak bisa masuk, koneksi internet Anda tidak tersambung. Silakan periksa jaringan dan coba lagi.');
+          } else if (
             error.message?.toLowerCase().includes('invalid login') ||
             error.message?.toLowerCase().includes('email not confirmed') ||
             error.message?.toLowerCase().includes('invalid credentials')
           ) {
-            setGlobalError('Nama pengguna atau kata sandi salah.');
+            setGlobalError('Nama pengguna atau kata sandi salah. Silakan periksa kembali.');
           } else if (error.message?.toLowerCase().includes('too many requests')) {
-            setGlobalError('Terlalu banyak percobaan. Tunggu beberapa menit, lalu coba lagi.');
+            setGlobalError('Terlalu banyak percobaan masuk. Tunggu beberapa menit, lalu coba lagi.');
           } else {
-            setGlobalError(error.message ?? 'Login gagal. Silakan coba lagi.');
+            setGlobalError(friendlyError(error, 'Tidak bisa masuk. Silakan periksa akun Anda dan coba lagi.'));
           }
           setLoading(false);
           return;
@@ -139,23 +175,23 @@ export default function LoginPage({ onLoginSuccess }) {
         // Ambil profil dari tabel profiles
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('id, nama_lengkap, email, role, wajib_ganti_password') // nanti bisa di tambahin aktif di sini, di samping role
+          .select('id, nama_lengkap, email, role, wajib_ganti_password')
           .eq('id', data.user.id)
           .maybeSingle();
 
         if (profileError || !profile) {
-          setGlobalError('Akun ditemukan, tetapi profil tidak tersedia. Hubungi administrator.');
-          await supabase.auth.signOut();
+          if (isNetworkError(profileError)) {
+            reportNetworkError();
+            setGlobalError('Tidak bisa masuk, koneksi internet Anda tidak tersambung. Silakan periksa jaringan dan coba lagi.');
+          } else {
+            setGlobalError('Akun ditemukan, tetapi data profil tidak tersedia. Hubungi administrator.');
+          }
+          await supabase.auth.signOut().catch(() => {});
           setLoading(false);
           return;
         }
 
-        // if (!profile.aktif) {
-        //   setGlobalError('Akun Anda telah dinonaktifkan. Hubungi administrator.');
-        //   await supabase.auth.signOut();
-        //   setLoading(false);
-        //   return;
-        // }
+        reportNetworkSuccess();
 
         // Normalisasi nama field (DB pakai nama_lengkap, app pakai nama)
         const userObj = {
@@ -164,7 +200,6 @@ export default function LoginPage({ onLoginSuccess }) {
           email: profile.email || data.user.email,
           role: profile.role,
           wajib_ganti_password: profile.wajib_ganti_password,
-          // aktif: profile.aktif,
         };
 
         onLoginSuccess(userObj);
@@ -187,12 +222,6 @@ export default function LoginPage({ onLoginSuccess }) {
         return;
       }
 
-      // if (!foundUser.aktif) {
-      //   setGlobalError('Akun Anda telah dinonaktifkan.');
-      //   setLoading(false);
-      //   return;
-      // }
-
       // Mode demo: password minimal 6 karakter, tidak dicek isinya
       if (password.length < 6) {
         setErrors({ password: 'Kata sandi salah. (Demo: minimal 6 karakter, contoh: petugas123)' });
@@ -204,7 +233,12 @@ export default function LoginPage({ onLoginSuccess }) {
 
     } catch (err) {
       console.error('[Login] unexpected error:', err);
-      setGlobalError('Terjadi kesalahan koneksi. Periksa jaringan lalu coba lagi.');
+      if (isNetworkError(err)) {
+        reportNetworkError();
+        setGlobalError('Tidak bisa masuk, koneksi internet Anda tidak tersambung. Silakan periksa jaringan dan coba lagi.');
+      } else {
+        setGlobalError(friendlyError(err, 'Terjadi kendala saat memproses login. Silakan coba lagi.'));
+      }
     } finally {
       setLoading(false);
     }
@@ -322,6 +356,16 @@ export default function LoginPage({ onLoginSuccess }) {
                 </p>
               )}
             </div>
+
+            {/* Banner Offline - tampil di atas form saat koneksi terputus */}
+            {!online && (
+              <div className="p-3 bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded-lg flex items-center gap-2.5">
+                <IconWifiOff size={17} className="shrink-0 text-amber-600 animate-pulse" />
+                <span>
+                  <strong>Koneksi internet terputus.</strong> Tidak bisa masuk sampai jaringan kembali tersambung.
+                </span>
+              </div>
+            )}
 
             {/* Error global */}
             {globalError && (
