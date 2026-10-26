@@ -1,18 +1,39 @@
 // src/pages/Login.jsx
-// Login split-layout: kiri visual lab SMK, kanan form login
-// Logic: Supabase Auth jika terkonfigurasi, fallback ke localStorage demo
+// Login form terpusat dengan branding ringkas.
+// Logic: Supabase Auth jika terkonfigurasi, fallback ke localStorage demo.
 
 import { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { dbService } from '../services/store';
-import { isOnline, isNetworkError, reportNetworkError, reportNetworkSuccess, subscribeNetworkStatus } from '../lib/networkStatus';
+import {
+  isOnline,
+  isNetworkError,
+  reportNetworkError,
+  reportNetworkSuccess,
+  subscribeNetworkStatus,
+} from '../lib/networkStatus';
 import { friendlyError } from '../lib/feedback';
-import { IconWifiOff } from '@tabler/icons-react';
+import {
+  IconAlertCircle,
+  IconArrowLeft,
+  IconArrowRight,
+  IconCheck,
+  IconCircleCheck,
+  IconEye,
+  IconEyeOff,
+  IconIdBadge2,
+  IconKey,
+  IconLock,
+  IconMail,
+  IconShieldCheck,
+  IconUser,
+  IconWifiOff,
+} from '@tabler/icons-react';
 import logo from '../assets/logo.png';
 
 const SCHOOL_NAME = import.meta.env.VITE_SCHOOL_NAME ?? 'SMK Negeri';
 
-// Validasi form sebelum submit
+// Validasi form sebelum submit.
 function validateForm(username, password) {
   const errors = {};
   const trimUser = username.trim();
@@ -35,6 +56,47 @@ function validateForm(username, password) {
   return errors;
 }
 
+function FieldError({ id, children }) {
+  if (!children) return null;
+  return (
+    <p id={id} className="mt-1.5 flex items-start gap-1.5 text-[12.5px] font-medium leading-snug text-red-700">
+      <IconAlertCircle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+function SubmitSpinner() {
+  return (
+    <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+    </svg>
+  );
+}
+
+function BrandMark({ compact = false }) {
+  return (
+    <div className={`flex items-center ${compact ? 'gap-2.5' : 'gap-3'}`}>
+      <span
+        className={`flex items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80 shadow-sm ${
+          compact ? 'h-10 w-10' : 'h-12 w-12'
+        }`}
+      >
+        <img src={logo} alt="Logo sekolah" className={compact ? 'h-7 w-7 object-contain' : 'h-9 w-9 object-contain'} />
+      </span>
+      <div className="min-w-0">
+        <p className={`${compact ? 'text-[15px]' : 'text-base'} font-bold leading-tight tracking-tight text-[#12365f]`}>
+          SISPAS
+        </p>
+        <p className={`${compact ? 'text-[11px]' : 'text-xs'} truncate leading-tight text-slate-500`}>
+          {SCHOOL_NAME}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function LoginPage({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -49,11 +111,15 @@ export default function LoginPage({ onLoginSuccess }) {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [online, setOnline] = useState(() => isOnline());
 
+  const requiresConnection = isSupabaseConfigured;
+  const connectionReady = online || !requiresConnection;
+
   useEffect(() => {
     return subscribeNetworkStatus((isOnlineNow) => {
       setOnline(isOnlineNow);
       if (isOnlineNow) {
-        setGlobalError((prev) => (prev.includes('koneksi') ? '' : prev));
+        setGlobalError((prev) => (prev.toLowerCase().includes('koneksi') ? '' : prev));
+        setForgotError((prev) => (prev.toLowerCase().includes('koneksi') ? '' : prev));
       }
     });
   }, []);
@@ -62,6 +128,7 @@ export default function LoginPage({ onLoginSuccess }) {
     e.preventDefault();
     setForgotError('');
     setForgotSuccess('');
+
     if (!forgotEmail.trim()) {
       setForgotError('Masukkan email akun Anda.');
       return;
@@ -71,11 +138,11 @@ export default function LoginPage({ onLoginSuccess }) {
       return;
     }
     if (!isSupabaseConfigured) {
-      setForgotSuccess('Mode demo: Fitur lupa password tidak tersedia. Hubungi admin untuk reset password.');
+      setForgotSuccess('Mode demo: fitur lupa password tidak tersedia. Hubungi admin untuk reset password.');
       return;
     }
     if (!isOnline()) {
-      setForgotError('Tidak dapat mengirim email karena koneksi internet Anda terputus. Periksa jaringan dan coba lagi.');
+      setForgotError('Tidak dapat mengirim email karena koneksi internet terputus. Periksa jaringan dan coba lagi.');
       return;
     }
 
@@ -89,7 +156,7 @@ export default function LoginPage({ onLoginSuccess }) {
     } catch (err) {
       if (isNetworkError(err)) {
         reportNetworkError();
-        setForgotError('Tidak dapat mengirim email karena koneksi internet Anda terputus. Periksa jaringan dan coba lagi.');
+        setForgotError('Tidak dapat mengirim email karena koneksi internet terputus. Periksa jaringan dan coba lagi.');
       } else {
         setForgotError(friendlyError(err, 'Gagal mengirim email reset password. Silakan coba lagi.'));
       }
@@ -102,26 +169,25 @@ export default function LoginPage({ onLoginSuccess }) {
     e.preventDefault();
     setGlobalError('');
 
-    // Validasi koneksi internet sebelum submit
-    if (!isOnline()) {
-      setGlobalError('Tidak bisa masuk, koneksi internet Anda tidak tersambung. Silakan periksa jaringan dan coba lagi.');
-      return;
-    }
-
-    // Validasi form
+    // Validasi form lebih dulu agar pesan kesalahan spesifik.
     const validationErrors = validateForm(username, password);
     setErrors(validationErrors);
     if (Object.keys(validationErrors).length > 0) return;
 
+    // Mode demo tetap bisa dipakai tanpa internet karena memakai localStorage.
+    if (isSupabaseConfigured && !isOnline()) {
+      setGlobalError('Tidak bisa masuk, koneksi internet Anda tidak tersambung. Silakan periksa jaringan dan coba lagi.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // ── Mode Supabase (production/local dengan supabase) ──
+      // ── Mode Supabase ──────────────────────────────────────────
       if (isSupabaseConfigured) {
-        // Username bisa berupa email langsung, atau kita cari email-nya dari profiles
+        // Username bisa berupa email langsung, atau dicari dari profiles.
         let loginEmail = username.trim();
 
-        // Kalau bukan format email, coba cari email dari profiles berdasarkan username
         if (!loginEmail.includes('@')) {
           const { data: profileData, error: profileErr } = await supabase
             .from('profiles')
@@ -150,7 +216,7 @@ export default function LoginPage({ onLoginSuccess }) {
 
         const { data, error } = await supabase.auth.signInWithPassword({
           email: loginEmail,
-          password: password,
+          password,
         });
 
         if (error) {
@@ -193,20 +259,17 @@ export default function LoginPage({ onLoginSuccess }) {
 
         reportNetworkSuccess();
 
-        // Normalisasi nama field (DB pakai nama_lengkap, app pakai nama)
-        const userObj = {
+        onLoginSuccess({
           uid: profile.id,
           nama: profile.nama_lengkap || profile.nama || data.user.email,
           email: profile.email || data.user.email,
           role: profile.role,
           wajib_ganti_password: profile.wajib_ganti_password,
-        };
-
-        onLoginSuccess(userObj);
+        });
         return;
       }
 
-      // ── Mode Demo / Local (localStorage fallback) ──
+      // ── Mode Demo / Local (localStorage) ──────────────────────
       const users = dbService.getUsers();
       const trimmedUser = username.trim().toLowerCase();
 
@@ -222,7 +285,7 @@ export default function LoginPage({ onLoginSuccess }) {
         return;
       }
 
-      // Mode demo: password minimal 6 karakter, tidak dicek isinya
+      // Mode demo: password minimal 6 karakter, isi tidak dicek.
       if (password.length < 6) {
         setErrors({ password: 'Kata sandi salah. (Demo: minimal 6 karakter, contoh: petugas123)' });
         setLoading(false);
@@ -230,7 +293,6 @@ export default function LoginPage({ onLoginSuccess }) {
       }
 
       onLoginSuccess(foundUser);
-
     } catch (err) {
       console.error('[Login] unexpected error:', err);
       if (isNetworkError(err)) {
@@ -244,260 +306,379 @@ export default function LoginPage({ onLoginSuccess }) {
     }
   };
 
-  // Quick login hanya tampil di mode demo (localStorage)
+  // Quick login hanya tampil di mode demo (localStorage).
   const quickLogin = (role) => {
     if (isSupabaseConfigured) return;
     const found = dbService.getUsers().find((u) => u.role === role);
     if (found) onLoginSuccess(found);
   };
 
+  const openForgot = () => {
+    setView('forgot');
+    setForgotError('');
+    setForgotSuccess('');
+    setGlobalError('');
+  };
+
+  const backToLogin = () => {
+    setView('login');
+    setForgotError('');
+    setForgotSuccess('');
+  };
+
   return (
-    <div className="min-h-screen flex">
-      {/* ── Panel Kiri: Visual Lab ── */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-700 flex-col justify-between p-12 relative overflow-hidden">
-        {/* Background pattern */}
-        <div className="absolute inset-0 opacity-10">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <div
-              key={i}
-              className="absolute rounded-full border-2 border-white"
-              style={{
-                width: `${60 + i * 40}px`,
-                height: `${60 + i * 40}px`,
-                top: `${Math.sin(i) * 30 + 50}%`,
-                left: `${Math.cos(i) * 30 + 50}%`,
-                transform: 'translate(-50%, -50%)',
-              }}
-            />
-          ))}
-        </div>
-
-        {/* Top */}
-        <div className="relative flex items-center gap-3">
-          <img src={logo} alt="Logo SMK" className="w-12 h-12 filter brightness-0 invert" />
-          <div>
-            <h1 className="text-white font-bold text-lg leading-tight">SISPAS</h1>
-            <p className="text-blue-200 text-sm">{SCHOOL_NAME}</p>
-          </div>
-        </div>
-
-        {/* Center */}
-        <div className="relative space-y-6">
-          <div className="w-20 h-1 bg-white/40 rounded" />
-          <h2 className="text-white text-4xl font-bold leading-tight">
-            Peminjaman<br />Alat Lab Berbasis<br />RFID
-          </h2>
-          <p className="text-blue-100 text-base max-w-xs leading-relaxed">
-            Monitoring realtime, pencatatan otomatis, dan manajemen alat laboratorium.
-          </p>
-        </div>
-
-        {/* Bottom stats */}
-        <div className="relative grid grid-cols-3 gap-4">
-          {isSupabaseConfigured && (
-            <div className="col-span-3 flex items-center gap-2 text-blue-200 text-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
-
-            </div>
-          )}
-        </div>
+    <div className="relative min-h-screen overflow-hidden bg-[#f4f7fb]">
+      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+        <div className="absolute -left-28 top-0 h-72 w-72 rounded-full bg-blue-200/25 blur-3xl" />
+        <div className="absolute -right-24 bottom-0 h-80 w-80 rounded-full bg-cyan-100/50 blur-3xl" />
+        <div className="absolute left-1/2 top-16 h-64 w-64 -translate-x-1/2 rounded-full bg-white/60 blur-3xl" />
       </div>
 
-      {/* ── Panel Kanan: Form Login atau Forgot ── */}
-      <div className="flex-1 flex items-center justify-center p-4 sm:p-6 bg-main">
-        {view === 'forgot' ? (
-          <div className="w-full max-w-md space-y-6">
-            <div>
-              <button onClick={() => { setView('login'); setForgotError(''); setForgotSuccess(''); }} className="text-sm text-blue-600 hover:underline mb-4 inline-flex items-center gap-1">
-                ← Kembali ke login
-              </button>
-              <h2 className="text-2xl font-bold text-main">Lupa Password</h2>
-              <p className="text-muted text-sm mt-1">Masukkan email akun Anda. Kami akan mengirim link reset password.</p>
-            </div>
-            {forgotError && <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">{forgotError}</div>}
-            {forgotSuccess && <div className="p-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg">{forgotSuccess}</div>}
-            {!forgotSuccess && (
-              <form onSubmit={handleForgotPassword} className="space-y-4" noValidate>
-                <div>
-                  <label htmlFor="forgot-email" className="block text-sm font-bold text-gray-700 mb-2">Email</label>
-                  <input
-                    id="forgot-email"
-                    type="email"
-                    value={forgotEmail}
-                    onChange={(e) => setForgotEmail(e.target.value)}
-                    className="w-full px-5 py-4 rounded-xl border border-gray-300 text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-                    placeholder="email@sekolah.com"
-                    required
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={forgotLoading}
-                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-base transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  {forgotLoading ? 'Mengirim...' : 'Kirim Link Reset'}
-                </button>
-              </form>
-            )}
+      <main className="relative flex min-h-screen flex-col px-4 py-6 sm:px-6 sm:py-10">
+        <div className="mx-auto flex w-full max-w-[420px] flex-1 flex-col justify-center">
+          <div className="mb-6 flex justify-center">
+            <BrandMark compact />
           </div>
-        ) : (
-          <div className="w-full max-w-md space-y-8">
-            {/* Mobile logo */}
-            <div className="lg:hidden text-center">
-              <img src={logo} alt="Logo SMK" className="w-12 h-12 mx-auto mb-3" />
-            </div>
 
-            <div>
-              <h2 className="text-2xl font-bold text-main">Selamat Datang Di SISPAS </h2>
-              <p className="text-muted text-sm mt-1">Silahkan untuk login terlebih dahulu</p>
-              {!isSupabaseConfigured && (
-                <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg inline-block">
-                  ⚠️ Mode Demo — data tersimpan lokal di browser
-                </p>
+          {view === 'forgot' ? (
+            <section className="animate-fadeIn rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_24px_60px_-32px_rgba(15,45,80,0.35)] sm:p-7">
+              <button
+                type="button"
+                onClick={backToLogin}
+                className="mb-6 inline-flex min-h-10 items-center gap-2 rounded-lg text-[13px] font-semibold text-slate-600 transition hover:text-[#1E5AAB] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              >
+                <IconArrowLeft size={16} />
+                Kembali ke halaman masuk
+              </button>
+
+              <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-[#1E5AAB] ring-1 ring-blue-100">
+                <IconKey size={22} />
+              </span>
+              <h2 className="text-[22px] font-bold tracking-tight text-[#172033]">Lupa password?</h2>
+              <p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-500">
+                Masukkan email yang terdaftar. Kami akan mengirimkan tautan untuk mengatur ulang kata sandi Anda.
+              </p>
+
+              {!online && (
+                <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-[12.5px] leading-relaxed text-amber-900">
+                  <IconWifiOff size={17} className="mt-0.5 shrink-0 text-amber-700" />
+                  <span>
+                    <strong className="font-semibold">Sedang offline.</strong> Tautan reset memerlukan koneksi internet.
+                  </span>
+                </div>
               )}
-            </div>
 
-            {/* Banner Offline - tampil di atas form saat koneksi terputus */}
-            {!online && (
-              <div className="p-3 bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded-lg flex items-center gap-2.5">
-                <IconWifiOff size={17} className="shrink-0 text-amber-600 animate-pulse" />
-                <span>
-                  <strong>Koneksi internet terputus.</strong> Tidak bisa masuk sampai jaringan kembali tersambung.
-                </span>
-              </div>
-            )}
+              {forgotError && (
+                <div
+                  role="alert"
+                  className="mt-5 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-[12.5px] leading-relaxed text-red-800"
+                >
+                  <IconAlertCircle size={17} className="mt-0.5 shrink-0" />
+                  <span>{forgotError}</span>
+                </div>
+              )}
 
-            {/* Error global */}
-            {globalError && (
-              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg flex items-start gap-2">
-                <span className="text-red-500 mt-0.5 shrink-0">✕</span>
-                {globalError}
-              </div>
-            )}
-
-            <form onSubmit={handleLogin} className="space-y-4" noValidate>
-              {/* Username */}
-              <div>
-                <label htmlFor="username-login" className="block text-sm font-bold text-gray-700 mb-2">
-                  {isSupabaseConfigured ? 'Email' : '(Username)'}
-                </label>
-                <input
-                  id="username-login"
-                  type="text"
-                  value={username}
-                  onChange={(e) => {
-                    setUsername(e.target.value);
-                    if (errors.username) setErrors((prev) => ({ ...prev, username: '' }));
-                  }}
-                  autoComplete="username"
-                  required
-                  placeholder={isSupabaseConfigured ? 'EmailKamu@gmail.com' : 'Contoh: admin'}
-                  className={`w-full px-5 py-4 rounded-xl border text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.username ? 'border-red-400 bg-red-50' : 'border-gray-300'
-                    }`}
-                />
-                {errors.username && (
-                  <p className="mt-1.5 text-xs text-red-600">{errors.username}</p>
-                )}
-              </div>
-
-              {/* Password */}
-              <div className="mt-5">
-                <label htmlFor="password-login" className="block text-sm font-bold text-gray-700 mb-2">
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    id="password-login"
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      if (errors.password) setErrors((prev) => ({ ...prev, password: '' }));
-                    }}
-                    autoComplete="current-password"
-                    required
-                    placeholder="Masukkan kata sandi"
-                    className={`w-full px-5 py-4 pr-14 rounded-xl border text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.password ? 'border-red-400 bg-red-50' : 'border-gray-300'
-                      }`}
-                  />
+              {forgotSuccess ? (
+                <div className="mt-6 animate-fadeIn rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                  <div className="flex items-start gap-2.5">
+                    <IconCircleCheck size={20} className="mt-0.5 shrink-0 text-emerald-700" />
+                    <div>
+                      <p className="text-[13.5px] font-semibold text-emerald-900">Permintaan diproses</p>
+                      <p className="mt-1 text-[12.5px] leading-relaxed text-emerald-800">{forgotSuccess}</p>
+                    </div>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 text-sm font-medium"
-                    tabIndex={-1}
+                    onClick={backToLogin}
+                    className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-[13px] font-semibold text-white transition hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
                   >
-                    {showPassword ? 'Sembunyikan' : 'Tampilkan'}
+                    Kembali ke halaman masuk
+                    <IconArrowRight size={16} />
                   </button>
                 </div>
-                <div className="flex items-center justify-between mt-1">
-                  {errors.password && (
-                    <p className="text-xs text-red-600">{errors.password}</p>
+              ) : (
+                <form onSubmit={handleForgotPassword} className="mt-6 space-y-4" noValidate>
+                  <div>
+                    <label htmlFor="forgot-email" className="mb-1.5 block text-[13px] font-semibold text-slate-700">
+                      Email akun
+                    </label>
+                    <div className="relative">
+                      <IconMail
+                        size={18}
+                        className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                        aria-hidden="true"
+                      />
+                      <input
+                        id="forgot-email"
+                        type="email"
+                        inputMode="email"
+                        autoComplete="email"
+                        value={forgotEmail}
+                        onChange={(e) => {
+                          setForgotEmail(e.target.value);
+                          setForgotError('');
+                        }}
+                        className="min-h-12 w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-3.5 text-[15px] text-slate-900 placeholder:text-slate-400 transition focus:border-[#1E5AAB] focus:outline-none focus:ring-4 focus:ring-blue-500/15"
+                        placeholder="nama@sekolah.sch.id"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={forgotLoading || (isSupabaseConfigured && !online)}
+                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#1E5AAB] px-4 text-[14px] font-semibold text-white shadow-sm shadow-blue-900/15 transition hover:bg-[#184A8C] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    {forgotLoading ? (
+                      <>
+                        <SubmitSpinner />
+                        Mengirim...
+                      </>
+                    ) : (
+                      <>
+                        Kirim tautan reset
+                        <IconArrowRight size={17} />
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
+            </section>
+          ) : (
+            <section className="animate-fadeIn rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_24px_60px_-32px_rgba(15,45,80,0.35)] sm:p-7">
+              <div className="mb-6">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-[24px] font-bold tracking-tight text-[#172033] sm:text-[26px]">
+                    Masuk ke SISPAS
+                  </h1>
+                  {!isSupabaseConfigured && (
+                    <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-800">
+                      Mode demo
+                    </span>
                   )}
-                  {isSupabaseConfigured && (
+                </div>
+                <p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-500">
+                  Gunakan akun yang diberikan administrator laboratorium.
+                </p>
+              </div>
+
+              {!connectionReady && (
+                <div
+                  role="status"
+                  className="mb-5 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-[12.5px] leading-relaxed text-amber-900"
+                >
+                  <IconWifiOff size={17} className="mt-0.5 shrink-0 text-amber-700" />
+                  <span>
+                    <strong className="font-semibold">Koneksi internet terputus.</strong> Masuk ke akun
+                    memerlukan jaringan. Notifikasi ini akan hilang otomatis setelah tersambung kembali.
+                  </span>
+                </div>
+              )}
+
+              {globalError && (
+                <div
+                  role="alert"
+                  aria-live="polite"
+                  className="animate-fadeIn mb-5 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-[12.5px] leading-relaxed text-red-800"
+                >
+                  <IconAlertCircle size={17} className="mt-0.5 shrink-0" />
+                  <span>{globalError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleLogin} className="space-y-4" noValidate>
+                <div>
+                  <label htmlFor="username-login" className="mb-1.5 block text-[13px] font-semibold text-slate-700">
+                    {isSupabaseConfigured ? 'Email atau nama pengguna' : 'Nama pengguna'}
+                  </label>
+                  <div className="relative">
+                    <IconUser
+                      size={18}
+                      className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                      aria-hidden="true"
+                    />
+                    <input
+                      id="username-login"
+                      type="text"
+                      inputMode={isSupabaseConfigured ? 'email' : 'text'}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      value={username}
+                      onChange={(e) => {
+                        setUsername(e.target.value);
+                        setGlobalError('');
+                        if (errors.username) setErrors((prev) => ({ ...prev, username: '' }));
+                      }}
+                      autoComplete="username"
+                      required
+                      aria-invalid={Boolean(errors.username)}
+                      aria-describedby={errors.username ? 'username-login-error' : undefined}
+                      placeholder={isSupabaseConfigured ? 'nama@sekolah.sch.id' : 'Contoh: admin'}
+                      className={`min-h-12 w-full rounded-xl border bg-white py-3 pl-10 pr-3.5 text-[15px] text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-4 ${
+                        errors.username
+                          ? 'border-red-300 bg-red-50/50 focus:border-red-500 focus:ring-red-500/10'
+                          : 'border-slate-300 focus:border-[#1E5AAB] focus:ring-blue-500/15'
+                      }`}
+                    />
+                  </div>
+                  <FieldError id="username-login-error">{errors.username}</FieldError>
+                </div>
+
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <label htmlFor="password-login" className="block text-[13px] font-semibold text-slate-700">
+                      Kata sandi
+                    </label>
+                    {isSupabaseConfigured && (
+                      <button
+                        type="button"
+                        onClick={openForgot}
+                        className="rounded text-[12px] font-semibold text-[#1E5AAB] transition hover:text-[#12365f] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      >
+                        Lupa password?
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <IconLock
+                      size={18}
+                      className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                      aria-hidden="true"
+                    />
+                    <input
+                      id="password-login"
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setGlobalError('');
+                        if (errors.password) setErrors((prev) => ({ ...prev, password: '' }));
+                      }}
+                      autoComplete="current-password"
+                      required
+                      aria-invalid={Boolean(errors.password)}
+                      aria-describedby={errors.password ? 'password-login-error' : undefined}
+                      placeholder="Masukkan kata sandi"
+                      className={`min-h-12 w-full rounded-xl border bg-white py-3 pl-10 pr-12 text-[15px] text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-4 ${
+                        errors.password
+                          ? 'border-red-300 bg-red-50/50 focus:border-red-500 focus:ring-red-500/10'
+                          : 'border-slate-300 focus:border-[#1E5AAB] focus:ring-blue-500/15'
+                      }`}
+                    />
                     <button
                       type="button"
-                      onClick={() => setView('forgot')}
-                      className="text-xs text-blue-600 hover:underline ml-auto"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                      aria-pressed={showPassword}
                     >
-                      Lupa password?
+                      {showPassword ? <IconEyeOff size={18} /> : <IconEye size={18} />}
                     </button>
+                  </div>
+                  <FieldError id="password-login-error">{errors.password}</FieldError>
+                </div>
+
+                <button
+                  id="btn-login-submit"
+                  type="submit"
+                  disabled={loading || (isSupabaseConfigured && !online)}
+                  className="mt-1 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#1E5AAB] px-4 text-[14px] font-semibold text-white shadow-sm shadow-blue-900/20 transition hover:bg-[#184A8C] active:bg-[#12365f] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
+                >
+                  {loading ? (
+                    <>
+                      <SubmitSpinner />
+                      Memverifikasi...
+                    </>
+                  ) : !connectionReady ? (
+                    <>
+                      <IconWifiOff size={17} />
+                      Menunggu koneksi
+                    </>
+                  ) : (
+                    <>
+                      Masuk ke dashboard
+                      <IconArrowRight size={17} />
+                    </>
                   )}
-                </div>
-              </div>
+                </button>
+              </form>
 
-              <button
-                id="btn-login-submit"
-                type="submit"
-                disabled={loading}
-                className="w-full py-4 mt-6 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-xl text-base transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {loading ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                    </svg>
-                    Memverifikasi...
-                  </>
-                ) : 'Masuk ke Dashboard'}
-              </button>
-            </form>
+              {!isSupabaseConfigured && (
+                <div className="mt-6 border-t border-slate-200 pt-5">
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="h-px flex-1 bg-slate-200" />
+                    <span className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                      Akses cepat demo
+                    </span>
+                    <span className="h-px flex-1 bg-slate-200" />
+                  </div>
 
-            {/* Quick Demo — hanya kalau bukan Supabase */}
-            {!isSupabaseConfigured && (
-              <div className="border-t border-gray-200 pt-6 mt-8">
-                <p className="text-sm text-center text-gray-500 mb-4">Masuk Otomatis (Hanya untuk Demo)</p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <button
-                    id="btn-quick-super-admin"
-                    type="button"
-                    onClick={() => quickLogin('super_admin')}
-                    className="py-3 border border-purple-200 bg-purple-50 rounded-xl text-sm font-bold text-purple-700 hover:bg-purple-100 transition"
-                  >
-                    Super Admin
-                  </button>
-                  <button
-                    id="btn-quick-admin"
-                    type="button"
-                    onClick={() => quickLogin('admin')}
-                    className="py-3 border border-blue-200 bg-blue-50 rounded-xl text-sm font-bold text-blue-700 hover:bg-blue-100 transition"
-                  >
-                    Admin
-                  </button>
-                  <button
-                    id="btn-quick-petugas"
-                    type="button"
-                    onClick={() => quickLogin('petugas')}
-                    className="py-3 border border-gray-200 bg-gray-50 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-100 transition"
-                  >
-                    Petugas
-                  </button>
+                  <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-3">
+                    <button
+                      id="btn-quick-super-admin"
+                      type="button"
+                      onClick={() => quickLogin('super_admin')}
+                      className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-2 text-[11.5px] font-semibold text-violet-800 transition hover:border-violet-300 hover:bg-violet-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                    >
+                      <IconShieldCheck size={15} />
+                      Super Admin
+                    </button>
+                    <button
+                      id="btn-quick-admin"
+                      type="button"
+                      onClick={() => quickLogin('admin')}
+                      className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-2 text-[11.5px] font-semibold text-blue-800 transition hover:border-blue-300 hover:bg-blue-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    >
+                      <IconIdBadge2 size={15} />
+                      Admin
+                    </button>
+                    <button
+                      id="btn-quick-petugas"
+                      type="button"
+                      onClick={() => quickLogin('petugas')}
+                      className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 text-[11.5px] font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                    >
+                      <IconUser size={15} />
+                      Petugas
+                    </button>
+                  </div>
+
+                  <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-500">
+                    <IconCheck size={13} className="mt-0.5 shrink-0 text-emerald-600" />
+                    Mode demo menyimpan data di browser dan tetap bisa dipakai saat offline.
+                  </p>
                 </div>
+              )}
+
+              <div className="mt-6 border-t border-slate-100 pt-4">
+                <p className="text-center text-[11px] leading-relaxed text-slate-400">
+                  Butuh bantuan masuk? Hubungi administrator laboratorium sekolah.
+                </p>
               </div>
-            )}
+            </section>
+          )}
+
+          <div className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                !requiresConnection
+                  ? 'bg-amber-500'
+                  : online
+                    ? 'bg-emerald-500'
+                    : 'bg-red-500'
+              }`}
+              aria-hidden="true"
+            />
+            {!requiresConnection
+              ? 'Mode demo lokal · tanpa server'
+              : online
+                ? 'Terhubung ke server SISPAS'
+                : 'Menunggu koneksi internet'}
           </div>
-        )}
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

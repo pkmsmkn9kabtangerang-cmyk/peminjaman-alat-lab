@@ -12,7 +12,7 @@ import PageNote from '../components/PageNote';
 import FilterDropdown from '../components/FilterDropdown';
 import {
   IconPlus, IconMinus, IconUsers, IconTools,
-  IconRefresh, IconMail, IconPackage,
+  IconRefresh, IconPackage, IconAlertCircle,
 } from '@tabler/icons-react';
 
 // ── Data fetching ──────────────────────────────────────────────
@@ -201,11 +201,11 @@ export default function PemberianSekaliPakai({ user }) {
       </PageNote>
 
       {/* ── Form Pemberian ── */}
-      <form onSubmit={handleSubmit} className="bg-white border border-main max-w-4xl lg:max-w-full">
-        <div className="px-5 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-          <div>
-            <h2 className="font-bold text-lg text-gray-800">Form Pemberian Manual</h2>
-            <p className="text-sm text-gray-600 mt-1">
+      <form onSubmit={handleSubmit} className="max-w-4xl overflow-hidden rounded-xl border border-main bg-white shadow-sm lg:max-w-full">
+        <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 sm:px-5">
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-gray-800 sm:text-lg">Form Pemberian Manual</h2>
+            <p className="mt-1 text-sm text-gray-600">
               Pilih kelas dan alat sekali pakai yang akan diberikan.
             </p>
           </div>
@@ -213,24 +213,29 @@ export default function PemberianSekaliPakai({ user }) {
             type="button"
             onClick={loadData}
             disabled={loading}
-            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition disabled:opacity-50"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
             title="Refresh data"
+            aria-label="Muat ulang data pemberian"
           >
             <IconRefresh size={18} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
 
-        <div className="p-5 space-y-6">
+        <div className="space-y-6 p-4 sm:p-5">
           {fieldError && (
-            <p className="text-[15px] text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-lg">
-              {fieldError}
+            <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+              <IconAlertCircle size={18} className="mt-0.5 shrink-0" />
+              <span>{fieldError}</span>
             </p>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {/* Kolom kiri: Pilih Kelas */}
             <div className="space-y-3">
-              <p className="font-bold text-base text-gray-800">1. Kelas penerima *</p>
+              <p className="flex items-center gap-2 text-base font-bold text-gray-800">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">1</span>
+                Kelas penerima <span className="text-red-500">*</span>
+              </p>
               <FilterDropdown
                 icon={IconUsers}
                 value={selectedKartu?.uid_kartu ?? ''}
@@ -246,19 +251,22 @@ export default function PemberianSekaliPakai({ user }) {
                 searchable={true}
               />
               {selectedKartu && (
-                <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                  <p className="font-bold text-blue-900 text-lg">{selectedKartu.kelas}</p>
-                  <p className="mt-1 text-blue-800">{selectedKartu.nama_pemegang || 'Nama pemegang belum diisi'}</p>
-                  <p className="text-xs mt-1 text-blue-600">{selectedKartu.uid_kartu}</p>
+                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <p className="text-lg font-bold text-blue-900">{selectedKartu.kelas}</p>
+                  <p className="mt-1 text-sm text-blue-800">{selectedKartu.nama_pemegang || 'Nama pemegang belum diisi'}</p>
+                  <p className="mt-1 break-all font-mono text-xs text-blue-600">{selectedKartu.uid_kartu}</p>
                 </div>
               )}
             </div>
 
             {/* Kolom kanan: Pilih Alat & Jumlah */}
             <div className="space-y-3">
-              <p className="font-bold text-base text-gray-800">2. Alat sekali pakai *</p>
+              <p className="flex items-center gap-2 text-base font-bold text-gray-800">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">2</span>
+                Alat sekali pakai <span className="text-red-500">*</span>
+              </p>
               {alatList.length === 0 && !loading ? (
-                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                   Tidak ada alat sekali pakai yang tersedia. Tambahkan alat bertipe{' '}
                   <b>Sekali Pakai</b> di menu Kelola Alat.
                 </div>
@@ -280,41 +288,42 @@ export default function PemberianSekaliPakai({ user }) {
               )}
 
               {selectedAlat && (
-                <div className="mt-3 p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-600 font-medium">Sisa stok</span>
-                    <span className={`font-bold text-xl ${selectedAlat.stok_tersedia === 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                <div className="mt-3 space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium text-gray-600">Sisa stok</span>
+                    <span className={`text-xl font-bold ${selectedAlat.stok_tersedia === 0 ? 'text-red-700' : 'text-emerald-700'}`}>
                       {selectedAlat.stok_tersedia} {selectedAlat.satuan || 'unit'}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center justify-between gap-3 text-sm">
                     <span className="text-gray-500">Kategori</span>
-                    <span className="text-gray-700 capitalize">{selectedAlat.kategori || '—'}</span>
+                    <span className="capitalize text-gray-700">{selectedAlat.kategori || '—'}</span>
                   </div>
                 </div>
               )}
 
               {/* Jumlah / Ukuran */}
               <div className="mt-4">
-                <p className="font-bold text-base text-gray-800 mb-3">
-                  3. Berapa {selectedAlat?.satuan || 'unit'} yang diberikan?
+                <p className="mb-3 flex items-center gap-2 text-base font-bold text-gray-800">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">3</span>
+                  Berapa {selectedAlat?.satuan || 'unit'} yang diberikan?
                 </p>
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-4">
                   <button
                     type="button"
                     onClick={() => setJumlah((j) => Math.max(1, j - 1))}
-                    className="w-12 h-12 rounded-xl border border-gray-300 hover:bg-gray-100 flex items-center justify-center bg-white"
-                    aria-label="Kurangi"
+                    className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-300 bg-white transition hover:bg-gray-100 active:bg-gray-200"
+                    aria-label="Kurangi jumlah"
                   >
                     <IconMinus size={20} />
                   </button>
-                  <span className="w-16 text-center font-bold text-2xl">{jumlah}</span>
+                  <span className="w-16 text-center text-2xl font-bold tabular-nums" aria-live="polite">{jumlah}</span>
                   <button
                     type="button"
                     onClick={() => setJumlah((j) => Math.min(selectedAlat?.stok_tersedia ?? 1, j + 1))}
                     disabled={!selectedAlat || jumlah >= (selectedAlat?.stok_tersedia ?? 1)}
-                    className="w-12 h-12 rounded-xl border border-gray-300 hover:bg-gray-100 flex items-center justify-center disabled:opacity-40 bg-white"
-                    aria-label="Tambah"
+                    className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-300 bg-white transition hover:bg-gray-100 active:bg-gray-200 disabled:opacity-40"
+                    aria-label="Tambah jumlah"
                   >
                     <IconPlus size={20} />
                   </button>
@@ -330,7 +339,7 @@ export default function PemberianSekaliPakai({ user }) {
 
           {/* Catatan */}
           <div>
-            <label htmlFor="catatan-sekali-pakai" className="block font-bold text-sm text-gray-800 mb-2">
+            <label htmlFor="catatan-sekali-pakai" className="mb-2 block text-sm font-bold text-gray-800">
               Catatan (opsional)
             </label>
             <input
@@ -338,16 +347,16 @@ export default function PemberianSekaliPakai({ user }) {
               type="text"
               value={catatan}
               onChange={(e) => setCatatan(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+              className="min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 text-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Misal: Untuk praktikum titrasi asam basa..."
             />
           </div>
 
           {/* Ringkasan */}
           {selectedKartu && selectedAlat && (
-            <div className="border-2 border-emerald-200 p-4 rounded-xl text-base bg-emerald-50 mt-2">
-              <p className="font-bold text-emerald-900 mb-1">Ringkasan Pemberian</p>
-              <p className="text-emerald-800">
+            <div className="mt-2 rounded-xl border-2 border-emerald-200 bg-emerald-50 p-4 text-sm sm:text-base">
+              <p className="mb-1 font-bold text-emerald-900">Ringkasan pemberian</p>
+              <p className="leading-relaxed text-emerald-800">
                 Kelas <b>{selectedKartu.kelas}</b> akan menerima{' '}
                 <b>{jumlah} {selectedAlat.satuan || 'unit'} {selectedAlat.nama}</b>.
                 Stok akan berkurang dari <b>{selectedAlat.stok_tersedia}</b> menjadi{' '}
@@ -357,11 +366,11 @@ export default function PemberianSekaliPakai({ user }) {
           )}
         </div>
 
-        <div className="px-5 pb-5 border-t border-gray-100 pt-4">
+        <div className="border-t border-gray-100 bg-gray-50 px-4 pb-4 pt-4 sm:px-5 sm:pb-5">
           <Button
             type="submit"
             disabled={saving || loading || !selectedKartu || !selectedAlatId}
-            className="w-full lg:w-auto justify-center h-12 text-base font-bold"
+            className="h-12 w-full justify-center text-base font-bold lg:w-auto"
           >
             {saving ? 'Menyimpan...' : 'Catat Pemberian Sekarang'}
           </Button>

@@ -8,7 +8,6 @@ import { isSupabaseConfigured } from '../lib/supabase';
 import { callRfidTap } from '../lib/api';
 import { dbService, SESSION_DURATION_SECONDS } from '../services/store';
 import { getErrorMessage } from '../lib/handleError';
-import Button from '../components/Button';
 import Badge from '../components/Badge';
 import {
   IconCpu,
@@ -17,8 +16,6 @@ import {
   IconBox,
   IconClock,
   IconLock,
-  IconCircleCheck,
-  IconAlertTriangle,
   IconPlayerStop,
 } from '@tabler/icons-react';
 
@@ -193,10 +190,10 @@ export default function SimulasiIotPage() {
             Uji coba alur tap kartu RFID dan stiker alat. Sesi dibatasi 20 detik dan mengunci akses untuk kelas lain selama sesi aktif.
           </p>
         </div>
-        <div className={`inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border self-start sm:self-auto shadow-xs ${
+        <div className={`inline-flex items-center gap-2 self-stretch rounded-full border px-3 py-1.5 text-xs font-semibold shadow-sm sm:self-auto ${
           isSupabaseConfigured
-            ? 'bg-blue-50 text-blue-700 border-blue-200'
-            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            ? 'border-blue-200 bg-blue-50 text-blue-700'
+            : 'border-emerald-200 bg-emerald-50 text-emerald-700'
         }`}>
           <IconWifi size={14} className="animate-pulse" />
           {isSupabaseConfigured ? 'ESP32 → Edge Function (Prod)' : 'ESP32 → Local Store (Demo)'}
@@ -207,8 +204,8 @@ export default function SimulasiIotPage() {
         {/* Panel Kiri: Daftar Kartu & Alat untuk di-tap */}
         <div className="lg:col-span-2 space-y-5">
           {/* Section 1: Tap Kartu Kelas */}
-          <div className="bg-surface rounded-xl border border-main p-5 shadow-xs">
-            <div className="flex items-center justify-between mb-2">
+          <div className="bg-surface rounded-xl border border-main p-4 shadow-sm sm:p-5">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-semibold text-main text-sm flex items-center gap-2">
                 <IconIdBadge2 size={18} className="text-blue-600" />
                 1. Tap Kartu Kelas
@@ -221,7 +218,7 @@ export default function SimulasiIotPage() {
               Tap kartu kelas untuk membuka sesi (20 detik). Jika User 1 sedang aktif, User 2 yang men-tap akan ditolak sampai User 1 selesai men-tap kembali atau waktu habis.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
               {kartuList.map((k) => {
                 const isActive = activeSession && activeSession.uid_kartu === k.uid_kartu;
                 const isBlocked = activeSession && activeSession.uid_kartu !== k.uid_kartu;
@@ -285,8 +282,8 @@ export default function SimulasiIotPage() {
           </div>
 
           {/* Section 2: Tap Sticker Alat Lab */}
-          <div className="bg-surface rounded-xl border border-main p-5 shadow-xs">
-            <div className="flex items-center justify-between mb-2">
+          <div className="bg-surface rounded-xl border border-main p-4 shadow-sm sm:p-5">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-semibold text-main text-sm flex items-center gap-2">
                 <IconBox size={18} className="text-purple-600" />
                 2. Tap Sticker Alat Lab
@@ -305,35 +302,38 @@ export default function SimulasiIotPage() {
                 : 'Tap alat saat sesi belum aktif akan ditolak sistem (membutuhkan otentikasi kartu terlebih dahulu).'}
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {alatList.map((a) => (
-                <button
-                  key={a.uid_rfid}
-                  disabled={loading}
-                  onClick={() => handleTap(a.uid_rfid, a.nama, 'alat')}
-                  className="text-left p-3.5 rounded-xl border border-main hover:bg-purple-50 hover:border-purple-300 transition group disabled:opacity-50 flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-1 mb-1">
-                      <p className="font-semibold text-main text-xs group-hover:text-purple-700 leading-tight">
-                        {a.nama}
-                      </p>
-                      {a.tipe === 'habis_pakai' && (
-                        <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                          Consumable
-                        </span>
-                      )}
+            <div className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
+              {alatList.map((a) => {
+                const uid = a.kode || a.uid_rfid;
+                return (
+                  <button
+                    key={a.id || uid}
+                    disabled={loading || !uid}
+                    onClick={() => handleTap(uid, a.nama, 'alat')}
+                    className="group flex flex-col justify-between rounded-xl border border-main p-3.5 text-left transition hover:border-purple-300 hover:bg-purple-50 disabled:opacity-50"
+                  >
+                    <div>
+                      <div className="mb-1 flex items-start justify-between gap-1">
+                        <p className="text-xs font-semibold leading-tight text-main group-hover:text-purple-700">
+                          {a.nama}
+                        </p>
+                        {a.tipe === 'habis_pakai' && (
+                          <span className="shrink-0 rounded border border-amber-200 bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800">
+                            Consumable
+                          </span>
+                        )}
+                      </div>
+                      <p className="break-all font-mono text-[10px] text-muted">{uid || 'UID belum tersedia'}</p>
                     </div>
-                    <p className="text-[10px] font-mono text-muted">{a.uid_rfid}</p>
-                  </div>
-                  <div className="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between text-[11px]">
-                    <span className="font-medium text-muted">Stok:</span>
-                    <span className={`font-bold ${a.stok_tersedia > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {a.stok_tersedia} {a.satuan ? `${a.satuan}` : ''} / {a.jumlah_total}
-                    </span>
-                  </div>
-                </button>
-              ))}
+                    <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2 text-[11px]">
+                      <span className="font-medium text-muted">Stok:</span>
+                      <span className={`font-bold ${a.stok_tersedia > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {a.stok_tersedia} {a.satuan ? `${a.satuan}` : ''} / {a.jumlah_total}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -407,7 +407,7 @@ export default function SimulasiIotPage() {
                 <button
                   type="button"
                   onClick={handleEndSessionDirectly}
-                  className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition"
+                  className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700"
                 >
                   <IconPlayerStop size={14} />
                   Akhiri Sesi (Buka Kunci)
@@ -427,21 +427,22 @@ export default function SimulasiIotPage() {
           </div>
 
           {/* Serial Monitor ESP32 */}
-          <div className="flex-1 bg-gray-900 rounded-xl border border-gray-800 p-4 shadow-sm flex flex-col min-h-[340px]">
+          <div className="flex min-h-[280px] flex-1 flex-col rounded-xl border border-gray-800 bg-gray-900 p-4 shadow-sm sm:min-h-[340px]">
             <div className="font-mono text-gray-400 text-xs mb-3 flex items-center justify-between pb-2 border-b border-gray-800">
               <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 ESP32_Serial_Monitor
               </span>
               <button
+                type="button"
                 onClick={() => setLogs([])}
-                className="text-gray-400 hover:text-gray-200 text-[10px] px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 transition"
+                className="flex min-h-9 items-center rounded-md bg-gray-800 px-2.5 text-[10px] font-semibold text-gray-300 transition hover:bg-gray-700 hover:text-gray-100"
               >
                 Clear
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2 font-mono text-[11px] max-h-[380px] pr-1">
+            <div className="flex-1 overflow-y-auto space-y-2 font-mono text-[11px] max-h-[45dvh] lg:max-h-[380px] pr-1">
               {logs.length === 0 && (
                 <p className="text-gray-600 italic py-4 text-center">Menunggu aktivitas tap...</p>
               )}

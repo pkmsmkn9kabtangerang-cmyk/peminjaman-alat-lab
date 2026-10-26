@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   IconLayoutDashboard,
   IconTools,
@@ -10,10 +10,9 @@ import {
   IconUsers,
   IconLogout,
   IconCreditCard,
-  IconCpu,
-  IconPackage,
   IconKey,
   IconFlask,
+  IconX,
 } from '@tabler/icons-react';
 import logo from '../assets/logo.png';
 import ConfirmDialog from './ConfirmDialog';
@@ -64,36 +63,73 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, unr
   const role = user?.role ?? 'petugas';
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
+  // Kunci scroll halaman saat drawer mobile terbuka.
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [mobileMenuOpen]);
+
+  // Tutup drawer dengan tombol Escape.
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setMobileMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mobileMenuOpen, setMobileMenuOpen]);
+
   return (
     <>
       <div
-        className={`fixed inset-0 bg-gray-900/40 z-30 md:hidden ${mobileMenuOpen ? '' : 'pointer-events-none hidden'}`}
+        className={`fixed inset-x-0 bottom-0 z-30 bg-slate-900/45 backdrop-blur-[1px] transition-opacity duration-200 md:hidden ${
+          mobileMenuOpen ? 'animate-fadeIn opacity-100' : 'pointer-events-none opacity-0'
+        }`}
+        style={{ top: 'var(--net-banner-height, 0px)' }}
         onClick={() => setMobileMenuOpen(false)}
+        aria-hidden="true"
       />
 
       <aside
-        className={`bg-surface border-r border-main flex flex-col h-screen fixed left-0 top-0 z-40 select-none overflow-x-hidden overflow-y-auto transition-all duration-300 ease-in-out group
-          w-[260px] md:w-[68px] md:hover:w-[240px] md:hover:shadow-2xl
-          ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        className={`fixed left-0 z-40 flex select-none flex-col overflow-hidden border-r border-main bg-surface transition-all duration-300 ease-in-out group
+          w-[272px] max-w-[85vw] md:w-[68px] md:hover:w-[240px] md:hover:shadow-2xl
+          ${mobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}
         `}
+        style={{
+          top: 'var(--net-banner-height, 0px)',
+          height: 'calc(100dvh - var(--net-banner-height, 0px))',
+        }}
+        aria-label="Menu navigasi utama"
       >
-        <div className="px-4 py-3.5 border-b border-main flex items-center gap-3 min-h-14 shrink-0 overflow-hidden">
-          <img src={logo} alt="Logo SMK" className="w-8 h-8 object-contain shrink-0" />
-          <div className="min-w-0 transition-opacity duration-200 md:opacity-0 md:group-hover:opacity-100 whitespace-nowrap overflow-hidden">
-            <h1 className="font-semibold text-main text-[15px] leading-tight">SISPAS</h1>
-            <p className="text-sm text-muted leading-tight truncate">{SCHOOL_NAME}</p>
+        <div className="flex min-h-16 shrink-0 items-center gap-3 overflow-hidden border-b border-main px-3.5 py-3">
+          <img src={logo} alt="Logo sekolah" className="h-9 w-9 shrink-0 object-contain" />
+          <div className="min-w-0 flex-1 overflow-hidden whitespace-nowrap transition-opacity duration-200 md:opacity-0 md:group-hover:opacity-100">
+            <h1 className="text-[15px] font-bold leading-tight tracking-tight text-main">SISPAS</h1>
+            <p className="truncate text-[11.5px] leading-tight text-muted">{SCHOOL_NAME}</p>
           </div>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(false)}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 md:hidden"
+            aria-label="Tutup menu navigasi"
+          >
+            <IconX size={19} />
+          </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2.5 md:px-2 md:group-hover:px-2.5 py-3 space-y-4">
+        <nav className="flex-1 space-y-4 overflow-y-auto overflow-x-hidden px-2.5 py-3 md:px-2 md:py-4 md:group-hover:px-2.5">
           {MENU_SECTIONS.map((section, idx) => {
             const items = section.items.filter((item) => item.roles.includes(role));
             if (items.length === 0) return null;
             return (
               <div key={section.title || idx}>
                 {section.title && (
-                  <div className="h-4 my-1 overflow-hidden">
-                    <p className="px-2 text-xs font-semibold uppercase tracking-wider text-muted transition-opacity duration-200 md:opacity-0 md:group-hover:opacity-100 whitespace-nowrap truncate">
+                  <div className="mb-1 h-4 overflow-hidden">
+                    <p className="truncate whitespace-nowrap px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 transition-opacity duration-200 md:opacity-0 md:group-hover:opacity-100">
                       {section.title}
                     </p>
                   </div>
@@ -112,22 +148,27 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, unr
                           setMobileMenuOpen(false);
                         }}
                         title={item.label}
-                        className={`w-full flex items-center gap-3 px-2.5 py-2.5 rounded text-[15px] min-h-11 text-left relative overflow-hidden transition-colors ${active
-                          ? 'bg-[#E8F1FB] text-[#1E5AAB] font-semibold border-l-[3px] border-[#1E5AAB]'
-                          : 'text-gray-700 hover:bg-gray-100 border-l-[3px] border-transparent'
-                          }`}
+                        aria-current={active ? 'page' : undefined}
+                        className={`relative flex min-h-11 w-full items-center gap-3 overflow-hidden rounded-lg px-2.5 py-2.5 text-left text-[14px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                          active
+                            ? 'bg-[#E8F1FB] font-semibold text-[#1E5AAB]'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        }`}
                       >
-                        <div className="relative shrink-0 flex items-center justify-center w-5 h-5">
+                        {active && (
+                          <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-[#1E5AAB]" aria-hidden="true" />
+                        )}
+                        <span className="relative flex h-5 w-5 shrink-0 items-center justify-center">
                           <Icon size={20} className={active ? 'text-[#1E5AAB]' : 'text-gray-500'} />
                           {badge > 0 && (
-                            <span className="hidden md:inline-block md:group-hover:hidden absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-600 rounded-full ring-2 ring-white" />
+                            <span className="absolute -right-1 -top-1 hidden h-2.5 w-2.5 rounded-full bg-red-600 ring-2 ring-white md:inline-block md:group-hover:hidden" />
                           )}
-                        </div>
-                        <span className="flex-1 truncate transition-opacity duration-200 md:opacity-0 md:group-hover:opacity-100 whitespace-nowrap">
+                        </span>
+                        <span className="flex-1 truncate whitespace-nowrap transition-opacity duration-200 md:opacity-0 md:group-hover:opacity-100">
                           {item.label}
                         </span>
                         {badge > 0 && (
-                          <span className="inline-flex md:hidden md:group-hover:inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-xs font-semibold bg-red-700 text-white shrink-0 ml-auto">
+                          <span className="ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-700 px-1.5 text-[10.5px] font-semibold text-white md:hidden md:group-hover:inline-flex">
                             {badge > 99 ? '99+' : badge}
                           </span>
                         )}
@@ -140,18 +181,17 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, unr
           })}
         </nav>
 
-        <div className="border-t border-main px-2.5 md:px-2 md:group-hover:px-2.5 py-3 shrink-0">
-          <div className="flex items-center gap-3 px-1 mb-3 overflow-hidden">
-            <div className="w-9 h-9 rounded-full bg-[#E8F1FB] text-[#1E5AAB] font-bold flex items-center justify-center text-sm shrink-0 uppercase shadow-xs">
+        <div className="shrink-0 border-t border-main px-2.5 py-3 md:px-2 md:group-hover:px-2.5">
+          <div className="mb-3 flex items-center gap-3 overflow-hidden rounded-lg px-1 py-1">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#E8F1FB] text-sm font-bold uppercase text-[#1E5AAB] shadow-xs ring-1 ring-blue-100">
               {user?.nama ? user.nama.charAt(0) : 'U'}
             </div>
-            <div className="min-w-0 transition-opacity duration-200 md:opacity-0 md:group-hover:opacity-100 whitespace-nowrap overflow-hidden">
-              <p className="text-[15px] font-medium text-main truncate">{user?.nama ?? 'Pengguna'}</p>
-              <p className="text-xs text-muted truncate">
-                {getRoleLabel(user?.role)}
-              </p>
+            <div className="min-w-0 flex-1 overflow-hidden whitespace-nowrap transition-opacity duration-200 md:opacity-0 md:group-hover:opacity-100">
+              <p className="truncate text-[13.5px] font-semibold text-main">{user?.nama ?? 'Pengguna'}</p>
+              <p className="truncate text-[11px] text-muted">{getRoleLabel(user?.role)}</p>
             </div>
           </div>
+
           <button
             id="btn-ganti-password"
             onClick={() => {
@@ -159,13 +199,14 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, unr
               setMobileMenuOpen(false);
             }}
             title="Ganti Password"
-            className="w-full flex items-center gap-3 px-2.5 py-2.5 min-h-11 rounded text-[15px] font-medium text-gray-600 hover:bg-gray-100 border-l-[3px] border-transparent mb-1 overflow-hidden transition-colors"
+            className="mb-1 flex min-h-11 w-full items-center gap-3 overflow-hidden rounded-lg px-2.5 py-2.5 text-[14px] font-medium text-gray-600 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             <IconKey size={20} className="shrink-0 text-gray-500" />
-            <span className="truncate transition-opacity duration-200 md:opacity-0 md:group-hover:opacity-100 whitespace-nowrap">
+            <span className="truncate whitespace-nowrap transition-opacity duration-200 md:opacity-0 md:group-hover:opacity-100">
               Ganti Password
             </span>
           </button>
+
           <button
             id="btn-logout"
             onClick={() => {
@@ -173,10 +214,10 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, unr
               setMobileMenuOpen(false);
             }}
             title="Keluar"
-            className="w-full flex items-center gap-3 px-2.5 py-2.5 min-h-11 rounded text-[15px] font-semibold text-red-700 border border-red-200 hover:bg-red-50 transition-colors cursor-pointer overflow-hidden"
+            className="flex min-h-11 w-full items-center gap-3 overflow-hidden rounded-lg border border-red-200 px-2.5 py-2.5 text-[14px] font-semibold text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
           >
             <IconLogout size={20} className="shrink-0" />
-            <span className="truncate transition-opacity duration-200 md:opacity-0 md:group-hover:opacity-100 whitespace-nowrap">
+            <span className="truncate whitespace-nowrap transition-opacity duration-200 md:opacity-0 md:group-hover:opacity-100">
               Keluar
             </span>
           </button>
@@ -191,7 +232,7 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, unr
           onLogout();
         }}
         title="Yakin ingin keluar?"
-        message={`Anda perlu login kembali untuk mengakses aplikasi SISPAS.`}
+        message="Anda perlu login kembali untuk mengakses aplikasi SISPAS."
         confirmLabel="Ya, Keluar"
         confirmVariant="danger"
         icon={IconLogout}

@@ -46,19 +46,19 @@ const LABELS = {
   habis_pakai:    'Sekali Pakai',
 };
 
-export default function Badge({ status, className = '' }) {
+export default function Badge({ status, className = '', label }) {
   const key     = String(status ?? '').toLowerCase();
   const variant = VARIANTS[key] ?? 'badge-gray';
-  const label   = LABELS[key] ?? status;
+  const text    = label ?? LABELS[key] ?? status;
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm font-semibold border shadow-sm ${variant} ${className}`}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-0.5 text-[11.5px] font-semibold shadow-sm ${variant} ${className}`}
     >
-      <svg className="w-1.5 h-1.5 fill-current" viewBox="0 0 8 8">
+      <svg className="h-1.5 w-1.5 fill-current" viewBox="0 0 8 8" aria-hidden="true">
         <circle cx="4" cy="4" r="3" />
       </svg>
-      {label}
+      {text}
     </span>
   );
 }

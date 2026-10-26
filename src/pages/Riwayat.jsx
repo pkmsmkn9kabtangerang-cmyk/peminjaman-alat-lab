@@ -14,7 +14,6 @@ import PageNote from '../components/PageNote';
 import { friendlyError, showFeedback } from '../lib/feedback';
 import {
   IconTrash,
-  IconX,
   IconClock,
   IconCalendar,
   IconRefresh,
@@ -35,8 +34,6 @@ const CONFIRM_TEXT = 'hapus semua riwayat';
 import { isOnline, isNetworkError, registerOnlineSync } from '../lib/networkStatus';
 
 const TIME_OPTIONS = [
-  { value: '1h', label: '1 Jam Terakhir' },
-  { value: '5h', label: '5 Jam Terakhir' },
   { value: '24h', label: '24 Jam Terakhir' },
   { value: 'all', label: 'Semua Waktu' },
   { value: 'custom', label: 'Pilih Tanggal' },
@@ -228,11 +225,7 @@ export default function RiwayatPage() {
     let filtered = data;
     const now = new Date().getTime();
 
-    if (timeFilter === '1h') {
-      filtered = data.filter(d => (now - new Date(d.waktu_pinjam).getTime()) <= 3600000);
-    } else if (timeFilter === '5h') {
-      filtered = data.filter(d => (now - new Date(d.waktu_pinjam).getTime()) <= 18000000);
-    } else if (timeFilter === '24h') {
+    if (timeFilter === '24h') {
       filtered = data.filter(d => (now - new Date(d.waktu_pinjam).getTime()) <= 86400000);
     } else if (timeFilter === 'custom' && customDate) {
       filtered = data.filter(d => d.waktu_pinjam?.startsWith(customDate));
@@ -463,7 +456,7 @@ export default function RiwayatPage() {
       />
 
       <PageNote title="Informasi Transaksi" icon={IconMail}>
-        Halaman ini memisahkan transaksi peminjaman alat lab (wajib dikembalikan) dan transaksi barang sekali pakai (consumable langsung ke kelas). Anda dapat melihat kedua tabel di bawah ini secara terpisah.
+        Halaman ini menampilkan riwayat transaksi kartu dan alat sekali pakai untuk bisa memfilter berdasarkan tanggal yang ingin di cek
       </PageNote>
 
       {/* ── Tab Switcher Pilihan Tampilan ── */}
@@ -471,7 +464,7 @@ export default function RiwayatPage() {
         <button
           type="button"
           onClick={() => setActiveTab('all')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition shrink-0 whitespace-nowrap ${activeTab === 'all'
+          className={`min-h-11 px-3 rounded-lg text-xs sm:text-sm font-semibold transition shrink-0 whitespace-nowrap ${activeTab === 'all'
             ? 'bg-blue-600 text-white shadow-xs'
             : 'text-gray-600 hover:bg-gray-100'
             }`}
@@ -481,7 +474,7 @@ export default function RiwayatPage() {
         <button
           type="button"
           onClick={() => setActiveTab('pinjam_kembali')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'pinjam_kembali'
+          className={`min-h-11 px-3 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'pinjam_kembali'
             ? 'bg-blue-600 text-white shadow-xs'
             : 'text-gray-600 hover:bg-gray-100'
             }`}
@@ -491,7 +484,7 @@ export default function RiwayatPage() {
         <button
           type="button"
           onClick={() => setActiveTab('sekali_pakai')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'sekali_pakai'
+          className={`min-h-11 px-3 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'sekali_pakai'
             ? 'bg-blue-600 text-white shadow-xs'
             : 'text-gray-600 hover:bg-gray-100'
             }`}
@@ -521,14 +514,15 @@ export default function RiwayatPage() {
             searchKeys={['kelas', 'nama_alat', 'uid_kartu', 'pemegang', 'sumber']}
             emptyMessage="Belum ada riwayat Peminjaman Alat"
             actionButton={
-              <div className="flex items-center gap-2">
+              <div className="flex w-full flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center md:w-auto">
                 <button
                   type="button"
                   onClick={() => reloadData(false)}
-                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 min-[420px]:w-11 min-[420px]:border-0 min-[420px]:bg-transparent"
                   title="Refresh data"
                 >
                   <IconRefresh size={18} />
+                  <span className="text-sm font-semibold min-[420px]:sr-only">Muat ulang</span>
                 </button>
                 {isAdmin && (
                   <Button
@@ -542,7 +536,7 @@ export default function RiwayatPage() {
                       setClearTarget('pinjam');
                       setShowClearModal(true);
                     }}
-                    className="w-full md:w-auto justify-center whitespace-nowrap"
+                    className="w-full justify-center whitespace-nowrap min-[420px]:flex-1 md:w-auto md:flex-none"
                   >
                     Hapus Riwayat Pinjam
                   </Button>
@@ -573,7 +567,7 @@ export default function RiwayatPage() {
                         type="date"
                         value={customDate}
                         onChange={(e) => setCustomDate(e.target.value)}
-                        className="w-full sm:w-auto pl-9 pr-3 h-10 rounded-lg border border-gray-300 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white font-medium text-gray-700"
+                        className="h-11 w-full rounded-lg border border-gray-300 bg-white pl-9 pr-3 text-xs font-medium text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-auto sm:text-sm"
                       />
                     </div>
                   </div>
@@ -605,14 +599,15 @@ export default function RiwayatPage() {
             searchKeys={['kelas', 'nama_alat', 'petugas', 'catatan', 'pemegang', 'satuan']}
             emptyMessage="Belum ada riwayat transaksi alat sekali pakai."
             actionButton={
-              <div className="flex items-center gap-2">
+              <div className="flex w-full flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center md:w-auto">
                 <button
                   type="button"
                   onClick={() => reloadData(false)}
-                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 min-[420px]:w-11 min-[420px]:border-0 min-[420px]:bg-transparent"
                   title="Refresh data"
                 >
                   <IconRefresh size={18} />
+                  <span className="text-sm font-semibold min-[420px]:sr-only">Muat ulang</span>
                 </button>
                 {isAdmin && (
                   <Button
@@ -626,7 +621,7 @@ export default function RiwayatPage() {
                       setClearTarget('sekali_pakai');
                       setShowClearModal(true);
                     }}
-                    className="w-full md:w-auto justify-center whitespace-nowrap"
+                    className="w-full justify-center whitespace-nowrap min-[420px]:flex-1 md:w-auto md:flex-none"
                   >
                     Hapus Riwayat Sekali Pakai
                   </Button>

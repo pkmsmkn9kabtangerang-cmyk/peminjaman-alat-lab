@@ -196,10 +196,11 @@ export default function DaftarAlatPage() {
           <button
             type="button"
             onClick={() => reload(false)}
-            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 sm:w-11 sm:border-0 sm:bg-transparent"
             title="Refresh data"
           >
             <IconRefresh size={18} />
+            <span className="text-sm font-semibold sm:sr-only">Muat ulang</span>
           </button>
         }
         filters={
@@ -208,6 +209,7 @@ export default function DaftarAlatPage() {
             value={statusFilter}
             onChange={setStatusFilter}
             options={STATUS_OPTIONS}
+            className="w-full sm:w-auto"
           />
         }
       />

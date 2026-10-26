@@ -489,7 +489,7 @@ export default function KartuRfidPage() {
       />
 
       <PageNote title="Informasi Penting" icon={IconMail}>
-        UID Kartu akan otomatis terbaca jika Anda melakukan tap pada perangkat alat scanner reader. Kartu yang sedang memiliki pinjaman aktif tidak dapat dihapus dari sistem.
+        Jika Anda ingin menambahkan kartu baru pastikan berada di dalam form daftar kartu agar sistem bisa membaca id kartu yang baru tersebut.
       </PageNote>
 
       <DataTable
@@ -501,16 +501,17 @@ export default function KartuRfidPage() {
         emptyMessage="Belum ada kartu RFID"
         emptyDescription="Kartu yang didaftarkan akan muncul di sini."
         actionButton={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center md:w-auto">
             <button
               type="button"
               onClick={reload}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 min-[420px]:w-11 min-[420px]:border-0 min-[420px]:bg-transparent"
               title="Refresh data"
             >
               <IconRefresh size={18} />
+              <span className="text-sm font-semibold min-[420px]:sr-only">Muat ulang</span>
             </button>
-            <Button icon={IconPlus} onClick={openAdd} className="w-full md:w-auto justify-center">
+            <Button icon={IconPlus} onClick={openAdd} className="w-full justify-center min-[420px]:flex-1 md:w-auto md:flex-none">
               Daftar kartu
             </Button>
           </div>
@@ -545,11 +546,10 @@ export default function KartuRfidPage() {
                   placeholder={editItem ? 'UID Kartu' : 'Tempelkan kartu ke reader RFID...'}
                 />
                 {form.uid_kartu ? (
-                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-xs ${
-                    errors.uid_kartu
-                      ? 'text-rose-700 bg-rose-50 border border-rose-200'
-                      : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
-                  }`}>
+                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-xs ${errors.uid_kartu
+                    ? 'text-rose-700 bg-rose-50 border border-rose-200'
+                    : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                    }`}>
                     <span className={`w-2 h-2 rounded-full ${errors.uid_kartu ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
                     {errors.uid_kartu ? 'Duplikat' : 'Terbaca'}
                   </span>
@@ -604,12 +604,12 @@ export default function KartuRfidPage() {
           </FormField>
 
           {editItem && (
-            <label className="flex items-center gap-2 pt-1 text-[15px]">
+            <label className="flex min-h-11 items-center gap-2.5 pt-1 text-[15px]">
               <input
                 type="checkbox"
                 checked={form.aktif}
                 onChange={(e) => setForm({ ...form, aktif: e.target.checked })}
-                className="w-4 h-4"
+                className="h-5 w-5 rounded border-gray-300"
               />
               Kartu aktif (boleh dipakai meminjam)
             </label>
@@ -646,8 +646,8 @@ export default function KartuRfidPage() {
               </div>
             ))}
           </div>
-          <div className="flex justify-end">
-            <Button variant="secondary" onClick={() => setLockedModal({ isOpen: false, kartu: null, items: [] })}>
+          <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+            <Button variant="secondary" onClick={() => setLockedModal({ isOpen: false, kartu: null, items: [] })} className="w-full justify-center sm:w-auto">
               Tutup
             </Button>
           </div>

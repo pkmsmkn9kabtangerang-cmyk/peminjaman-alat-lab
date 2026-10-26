@@ -19,8 +19,19 @@ export const isSupabaseConfigured = Boolean(
   supabaseUrl.startsWith('https://')
 );
 
-export const supabase = createClient(
-  supabaseUrl  ?? '',
-  supabaseAnon ?? '',
-);
+// Saat mode demo (tanpa Supabase), tetap buat client dengan URL dummy agar
+// modul tidak gagal dimuat. Semua pemanggilan Supabase dijaga oleh
+// isSupabaseConfigured, dan sesi auth otomatis dimatikan.
+const demoClient = () =>
+  createClient('https://demo.invalid', 'demo-anon-key', {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+
+export const supabase = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnon)
+  : demoClient();
 

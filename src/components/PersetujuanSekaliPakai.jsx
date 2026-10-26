@@ -4,7 +4,7 @@
 // Petugas/Admin bisa input jumlah/cm yang diberikan -> setujui (potong stok) atau tolak.
 // Petugas/Admin juga dapat membatalkan persetujuan di tab Riwayat (stok dikembalikan).
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   IconCheck,
   IconX,
@@ -12,15 +12,37 @@ import {
   IconClock,
   IconHistory,
   IconRefresh,
-  IconAlertCircle,
-  IconInfoCircle,
 } from '@tabler/icons-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { callFunction } from '../lib/api';
 import { dbService } from '../services/store';
-import Badge from './Badge';
 import { showFeedback, friendlyError } from '../lib/feedback';
 import { isOnline, isNetworkError, registerOnlineSync } from '../lib/networkStatus';
+
+function StatusPermintaan({ status }) {
+  if (status === 'disetujui') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+        Disetujui
+      </span>
+    );
+  }
+  if (status === 'ditolak') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">
+        Ditolak
+      </span>
+    );
+  }
+  if (status === 'dibatalkan') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
+        Dibatalkan
+      </span>
+    );
+  }
+  return <span className="text-xs text-gray-400">—</span>;
+}
 
 export default function PersetujuanSekaliPakai({ user }) {
   const isDemo = !isSupabaseConfigured;
@@ -412,57 +434,61 @@ export default function PersetujuanSekaliPakai({ user }) {
   const pendingCount = menungguList.length;
 
   return (
-    <div className="bg-surface border border-main overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-main bg-surface shadow-sm">
       {/* ── Header Section ── */}
-      <div className="px-4 sm:px-5 py-4 border-b border-main bg-amber-50/40">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="p-2 rounded-lg bg-amber-100 text-amber-800 shrink-0 mt-0.5">
+      <div className="border-b border-main bg-amber-50/40 px-4 py-4 sm:px-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="mt-0.5 shrink-0 rounded-lg bg-amber-100 p-2 text-amber-800">
               <IconPackage size={22} />
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base sm:text-lg font-bold text-main">
-                  Persetujuan Alat Sekali Pakai (Consumable)
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-bold text-main sm:text-lg">
+                  Persetujuan Alat Sekali Pakai
                 </h2>
                 {pendingCount > 0 ? (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-600 text-white animate-pulse">
-                    {pendingCount} Menunggu
+                  <span className="inline-flex items-center rounded-full bg-amber-600 px-2 py-0.5 text-xs font-bold text-white">
+                    {pendingCount} menunggu
                   </span>
                 ) : (
-                  <span className="">
-                    {pendingCount} Menunggu
+                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                    Tidak ada antrean
                   </span>
                 )}
               </div>
-              <p className="text-[14px] text-muted mt-0.5">
+              <p className="mt-0.5 text-xs leading-relaxed text-muted sm:text-sm">
+                Setujui atau tolak permintaan consumable hasil tap kartu siswa.
               </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={fetchData}
             disabled={loading}
-            className="p-2 text-muted hover:text-main hover:bg-white rounded-lg transition border border-transparent hover:border-gray-200 self-end sm:self-auto shrink-0"
+            className="flex h-11 w-11 shrink-0 items-center justify-center self-end rounded-lg border border-transparent text-muted transition hover:border-gray-200 hover:bg-white hover:text-main disabled:opacity-60 sm:self-auto"
             title="Muat ulang"
+            aria-label="Muat ulang data permintaan"
           >
             <IconRefresh size={18} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
 
         {/* ── Tabs Navigation ── */}
-        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-amber-200/60 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap pb-1">
+        <div className="no-scrollbar mt-4 flex flex-nowrap items-center gap-2 overflow-x-auto border-t border-amber-200/60 pt-3">
           <button
+            type="button"
             onClick={() => setActiveTab('menunggu')}
-            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-2 shrink-0 whitespace-nowrap ${activeTab === 'menunggu'
-              ? 'bg-amber-600 text-white shadow-xs'
+            className={`flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-semibold transition sm:text-sm ${activeTab === 'menunggu'
+              ? 'bg-amber-600 text-white shadow-sm'
               : 'text-amber-900 hover:bg-amber-100/70'
               }`}
           >
             <IconClock size={16} />
-            Menunggu Persetujuan
+            Menunggu
             {pendingCount > 0 && (
-              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${activeTab === 'menunggu' ? 'bg-white text-amber-700' : 'bg-amber-600 text-white'
+              <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${activeTab === 'menunggu' ? 'bg-white text-amber-700' : 'bg-amber-600 text-white'
                 }`}>
                 {pendingCount}
               </span>
@@ -470,14 +496,19 @@ export default function PersetujuanSekaliPakai({ user }) {
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('riwayat')}
-            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-2 shrink-0 whitespace-nowrap ${activeTab === 'riwayat'
-              ? 'bg-amber-600 text-white shadow-xs'
+            className={`flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-semibold transition sm:text-sm ${activeTab === 'riwayat'
+              ? 'bg-amber-600 text-white shadow-sm'
               : 'text-amber-900 hover:bg-amber-100/70'
               }`}
           >
             <IconHistory size={16} />
-            Riwayat Selesai 24 Jam ({riwayatList.length})
+            Riwayat 24 jam
+            <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${activeTab === 'riwayat' ? 'bg-white text-amber-700' : 'bg-amber-100 text-amber-800'
+              }`}>
+              {riwayatList.length}
+            </span>
           </button>
         </div>
       </div>
@@ -496,70 +527,126 @@ export default function PersetujuanSekaliPakai({ user }) {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 text-left">
-                    <th className="px-4 py-3 font-semibold text-gray-700">Waktu Tap</th>
-                    <th className="px-4 py-3 font-semibold text-gray-700">Kelas / Pemegang</th>
-                    <th className="px-4 py-3 font-semibold text-gray-700">Alat Sekali Pakai</th>
-                    <th className="px-4 py-3 font-semibold text-gray-700">Satuan</th>
-                    <th className="px-4 py-3 font-semibold text-gray-700">Status</th>
-                    <th className="px-4 py-3 font-semibold text-gray-700 text-right">Tindakan Petugas</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {menungguList.map((req) => (
-                    <tr key={req.id} className="hover:bg-amber-50/30 transition-colors">
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap font-mono text-xs">
-                        {FMT(req.waktu_tap)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-bold text-main block">{req.kelas}</span>
+            <>
+              {/* Tampilan kartu untuk layar kecil */}
+              <div className="divide-y divide-gray-100 md:hidden">
+                {menungguList.map((req) => (
+                  <article key={req.id} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-semibold text-main">{req.nama_alat}</p>
+                        <p className="mt-0.5 text-xs text-muted">{FMT(req.waktu_tap)}</p>
+                      </div>
+                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-300 bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-900">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                        Menunggu
+                      </span>
+                    </div>
+
+                    <dl className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm">
+                      <div className="min-w-0">
+                        <dt className="text-[11px] font-medium uppercase tracking-wide text-muted">Kelas</dt>
+                        <dd className="mt-0.5 break-words font-semibold text-main">{req.kelas || '—'}</dd>
                         {req.kartu_rfid?.nama_pemegang && (
-                          <span className="text-xs text-muted block">{req.kartu_rfid.nama_pemegang}</span>
+                          <dd className="text-xs text-muted">{req.kartu_rfid.nama_pemegang}</dd>
                         )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-semibold text-amber-900">{req.nama_alat}</span>
-                        <span className="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">
-                          Consumable
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700 font-medium">
-                        {req.satuan || 'unit'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300">
-                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                          Menunggu Persetujuan
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <div className="inline-flex items-center gap-2">
-                          <button
-                            onClick={() => openSetujuModal(req)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-2xs"
-                            title="Setujui dan tentukan berapa cm/unit yang diberikan"
-                          >
-                            <IconCheck size={15} />
-                            Setujui
-                          </button>
-                          <button
-                            onClick={() => openTolakModal(req)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 transition"
-                            title="Tolak atau batalkan permintaan ini"
-                          >
-                            <IconX size={15} />
-                            Tolak
-                          </button>
-                        </div>
-                      </td>
+                      </div>
+                      <div>
+                        <dt className="text-[11px] font-medium uppercase tracking-wide text-muted">Satuan</dt>
+                        <dd className="mt-0.5 font-semibold text-main">{req.satuan || 'unit'}</dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openSetujuModal(req)}
+                        className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 active:bg-emerald-800"
+                      >
+                        <IconCheck size={16} />
+                        Setujui
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openTolakModal(req)}
+                        className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 text-sm font-bold text-red-700 transition hover:bg-red-100 active:bg-red-200"
+                      >
+                        <IconX size={16} />
+                        Tolak
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              {/* Tampilan tabel untuk layar sedang ke atas */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50 text-left">
+                      <th className="px-4 py-3 font-semibold text-gray-700">Waktu Tap</th>
+                      <th className="px-4 py-3 font-semibold text-gray-700">Kelas / Pemegang</th>
+                      <th className="px-4 py-3 font-semibold text-gray-700">Alat Sekali Pakai</th>
+                      <th className="px-4 py-3 font-semibold text-gray-700">Satuan</th>
+                      <th className="px-4 py-3 font-semibold text-gray-700">Status</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-700">Tindakan Petugas</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {menungguList.map((req) => (
+                      <tr key={req.id} className="transition-colors hover:bg-amber-50/30">
+                        <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-gray-600">
+                          {FMT(req.waktu_tap)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="block font-bold text-main">{req.kelas}</span>
+                          {req.kartu_rfid?.nama_pemegang && (
+                            <span className="block text-xs text-muted">{req.kartu_rfid.nama_pemegang}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="font-semibold text-amber-900">{req.nama_alat}</span>
+                          <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                            Consumable
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-700">
+                          {req.satuan || 'unit'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900">
+                            <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden="true" />
+                            Menunggu Persetujuan
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right">
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openSetujuModal(req)}
+                              className="inline-flex min-h-9 items-center gap-1 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700"
+                              title="Setujui dan tentukan berapa cm/unit yang diberikan"
+                            >
+                              <IconCheck size={15} />
+                              Setujui
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openTolakModal(req)}
+                              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100"
+                              title="Tolak atau batalkan permintaan ini"
+                            >
+                              <IconX size={15} />
+                              Tolak
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}
@@ -572,104 +659,154 @@ export default function PersetujuanSekaliPakai({ user }) {
               <p className="text-muted text-sm">Belum ada riwayat persetujuan Alat sekali pakai dalam 24 jam terakhir.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 text-left">
-                    <th className="px-4 py-3 font-semibold text-gray-700">Waktu</th>
-                    <th className="px-4 py-3 font-semibold text-gray-700">Kelas</th>
-                    <th className="px-4 py-3 font-semibold text-gray-700">Alat</th>
-                    <th className="px-4 py-3 font-semibold text-gray-700 text-right">Diberikan</th>
-                    <th className="px-4 py-3 font-semibold text-gray-700">Status</th>
-                    <th className="px-4 py-3 font-semibold text-gray-700">Petugas</th>
-                    <th className="px-4 py-3 font-semibold text-gray-700">Catatan / Alasan</th>
-                    <th className="px-4 py-3 font-semibold text-gray-700 text-right">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {riwayatList.map((item) => (
-                    <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 text-gray-600 text-xs font-semibold whitespace-nowrap">
-                        {FMT(item.waktu_proses || item.waktu_tap)}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-main">{item.kelas}</td>
-                      <td className="px-4 py-3 text-gray-800">{item.nama_alat}</td>
-                      <td className="px-4 py-3 text-right font-bold text-main whitespace-nowrap">
-                        {item.status === 'disetujui' ? (
-                          <span className="inline-flex items-center gap-1 font-bold text-main">
-                            <span>{item.jumlah ?? 1}</span>
-                            <span className="font-semibold text-emerald-700 text-xs">{item.satuan || item.alat?.satuan || 'unit'}</span>
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {item.status === 'disetujui' && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
-                            Disetujui
-                          </span>
-                        )}
-                        {item.status === 'ditolak' && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800">
-                            Ditolak
-                          </span>
-                        )}
-                        {item.status === 'dibatalkan' && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-700">
-                            Dibatalkan
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-main">{item.petugas || '—'}</td>
-                      <td className="px-4 py-3 font-semibold text-main max-w-[200px] truncate">
-                        {item.status === 'ditolak' ? item.alasan_tolak : item.catatan || '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {item.status === 'disetujui' ? (
-                          <button
-                            onClick={() => openBatalModal(item)}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-800 hover:underline"
-                            title="Batalkan persetujuan dan kembalikan stok"
-                          >
-                            <IconHistory size={14} />
-                            Batalkan
-                          </button>
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
-                        )}
-                      </td>
+            <>
+              {/* Tampilan kartu untuk layar kecil */}
+              <div className="divide-y divide-gray-100 md:hidden">
+                {riwayatList.map((item) => (
+                  <article key={item.id} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-semibold text-main">{item.nama_alat}</p>
+                        <p className="mt-0.5 text-xs text-muted">
+                          {item.kelas || '—'} · {FMT(item.waktu_proses || item.waktu_tap)}
+                        </p>
+                      </div>
+                      <span className="shrink-0">
+                        <StatusPermintaan status={item.status} />
+                      </span>
+                    </div>
+
+                    <dl className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm">
+                      <div>
+                        <dt className="text-[11px] font-medium uppercase tracking-wide text-muted">Diberikan</dt>
+                        <dd className="mt-0.5 font-semibold text-main">
+                          {item.status === 'disetujui' ? (
+                            <>{item.jumlah ?? 1} <span className="text-xs font-medium text-emerald-700">{item.satuan || item.alat?.satuan || 'unit'}</span></>
+                          ) : '—'}
+                        </dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-[11px] font-medium uppercase tracking-wide text-muted">Petugas</dt>
+                        <dd className="mt-0.5 truncate font-semibold text-main">{item.petugas || '—'}</dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-3">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-muted">
+                        {item.status === 'ditolak' ? 'Alasan penolakan' : 'Catatan'}
+                      </p>
+                      <p className="mt-0.5 break-words text-sm text-gray-700">
+                        {item.status === 'ditolak' ? item.alasan_tolak || '—' : item.catatan || '—'}
+                      </p>
+                    </div>
+
+                    {item.status === 'disetujui' && (
+                      <button
+                        type="button"
+                        onClick={() => openBatalModal(item)}
+                        className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 active:bg-red-200"
+                        title="Batalkan persetujuan dan kembalikan stok"
+                      >
+                        <IconHistory size={16} />
+                        Batalkan &amp; kembalikan stok
+                      </button>
+                    )}
+                  </article>
+                ))}
+              </div>
+
+              {/* Tampilan tabel untuk layar sedang ke atas */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50 text-left">
+                      <th className="px-4 py-3 font-semibold text-gray-700">Waktu</th>
+                      <th className="px-4 py-3 font-semibold text-gray-700">Kelas</th>
+                      <th className="px-4 py-3 font-semibold text-gray-700">Alat</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-700">Diberikan</th>
+                      <th className="px-4 py-3 font-semibold text-gray-700">Status</th>
+                      <th className="px-4 py-3 font-semibold text-gray-700">Petugas</th>
+                      <th className="px-4 py-3 font-semibold text-gray-700">Catatan / Alasan</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-700">Aksi</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {riwayatList.map((item) => (
+                      <tr key={item.id} className="transition-colors hover:bg-gray-50">
+                        <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-gray-600">
+                          {FMT(item.waktu_proses || item.waktu_tap)}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-main">{item.kelas}</td>
+                        <td className="px-4 py-3 text-gray-800">{item.nama_alat}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-main">
+                          {item.status === 'disetujui' ? (
+                            <span className="inline-flex items-center gap-1 font-bold text-main">
+                              <span>{item.jumlah ?? 1}</span>
+                              <span className="text-xs font-semibold text-emerald-700">{item.satuan || item.alat?.satuan || 'unit'}</span>
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <StatusPermintaan status={item.status} />
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-main">{item.petugas || '—'}</td>
+                        <td className="max-w-[200px] truncate px-4 py-3 font-medium text-main">
+                          {item.status === 'ditolak' ? item.alasan_tolak : item.catatan || '—'}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right">
+                          {item.status === 'disetujui' ? (
+                            <button
+                              type="button"
+                              onClick={() => openBatalModal(item)}
+                              className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 hover:text-red-800"
+                              title="Batalkan persetujuan dan kembalikan stok"
+                            >
+                              <IconHistory size={14} />
+                              Batalkan
+                            </button>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}
 
       {/* ── MODAL 1: SETUJUI (Input Jumlah / Berapa cm) ── */}
       {showSetujuModal && selectedReq && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-[95] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="animate-slideUp flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-gray-200 bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:animate-popIn sm:rounded-2xl">
             {/* Header */}
-            <div className="px-6 py-4 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-emerald-600 text-white rounded-xl">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-emerald-100 bg-emerald-50 px-4 py-4 sm:px-6">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <div className="shrink-0 rounded-xl bg-emerald-600 p-2 text-white">
                   <IconCheck size={20} />
                 </div>
-                <div>
-                  <h3 className="font-bold text-base text-emerald-950">Setujui Permintaan Consumable</h3>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-emerald-950">Setujui Permintaan Consumable</h3>
                   <p className="text-xs text-emerald-700">Tentukan jumlah atau ukuran yang diberikan ke siswa</p>
                 </div>
               </div>
-              <button onClick={closeModals} className="text-gray-400 hover:text-gray-600 p-1">
+              <button
+                type="button"
+                onClick={closeModals}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-white hover:text-gray-600"
+                aria-label="Tutup dialog"
+              >
                 <IconX size={20} />
               </button>
             </div>
 
             {/* Body */}
-            <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:space-y-5 sm:p-6">
               {/* Info Card */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 sm:p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm">
                 <div>
@@ -739,12 +876,12 @@ export default function PersetujuanSekaliPakai({ user }) {
             </div>
 
             {/* Footer Buttons */}
-            <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-gray-50 border-t border-gray-100 flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-2.5 sm:gap-3">
+            <div className="safe-area-bottom flex shrink-0 flex-col-reverse gap-2.5 border-t border-gray-100 bg-gray-50 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-6 sm:py-4">
               <button
                 type="button"
                 onClick={closeModals}
                 disabled={processing}
-                className="w-full sm:w-auto px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl text-sm font-semibold transition text-center"
+                className="min-h-11 w-full rounded-xl px-4 text-sm font-semibold text-gray-600 transition hover:bg-gray-100 disabled:opacity-60 sm:w-auto"
               >
                 Batal
               </button>
@@ -752,7 +889,7 @@ export default function PersetujuanSekaliPakai({ user }) {
                 type="button"
                 onClick={handleSetujui}
                 disabled={processing || !jumlahSetuju || parseInt(jumlahSetuju, 10) <= 0}
-                className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-xs"
+                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50 sm:w-auto"
               >
                 <IconCheck size={18} />
                 {processing ? 'Memproses...' : 'Setujui & Potong Stok'}
@@ -764,26 +901,31 @@ export default function PersetujuanSekaliPakai({ user }) {
 
       {/* ── MODAL 2: TOLAK (Reject) ── */}
       {showTolakModal && selectedReq && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-[95] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="animate-slideUp flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-gray-200 bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:animate-popIn sm:rounded-2xl">
             {/* Header */}
-            <div className="px-6 py-4 bg-red-50 border-b border-red-100 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-red-600 text-white rounded-xl">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-red-100 bg-red-50 px-4 py-4 sm:px-6">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <div className="shrink-0 rounded-xl bg-red-600 p-2 text-white">
                   <IconX size={20} />
                 </div>
-                <div>
-                  <h3 className="font-bold text-base text-red-950">Tolak Permintaan</h3>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-red-950">Tolak Permintaan</h3>
                   <p className="text-xs text-red-700">Permintaan ini akan dibatalkan tanpa mengurangi stok</p>
                 </div>
               </div>
-              <button onClick={closeModals} className="text-gray-400 hover:text-gray-600 p-1">
+              <button
+                type="button"
+                onClick={closeModals}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-white hover:text-gray-600"
+                aria-label="Tutup dialog"
+              >
                 <IconX size={20} />
               </button>
             </div>
 
             {/* Body */}
-            <div className="p-6 space-y-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
               <p className="text-sm text-gray-700">
                 Apakah Anda yakin ingin menolak permintaan <b>{selectedReq.nama_alat}</b> untuk kelas <b>{selectedReq.kelas}</b>?
               </p>
@@ -824,12 +966,12 @@ export default function PersetujuanSekaliPakai({ user }) {
             </div>
 
             {/* Footer */}
-            <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-gray-50 border-t border-gray-100 flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-2.5 sm:gap-3">
+            <div className="safe-area-bottom flex shrink-0 flex-col-reverse gap-2.5 border-t border-gray-100 bg-gray-50 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-6 sm:py-4">
               <button
                 type="button"
                 onClick={closeModals}
                 disabled={processing}
-                className="w-full sm:w-auto px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl text-sm font-semibold transition text-center"
+                className="min-h-11 w-full rounded-xl px-4 text-sm font-semibold text-gray-600 transition hover:bg-gray-100 disabled:opacity-60 sm:w-auto"
               >
                 Kembali
               </button>
@@ -837,7 +979,7 @@ export default function PersetujuanSekaliPakai({ user }) {
                 type="button"
                 onClick={handleTolak}
                 disabled={processing || !alasanTolak.trim()}
-                className="w-full sm:w-auto px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-xs"
+                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-50 sm:w-auto"
               >
                 <IconX size={18} />
                 {processing ? 'Menolak...' : 'Tolak Permintaan'}
@@ -849,26 +991,31 @@ export default function PersetujuanSekaliPakai({ user }) {
 
       {/* ── MODAL 3: BATALKAN PERSETUJUAN (Revert Stock) ── */}
       {showBatalModal && selectedReq && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-[95] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="animate-slideUp flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-gray-200 bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:animate-popIn sm:rounded-2xl">
             {/* Header */}
-            <div className="px-6 py-4 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-amber-600 text-white rounded-xl">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-amber-100 bg-amber-50 px-4 py-4 sm:px-6">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <div className="shrink-0 rounded-xl bg-amber-600 p-2 text-white">
                   <IconHistory size={20} />
                 </div>
-                <div>
-                  <h3 className="font-bold text-base text-amber-950">Batalkan Persetujuan</h3>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-amber-950">Batalkan Persetujuan</h3>
                   <p className="text-xs text-amber-800">Kembalikan stok alat yang telah disetujui</p>
                 </div>
               </div>
-              <button onClick={closeModals} className="text-gray-400 hover:text-gray-600 p-1">
+              <button
+                type="button"
+                onClick={closeModals}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-white hover:text-gray-600"
+                aria-label="Tutup dialog"
+              >
                 <IconX size={20} />
               </button>
             </div>
 
             {/* Body */}
-            <div className="p-4 sm:p-6 space-y-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
               <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl text-sm text-amber-900 space-y-1">
                 <p>
                   Permintaan: <b>{selectedReq.nama_alat}</b> ({selectedReq.kelas})
@@ -896,12 +1043,12 @@ export default function PersetujuanSekaliPakai({ user }) {
             </div>
 
             {/* Footer */}
-            <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-gray-50 border-t border-gray-100 flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-2.5 sm:gap-3">
+            <div className="safe-area-bottom flex shrink-0 flex-col-reverse gap-2.5 border-t border-gray-100 bg-gray-50 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-6 sm:py-4">
               <button
                 type="button"
                 onClick={closeModals}
                 disabled={processing}
-                className="w-full sm:w-auto px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl text-sm font-semibold transition text-center"
+                className="min-h-11 w-full rounded-xl px-4 text-sm font-semibold text-gray-600 transition hover:bg-gray-100 disabled:opacity-60 sm:w-auto"
               >
                 Tutup
               </button>
@@ -909,7 +1056,7 @@ export default function PersetujuanSekaliPakai({ user }) {
                 type="button"
                 onClick={handleBatalkanPersetujuan}
                 disabled={processing}
-                className="w-full sm:w-auto px-5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-xs"
+                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-amber-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-amber-700 disabled:opacity-50 sm:w-auto"
               >
                 <IconHistory size={18} />
                 {processing ? 'Membatalkan...' : 'Ya, Batalkan & Kembalikan Stok'}

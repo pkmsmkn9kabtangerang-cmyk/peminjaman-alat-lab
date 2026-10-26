@@ -458,16 +458,17 @@ export default function KelolaAlat() {
         emptyMessage="Belum ada alat"
         emptyDescription="Alat yang ditambahkan akan muncul di sini."
         actionButton={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center md:w-auto">
             <button
               type="button"
               onClick={reload}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 min-[420px]:w-11 min-[420px]:border-0 min-[420px]:bg-transparent"
               title="Refresh data"
             >
               <IconRefresh size={18} />
+              <span className="text-sm font-semibold min-[420px]:sr-only">Muat ulang</span>
             </button>
-            <Button icon={IconPlus} onClick={openAdd}>Tambah Alat</Button>
+            <Button icon={IconPlus} onClick={openAdd} className="w-full justify-center min-[420px]:flex-1 md:w-auto md:flex-none">Tambah Alat</Button>
           </div>
         }
       />

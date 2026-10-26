@@ -3,12 +3,11 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { dbService } from '../services/store';
 import { callTransaksiManual } from '../lib/api';
 import { showFeedback, friendlyError } from '../lib/feedback';
-import Badge from '../components/Badge';
 import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
 import PageNote from '../components/PageNote';
 import FilterDropdown from '../components/FilterDropdown';
-import { IconPlus, IconMinus, IconUsers, IconTools, IconRefresh, IconHandGrab, IconMail } from '@tabler/icons-react';
+import { IconPlus, IconMinus, IconUsers, IconTools, IconRefresh, IconMail, IconAlertCircle } from '@tabler/icons-react';
 
 // ── Data fetching ──
 async function fetchKartuAktif() {
@@ -183,32 +182,39 @@ export default function PeminjamanPage({ user }) {
         Fitur peminjaman manual ini di gunakan jika kartu atau alat stiker sedang bermasalah, rusak, atau hilang. anda bisa menggunakan fitur peminjaman secara manual ini. dan minjam secara manual
       </PageNote>
 
-      <form onSubmit={handleSubmit} className="bg-white border border-main max-w-4xl lg:max-w-full">
-        <div className="px-5 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-          <div>
-            <h2 className="font-bold text-lg text-gray-800">Form Peminjaman Manual</h2>
-            <p className="text-sm text-gray-600 mt-1">Gunakan formulir ini jika kartu tidak bisa di-tap (bermasalah/hilang).</p>
+      <form onSubmit={handleSubmit} className="max-w-4xl overflow-hidden rounded-xl border border-main bg-white shadow-sm lg:max-w-full">
+        <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 sm:px-5">
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-gray-800 sm:text-lg">Form Peminjaman Manual</h2>
+            <p className="mt-1 text-sm text-gray-600">Gunakan formulir ini jika kartu tidak bisa di-tap (bermasalah/hilang).</p>
           </div>
           <button
             type="button"
             onClick={loadData}
             disabled={loading}
-            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition disabled:opacity-50"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
             title="Refresh data"
+            aria-label="Muat ulang data peminjaman"
           >
             <IconRefresh size={18} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
 
-        <div className="p-5 space-y-6">
+        <div className="space-y-6 p-4 sm:p-5">
           {fieldError && (
-            <p className="text-[15px] text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-lg">{fieldError}</p>
+            <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+              <IconAlertCircle size={18} className="mt-0.5 shrink-0" />
+              <span>{fieldError}</span>
+            </p>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {/* Kolom kiri: Pilih Kartu */}
             <div className="space-y-3">
-              <p className="font-bold text-base text-gray-800">1. Siapa yang meminjam? *</p>
+              <p className="flex items-center gap-2 text-base font-bold text-gray-800">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-[#1E5AAB]">1</span>
+                Siapa yang meminjam? <span className="text-red-500">*</span>
+              </p>
               <FilterDropdown
                 icon={IconUsers}
                 value={selectedKartu?.uid_kartu ?? ''}
@@ -225,17 +231,20 @@ export default function PeminjamanPage({ user }) {
               />
 
               {selectedKartu && (
-                <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                  <p className="font-bold text-blue-900 text-lg">{selectedKartu.kelas}</p>
-                  <p className="mt-1">{selectedKartu.nama_pemegang || 'Nama pemegang belum diisi'}</p>
-                  <p className="text-sm mt-1">{selectedKartu.uid_kartu}</p>
+                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <p className="text-lg font-bold text-blue-900">{selectedKartu.kelas}</p>
+                  <p className="mt-1 text-sm text-blue-800">{selectedKartu.nama_pemegang || 'Nama pemegang belum diisi'}</p>
+                  <p className="mt-1 break-all font-mono text-xs text-blue-700">{selectedKartu.uid_kartu}</p>
                 </div>
               )}
             </div>
 
             {/* Kolom kanan: Pilih Alat & Jumlah */}
             <div className="space-y-3">
-              <p className="font-bold text-base text-gray-800">2. Alat apa yang dipinjam? *</p>
+              <p className="flex items-center gap-2 text-base font-bold text-gray-800">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-[#1E5AAB]">2</span>
+                Alat apa yang dipinjam? <span className="text-red-500">*</span>
+              </p>
               <FilterDropdown
                 icon={IconTools}
                 value={selectedAlatId}
@@ -252,16 +261,16 @@ export default function PeminjamanPage({ user }) {
               />
 
               {selectedAlat && (
-                <div className="mt-3 p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-600 font-medium">Stok tersedia</span>
-                    <span className={`font-bold text-xl ${selectedAlat.stok_tersedia === 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                <div className="mt-3 space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium text-gray-600">Stok tersedia</span>
+                    <span className={`text-xl font-bold ${selectedAlat.stok_tersedia === 0 ? 'text-red-700' : 'text-emerald-700'}`}>
                       {selectedAlat.stok_tersedia}
                       {selectedAlat.jumlah_total ? ` / ${selectedAlat.jumlah_total}` : ''}
                     </span>
                   </div>
                   {selectedAlat.tipe !== 'habis_pakai' && selectedAlat.jumlah_rusak > 0 && (
-                    <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center justify-between gap-3 text-sm">
                       <span className="text-orange-700">Unit rusak</span>
                       <span className="font-medium text-orange-800">{selectedAlat.jumlah_rusak} {selectedAlat.satuan || 'unit'}</span>
                     </div>
@@ -270,23 +279,26 @@ export default function PeminjamanPage({ user }) {
               )}
 
               <div className="mt-4">
-                <p className="font-bold text-base text-gray-800 mb-3">3. Berapa Jumlahnya?</p>
+                <p className="mb-3 flex items-center gap-2 text-base font-bold text-gray-800">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-[#1E5AAB]">3</span>
+                  Berapa jumlahnya?
+                </p>
                 <div className="flex items-center gap-4">
                   <button
                     type="button"
                     onClick={() => setJumlah((j) => Math.max(1, j - 1))}
-                    className="w-12 h-12 rounded-xl border border-gray-300 hover:bg-gray-100 flex items-center justify-center bg-white"
-                    aria-label="Kurangi"
+                    className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-300 bg-white transition hover:bg-gray-100 active:bg-gray-200"
+                    aria-label="Kurangi jumlah"
                   >
                     <IconMinus size={20} />
                   </button>
-                  <span className="w-12 text-center font-bold text-2xl">{jumlah}</span>
+                  <span className="w-12 text-center text-2xl font-bold tabular-nums" aria-live="polite">{jumlah}</span>
                   <button
                     type="button"
                     onClick={() => setJumlah((j) => Math.min(selectedAlat?.stok_tersedia ?? 1, j + 1))}
-                    className="w-12 h-12 rounded-xl border border-gray-300 hover:bg-gray-100 flex items-center justify-center disabled:opacity-40 bg-white"
+                    className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-300 bg-white transition hover:bg-gray-100 active:bg-gray-200 disabled:opacity-40"
                     disabled={!selectedAlat || jumlah >= (selectedAlat?.stok_tersedia ?? 1)}
-                    aria-label="Tambah"
+                    aria-label="Tambah jumlah"
                   >
                     <IconPlus size={20} />
                   </button>
@@ -296,21 +308,22 @@ export default function PeminjamanPage({ user }) {
           </div>
 
           {/* Kondisi & Catatan */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {selectedAlat?.tipe !== 'habis_pakai' && (
               <div>
-                <label className="block font-bold text-sm text-gray-800 mb-2">Kondisi alat saat dipinjam</label>
+                <label className="mb-2 block text-sm font-bold text-gray-800">Kondisi alat saat dipinjam</label>
                 <div className="flex gap-2">
                   {['baik', 'rusak'].map((k) => (
                     <button
                       key={k}
                       type="button"
                       onClick={() => setKondisi(k)}
-                      className={`flex-1 py-2.5 rounded-xl border text-sm font-semibold transition capitalize ${kondisi === k
+                      aria-pressed={kondisi === k}
+                      className={`min-h-11 flex-1 rounded-xl border text-sm font-semibold capitalize transition ${kondisi === k
                         ? k === 'baik'
-                          ? 'bg-emerald-600 border-emerald-600 text-white'
-                          : 'bg-orange-500 border-orange-500 text-white'
-                        : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+                          ? 'border-emerald-600 bg-emerald-600 text-white'
+                          : 'border-orange-500 bg-orange-500 text-white'
+                        : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
                         }`}
                     >
                       {k}
@@ -320,13 +333,13 @@ export default function PeminjamanPage({ user }) {
               </div>
             )}
             <div>
-              <label htmlFor="catatan-pinjam" className="block font-bold text-sm text-gray-800 mb-2">Catatan (opsional)</label>
+              <label htmlFor="catatan-pinjam" className="mb-2 block text-sm font-bold text-gray-800">Catatan (opsional)</label>
               <input
                 id="catatan-pinjam"
                 type="text"
                 value={catatan}
                 onChange={(e) => setCatatan(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                className="min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 text-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Catatan tambahan..."
               />
             </div>
@@ -334,9 +347,9 @@ export default function PeminjamanPage({ user }) {
 
           {/* Ringkasan */}
           {selectedKartu && selectedAlat && (
-            <div className="border-2 border-blue-200 p-4 rounded-xl text-base bg-blue-50 mt-2">
-              <p className="font-bold text-blue-900 mb-1">Cek Kembali Sebelum Simpan</p>
-              <p className="text-blue-800">
+            <div className="mt-2 rounded-xl border-2 border-blue-200 bg-blue-50 p-4 text-sm sm:text-base">
+              <p className="mb-1 font-bold text-blue-900">Cek kembali sebelum menyimpan</p>
+              <p className="leading-relaxed text-blue-800">
                 Kelas <b>{selectedKartu.kelas}</b> akan {selectedAlat.tipe === 'habis_pakai' ? 'meminta' : 'meminjam'}{' '}
                 <b>{jumlah} {selectedAlat.satuan || 'unit'} {selectedAlat.nama}</b> {selectedAlat.tipe !== 'habis_pakai' ? `kondisi ${kondisi}` : ''}.
               </p>
@@ -344,11 +357,11 @@ export default function PeminjamanPage({ user }) {
           )}
         </div>
 
-        <div className="px-5 pb-5 border-t border-gray-100 pt-4">
+        <div className="border-t border-gray-100 bg-gray-50 px-4 pb-4 pt-4 sm:px-5 sm:pb-5">
           <Button
             type="submit"
             disabled={saving || loading || !selectedKartu || !selectedAlatId}
-            className="w-full lg:w-auto justify-center h-12 text-base font-bold"
+            className="h-12 w-full justify-center text-base font-bold lg:w-auto"
           >
             {saving ? 'Menyimpan...' : (selectedAlat?.tipe === 'habis_pakai' ? 'Berikan Alat Sekarang' : 'Simpan Peminjaman Sekarang')}
           </Button>

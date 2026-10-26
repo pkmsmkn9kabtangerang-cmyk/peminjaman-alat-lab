@@ -10,12 +10,12 @@ export default function Button({
   ...props
 }) {
   const base =
-    'inline-flex items-center justify-center font-semibold select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0 border';
+    'inline-flex items-center justify-center font-semibold select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0 border transition-colors duration-150 active:scale-[0.99]';
 
   const sizes = {
-    sm: 'text-sm px-3 py-2 min-h-9 rounded gap-1.5',
-    md: 'text-[15px] px-4 py-2.5 min-h-11 rounded gap-2',
-    lg: 'text-base px-5 py-3 min-h-12 rounded gap-2',
+    sm: 'text-[13px] px-3 py-2 min-h-10 rounded-lg gap-1.5',
+    md: 'text-[14px] px-4 py-2.5 min-h-11 rounded-lg gap-2',
+    lg: 'text-[15px] px-5 py-3 min-h-12 rounded-xl gap-2',
   };
 
   const variants = {
@@ -34,8 +34,8 @@ export default function Button({
   };
 
   const iconSizes = {
-    sm: 16,
-    md: 18,
+    sm: 15,
+    md: 17,
     lg: 18,
   };
 
@@ -47,11 +47,11 @@ export default function Button({
       {...props}
     >
       {Icon && iconPosition === 'left' && (
-        <Icon size={iconSizes[size] || 18} className="shrink-0" />
+        <Icon size={iconSizes[size] || 17} className="shrink-0" />
       )}
       {children}
       {Icon && iconPosition === 'right' && (
-        <Icon size={iconSizes[size] || 18} className="shrink-0" />
+        <Icon size={iconSizes[size] || 17} className="shrink-0" />
       )}
     </button>
   );

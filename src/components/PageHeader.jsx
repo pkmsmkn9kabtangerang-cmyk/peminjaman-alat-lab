@@ -1,10 +1,14 @@
 export default function PageHeader({ title, description, action }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-1">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold text-main tracking-tight">{title}</h1>
+        <h1 className="text-[20px] font-bold leading-tight tracking-tight text-main sm:text-[22px]">
+          {title}
+        </h1>
         {description && (
-          <p className="text-[15px] text-muted mt-1 leading-relaxed max-w-4x mb-5 lg:mb-3">{description}</p>
+          <p className="mt-1 max-w-2xl text-[13.5px] leading-relaxed text-muted sm:text-[14px]">
+            {description}
+          </p>
         )}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}

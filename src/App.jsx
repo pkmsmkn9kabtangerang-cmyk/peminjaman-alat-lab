@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { dbService } from './services/store';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { getErrorMessage } from './lib/handleError';
@@ -19,6 +19,7 @@ import PemberianSekaliPakai from './pages/PemberianSekaliPakai';
 
 import GantiPassword from './pages/GantiPassword';
 import SetPassword from './pages/SetPassword';
+import ChangePasswordMandiri from './pages/ChangePasswordMandiri';
 import { IconBell, IconX, IconCheck, IconAlertTriangle, IconMenu2 } from '@tabler/icons-react';
 import NetworkStatusBanner from './components/NetworkStatusBanner';
 import { isOnline, registerOnlineSync } from './lib/networkStatus';
@@ -71,7 +72,7 @@ function navigateTo(path, replace = false) {
     } else {
       window.history.pushState(null, '', path);
     }
-  } catch (_) {
+  } catch {
     window.location.href = path;
   }
 }
@@ -96,7 +97,7 @@ function getInitialTab() {
   try {
     const saved = localStorage.getItem('simlab_current_tab');
     if (saved && PAGE_TITLES[saved]) return saved;
-  } catch (_) { /* noop */ }
+  } catch { /* noop */ }
 
   return 'dashboard';
 }
@@ -125,6 +126,12 @@ function tapNotification(latest) {
   };
 }
 
+function roleLabel(role) {
+  if (role === 'super_admin') return 'Super Admin';
+  if (role === 'admin') return 'Admin';
+  return 'Petugas Lab';
+}
+
 function FeedbackToast() {
   const [item, setItem] = useState(null);
 
@@ -143,19 +150,49 @@ function FeedbackToast() {
   if (!item) return null;
 
   const isError = item.type === 'error';
+  const isWarning = item.type === 'warning';
+
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-[min(100%-2rem,360px)]">
-      <div className={`border shadow-md rounded bg-white px-3 py-2.5 flex items-start gap-2.5 ${isError ? 'border-red-300' : 'border-green-300'}`}>
-        {isError
-          ? <IconAlertTriangle size={18} className="text-red-700 shrink-0 mt-0.5" />
-          : <IconCheck size={18} className="text-green-800 shrink-0 mt-0.5" />}
-        <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-semibold text-gray-900">{item.title}</p>
-          {item.message && <p className="text-sm text-gray-700 mt-0.5 leading-relaxed">{item.message}</p>}
+    <div className="pointer-events-none fixed inset-x-3 bottom-[calc(1rem+var(--safe-bottom))] z-[60] flex justify-center sm:inset-x-auto sm:right-4 sm:justify-end">
+      <div
+        role={isError ? 'alert' : 'status'}
+        className={`pointer-events-auto w-full max-w-sm animate-slideUp overflow-hidden rounded-xl border bg-white shadow-lg shadow-slate-900/10 ${
+          isError ? 'border-red-200' : isWarning ? 'border-amber-200' : 'border-emerald-200'
+        }`}
+      >
+        <div className="flex items-start gap-2.5 px-3.5 py-3">
+          <span
+            className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+              isError
+                ? 'bg-red-50 text-red-700'
+                : isWarning
+                  ? 'bg-amber-50 text-amber-700'
+                  : 'bg-emerald-50 text-emerald-700'
+            }`}
+          >
+            {isError ? (
+              <IconAlertTriangle size={16} />
+            ) : isWarning ? (
+              <IconAlertTriangle size={16} />
+            ) : (
+              <IconCheck size={16} />
+            )}
+          </span>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <p className="text-[13.5px] font-semibold leading-snug text-gray-900">{item.title}</p>
+            {item.message && (
+              <p className="mt-0.5 text-[12.5px] leading-relaxed text-gray-600">{item.message}</p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setItem(null)}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+            aria-label="Tutup"
+          >
+            <IconX size={15} />
+          </button>
         </div>
-        <button type="button" onClick={() => setItem(null)} className="p-1 text-gray-500 hover:text-gray-800 min-h-8 min-w-8" aria-label="Tutup">
-          <IconX size={16} />
-        </button>
       </div>
     </div>
   );
@@ -323,7 +360,7 @@ export default function App() {
       if (window.location.pathname !== targetPath) {
         navigateTo(targetPath);
       }
-    } catch (_) { /* noop */ }
+    } catch { /* noop */ }
     setMobileMenuOpen(false);
     if (tab === 'realtime_card') {
       if (isSupabaseConfigured) {
@@ -347,7 +384,7 @@ export default function App() {
       const tab = getTabFromPath(window.location.pathname);
       if (tab && tab !== currentTab) {
         setCurrentTab(tab);
-        try { localStorage.setItem('simlab_current_tab', tab); } catch (_) { /* noop */ }
+        try { localStorage.setItem('simlab_current_tab', tab); } catch { /* noop */ }
       }
     };
     window.addEventListener('popstate', handlePopState);
@@ -390,7 +427,7 @@ export default function App() {
       try {
         const saved = localStorage.getItem('simlab_current_tab');
         return (saved && PAGE_TITLES[saved]) ? saved : 'dashboard';
-      } catch (_) { return 'dashboard'; }
+      } catch { return 'dashboard'; }
     })();
     setCurrentTab(restoredTab);
     navigateTo(TAB_TO_PATH[restoredTab] ?? '/dashboard', true);
@@ -411,12 +448,14 @@ export default function App() {
     return (
       <>
         <NetworkStatusBanner />
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex min-h-screen items-center justify-center bg-main px-4">
           <div className="flex flex-col items-center gap-3 text-gray-500">
-            <svg className="animate-spin h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-            </svg>
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
+              <svg className="h-6 w-6 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+              </svg>
+            </span>
             <p className="text-sm font-medium">Memuat aplikasi...</p>
           </div>
         </div>
@@ -451,6 +490,7 @@ export default function App() {
   // ── Render: Main app ─────────────────────────────────────────
   return (
     <div className="min-h-screen bg-main flex">
+      <NetworkStatusBanner />
       <NotificationToast
         notifications={notifications}
         onDismiss={dismissNotification}
@@ -469,39 +509,70 @@ export default function App() {
       />
 
       <main className="flex-1 md:ml-[68px] min-h-screen flex flex-col min-w-0 transition-all duration-300">
-        <header className="min-h-14 md:min-h-16 bg-surface border-b border-main px-3 sm:px-6 flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="md:hidden p-2 -ml-1 text-muted hover:text-main hover:bg-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-              aria-label="Buka menu navigasi"
-            >
-              <IconMenu2 className="w-6 h-6" />
-            </button>
-            <div className="md:hidden flex items-center gap-2 min-w-0">
-              <span className="font-bold text-main text-base tracking-tight shrink-0">SISPAS</span>
-              <span className="text-xs text-muted truncate max-w-[130px] sm:max-w-none">
-                {PAGE_TITLES[currentTab] || ''}
-              </span>
+        <header
+          className="sticky z-20 flex min-h-14 items-center border-b border-main bg-surface/95 px-3 backdrop-blur-sm sm:px-5 md:min-h-16 lg:px-6"
+          style={{ top: 'var(--net-banner-height, 0px)' }}
+        >
+          <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                className="-ml-1 flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 md:hidden"
+                aria-label="Buka menu navigasi"
+              >
+                <IconMenu2 className="h-5 w-5" />
+              </button>
+
+              <div className="flex min-w-0 items-center gap-2 md:hidden">
+                <span className="shrink-0 text-[15px] font-bold tracking-tight text-main">SISPAS</span>
+                <span className="hidden h-3.5 w-px shrink-0 bg-gray-300 min-[380px]:block" aria-hidden="true" />
+                <span className="hidden truncate text-xs text-muted min-[380px]:inline">
+                  {PAGE_TITLES[currentTab] || ''}
+                </span>
+              </div>
+
+              <div className="hidden min-w-0 md:block">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+                  SISPAS · Lab
+                </p>
+                <p className="truncate text-[15px] font-semibold text-main">
+                  {PAGE_TITLES[currentTab] || 'Dashboard'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+              <button
+                id="btn-bell-notifikasi"
+                onClick={() => handleTabChange('realtime_card')}
+                className="relative flex h-10 min-w-10 items-center justify-center gap-1.5 rounded-xl px-2.5 text-gray-700 transition-colors hover:bg-gray-100"
+                aria-label={`Notifikasi${unreadCount > 0 ? `, ${unreadCount} belum dibaca` : ''}`}
+                title="Buka aktivitas transaksi"
+              >
+                <IconBell size={21} />
+                {unreadCount > 0 && (
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-700 px-1 text-[10px] font-semibold text-white ring-2 ring-white">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              <div className="hidden items-center gap-2.5 border-l border-gray-200 pl-3 sm:flex">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E8F1FB] text-sm font-bold uppercase text-[#1E5AAB] ring-1 ring-blue-100">
+                  {currentUser?.nama ? currentUser.nama.charAt(0) : 'U'}
+                </div>
+                <div className="hidden leading-tight lg:block">
+                  <p className="max-w-[160px] truncate text-[13px] font-semibold text-main">
+                    {currentUser?.nama ?? 'Pengguna'}
+                  </p>
+                  <p className="text-[11px] text-muted">{roleLabel(currentUser?.role)}</p>
+                </div>
+              </div>
             </div>
           </div>
-          <button
-            id="btn-bell-notifikasi"
-            onClick={() => handleTabChange('realtime_card')}
-            className="relative px-3 py-2 text-[15px] font-medium text-gray-700 hover:bg-gray-100 rounded min-h-11 inline-flex items-center gap-2"
-          >
-            <IconBell size={22} />
-            {unreadCount > 0 && (
-              <span className="bg-red-700 text-white text-xs font-semibold rounded-full min-w-5 h-5 px-1 flex items-center justify-center">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
-          </button>
         </header>
 
-        <NetworkStatusBanner />
-
-        <div className="p-3 sm:p-6 flex-1 min-w-0 overflow-x-hidden">
+        <div className="flex-1 min-w-0 overflow-x-hidden px-3 py-4 sm:px-5 sm:py-5 lg:p-6">
           <div className={currentTab === 'dashboard' ? 'block' : 'hidden'}>
             <Dashboard setCurrentTab={handleTabChange} user={currentUser} isActive={currentTab === 'dashboard'} />
           </div>

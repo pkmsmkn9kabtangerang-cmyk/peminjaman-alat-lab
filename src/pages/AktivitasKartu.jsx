@@ -15,9 +15,6 @@ import { showFeedback, friendlyError } from '../lib/feedback';
 import {
   IconAlertTriangle,
   IconTrash,
-  IconX,
-  IconCircleCheck,
-  IconAlertCircle,
   IconRefresh,
   IconMail
 } from '@tabler/icons-react';
@@ -186,7 +183,7 @@ export default function AktivitasKartuPage() {
         if (session?.user) {
           supabase.from('profiles').select('role').eq('id', session.user.id).single()
             .then(({ data }) => setUser({ role: data?.role }))
-            .catch(() => {});
+            .catch(() => { });
         }
       });
     } else {
@@ -252,7 +249,7 @@ export default function AktivitasKartuPage() {
               console.error('[AktivitasKartu] mark taps read error:', error);
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
     } else {
       dbService.markTapsRead();
@@ -291,7 +288,7 @@ export default function AktivitasKartuPage() {
       const unregisterSync = registerOnlineSync(() => {
         reloadData(true);
         if (isSupabaseConfigured) {
-          supabase.rpc('mark_taps_read').catch(() => {});
+          supabase.rpc('mark_taps_read').catch(() => { });
         }
       });
 
@@ -621,11 +618,11 @@ export default function AktivitasKartuPage() {
     <div className="space-y-4 sm:space-y-5">
       <PageHeader
         title="Aktivitas Kartu & Alat Sekali Pakai"
-        description="Data aktivitas tap kartu realtime serta transaksi alat sekali pakai hari ini"
+        description="Data aktivitas tap kartu realtime serta catatan transaksi alat sekali pakai"
       />
 
       <PageNote title="Informasi Pemisahan Aktivitas" icon={IconMail}>
-        Aktivitas harian dipisahkan menjadi dua tabel khusus: log scan dari reader RFID / ESP32 dan catatan transaksi pemberian alat sekali pakai hari ini.
+        Aktivitas harian dipisahkan menjadi dua tabel khusus log scan dari Kartu dan catatan transaksi Alat sekali pakai, data di aktivitas ini hanya menampilkan hari ini, data ini akan hilang besok.
       </PageNote>
 
       {/* ── Tab Switcher Pilihan Tampilan ── */}
@@ -633,7 +630,7 @@ export default function AktivitasKartuPage() {
         <button
           type="button"
           onClick={() => setActiveTab('all')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition shrink-0 whitespace-nowrap ${activeTab === 'all'
+          className={`min-h-11 px-3 rounded-lg text-xs sm:text-sm font-semibold transition shrink-0 whitespace-nowrap ${activeTab === 'all'
             ? 'bg-blue-600 text-white shadow-xs'
             : 'text-gray-600 hover:bg-gray-100'
             }`}
@@ -643,7 +640,7 @@ export default function AktivitasKartuPage() {
         <button
           type="button"
           onClick={() => setActiveTab('rfid')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'rfid'
+          className={`min-h-11 px-3 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'rfid'
             ? 'bg-blue-600 text-white shadow-xs'
             : 'text-gray-600 hover:bg-gray-100'
             }`}
@@ -653,7 +650,7 @@ export default function AktivitasKartuPage() {
         <button
           type="button"
           onClick={() => setActiveTab('sekali_pakai')}
-          className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'sekali_pakai'
+          className={`min-h-11 px-3 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'sekali_pakai'
             ? 'bg-blue-600 text-white shadow-xs'
             : 'text-gray-600 hover:bg-gray-100'
             }`}
@@ -683,14 +680,15 @@ export default function AktivitasKartuPage() {
             searchKeys={['kelas', 'uid_kartu', 'nama_alat', 'jenis_terdeteksi', 'jenis_tap', 'nama_pemegang', 'status_sekali_pakai']}
             emptyMessage="Belum ada aktivitas Transaksi Kartu untuk hari ini"
             actionButton={
-              <div className="flex items-center gap-2">
+              <div className="flex w-full flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center md:w-auto">
                 <button
                   type="button"
                   onClick={() => reloadData(false)}
-                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 min-[420px]:w-11 min-[420px]:border-0 min-[420px]:bg-transparent"
                   title="Refresh data"
                 >
                   <IconRefresh size={18} />
+                  <span className="text-sm font-semibold min-[420px]:sr-only">Muat ulang</span>
                 </button>
                 {isAdmin && (
                   <Button
@@ -704,7 +702,7 @@ export default function AktivitasKartuPage() {
                       setClearTarget('rfid');
                       setShowClearModal(true);
                     }}
-                    className="w-full md:w-auto justify-center whitespace-nowrap"
+                    className="w-full justify-center whitespace-nowrap min-[420px]:flex-1 md:w-auto md:flex-none"
                   >
                     Hapus Log RFID
                   </Button>
@@ -736,14 +734,15 @@ export default function AktivitasKartuPage() {
             searchKeys={['kelas', 'nama_alat', 'uid_kartu', 'pemegang', 'petugas', 'catatan']}
             emptyMessage="Belum ada transaksi alat sekali pakai untuk hari ini"
             actionButton={
-              <div className="flex items-center gap-2">
+              <div className="flex w-full flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center md:w-auto">
                 <button
                   type="button"
                   onClick={() => reloadData(false)}
-                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 min-[420px]:w-11 min-[420px]:border-0 min-[420px]:bg-transparent"
                   title="Refresh data"
                 >
                   <IconRefresh size={18} />
+                  <span className="text-sm font-semibold min-[420px]:sr-only">Muat ulang</span>
                 </button>
                 {isAdmin && (
                   <Button
@@ -757,7 +756,7 @@ export default function AktivitasKartuPage() {
                       setClearTarget('sekali_pakai');
                       setShowClearModal(true);
                     }}
-                    className="w-full md:w-auto justify-center whitespace-nowrap"
+                    className="w-full justify-center whitespace-nowrap min-[420px]:flex-1 md:w-auto md:flex-none"
                   >
                     Hapus Log Sekali Pakai
                   </Button>

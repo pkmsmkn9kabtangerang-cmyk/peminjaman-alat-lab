@@ -4,11 +4,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { dbService } from '../services/store';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { isOnline, isNetworkError, registerOnlineSync } from '../lib/networkStatus';
+import { isOnline, registerOnlineSync } from '../lib/networkStatus';
 import StatCard from '../components/StatCard';
 import Badge from '../components/Badge';
 import PageNote from '../components/PageNote';
-import { IconArrowRight, IconMail } from '@tabler/icons-react';
+import { IconArrowRight, IconBox, IconClockHour4, IconMail, IconPackage, IconScan } from '@tabler/icons-react';
 import PersetujuanSekaliPakai from '../components/PersetujuanSekaliPakai';
 
 const FORMAT_DATE = new Intl.DateTimeFormat('id-ID', {
@@ -73,7 +73,6 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
   const [alat, setAlat] = useState(() => dbService.getAlatWithStok());
   const [transaksi, setTransaksi] = useState(() => dbService.getTransaksi());
   const [tapLog, setTapLog] = useState(() => dbService.getTapLog());
-  const [permintaanMenunggu, setPermintaanMenunggu] = useState(() => dbService.getPermintaan().filter(p => p.status === 'menunggu').length);
 
   const [activeCards, setActiveCards] = useState(() => {
     if (activeCardsCache !== null) return activeCardsCache;
@@ -94,7 +93,6 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
       setAlat(dbService.getAlatWithStok());
       setTransaksi(dbService.getTransaksi());
       setTapLog(dbService.getTapLog());
-      setPermintaanMenunggu(dbService.getPermintaan().filter(p => p.status === 'menunggu').length);
 
       const localGrouped = groupPinjamanByKartu(dbService.getPinjamanAktif());
       setActiveCards(localGrouped);
@@ -109,23 +107,21 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
         supabase.from('transaksi').select('*, kartu_rfid(nama_pemegang)').order('waktu_pinjam', { ascending: false }).limit(200),
         supabase.from('tap_log').select('*').or('jenis_terdeteksi.neq.manual,jenis_terdeteksi.is.null').order('waktu_tap', { ascending: false }).limit(10),
         supabase.from('v_pinjaman_aktif').select('*'),
-        supabase.from('permintaan_habis_pakai').select('id', { count: 'exact', head: true }).eq('status', 'menunggu')
       ]);
 
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
 
-      const [resAlat, resTrx, resTap, resPinjamanAktif, resPermintaan] = await Promise.race([fetchPromise, timeoutPromise]);
+      const [resAlat, resTrx, resTap, resPinjamanAktif] = await Promise.race([fetchPromise, timeoutPromise]);
 
       if (!resAlat.error && resAlat.data) setAlat(resAlat.data);
       if (!resTrx.error && resTrx.data) setTransaksi(resTrx.data.map(t => ({ ...t, pemegang: t.kartu_rfid?.nama_pemegang || t.pemegang })));
       if (!resTap.error && resTap.data) setTapLog(resTap.data);
-      if (!resPermintaan.error && typeof resPermintaan.count === 'number') setPermintaanMenunggu(resPermintaan.count);
       if (!resPinjamanAktif.error && resPinjamanAktif.data) {
         const grouped = groupPinjamanByKartu(resPinjamanAktif.data);
         setActiveCards(grouped);
         activeCardsCache = grouped;
       }
-    } catch (e) {
+    } catch {
       // jika offline atau timeout, pertahankan data terakhir
     } finally {
       isReloadingRef.current = false;
@@ -292,13 +288,13 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
   const FMT = (iso) => iso ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso)) : '—';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       <div>
-        <p className="text-muted text-[15px]">{FORMAT_DATE.format(new Date())}</p>
-        <h1 className="text-xl font-semibold text-main mt-0.5">
+        <p className="text-muted text-sm sm:text-[15px]">{FORMAT_DATE.format(new Date())}</p>
+        <h1 className="mt-0.5 text-xl font-semibold text-main sm:text-2xl">
           Selamat datang, {user?.nama ?? 'Pengguna'}
         </h1>
-        <p className="text-[15px] text-muted mt-1">
+        <p className="mt-1 text-sm text-muted sm:text-[15px]">
           {user?.role === 'super_admin' ? 'Super Admin' : user?.role === 'admin' ? 'Admin' : 'Petugas lab'} · ringkasan peminjaman alat laboratorium hari ini.
         </p>
       </div>
@@ -307,29 +303,30 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
         Ringkasan data lab diperbarui secara realtime. Jika ada perubahan stok, aktivitas kartu, atau status peminjaman, angka pada dashboard akan langsung menyesuaikan.
       </PageNote>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <StatCard title="Alat terdaftar" value={totalAlat} />
-        <StatCard title="Stok tersedia" value={totalTersedia} />
-        <StatCard title="Sedang dipinjam" value={totalDipinjam} />
-        <StatCard title="Peminjaman hari ini" value={totalHariIni} />
+      <div className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 xl:grid-cols-4">
+        <StatCard title="Alat terdaftar" value={totalAlat} icon={IconBox} tone="blue" />
+        <StatCard title="Stok tersedia" value={totalTersedia} icon={IconPackage} tone="emerald" />
+        <StatCard title="Sedang dipinjam" value={totalDipinjam} icon={IconScan} tone="amber" />
+        <StatCard title="Peminjaman hari ini" value={totalHariIni} icon={IconClockHour4} tone="violet" />
       </div>
 
       {/* ── Persetujuan Alat Sekali Pakai ── */}
       <PersetujuanSekaliPakai user={user} />
 
-      <div className="bg-surface border border-main">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-4 border-b border-main">
-          <div>
-            <h2 className="text-lg font-semibold text-main">Alat yang sedang dipinjam</h2>
-            <p className="text-[15px] text-muted mt-0.5">
+      <section className="overflow-hidden rounded-xl border border-main bg-surface shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-main px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-main sm:text-lg">Alat yang sedang dipinjam</h2>
+            <p className="mt-0.5 text-sm text-muted">
               {activeCards.length === 0
                 ? 'Tidak ada alat yang sedang dipinjam.'
                 : `${activeCards.length} kelas · ${totalActiveItems} unit alat`}
             </p>
           </div>
           <button
+            type="button"
             onClick={() => setCurrentTab('riwayat')}
-            className="text-[15px] font-semibold text-[#1E5AAB] hover:underline inline-flex items-center gap-1 min-h-10"
+            className="inline-flex min-h-11 items-center gap-1 self-start rounded-lg px-2.5 text-sm font-semibold text-[#1E5AAB] transition hover:bg-blue-50 active:bg-blue-100 sm:self-auto"
           >
             Lihat riwayat <IconArrowRight size={16} />
           </button>
@@ -337,52 +334,59 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
 
         {activeCards.length === 0 ? (
           <div className="px-5 py-10 text-center">
+            <span className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400" aria-hidden="true">
+              <IconScan size={22} />
+            </span>
             <p className="text-base font-semibold text-main">Belum ada peminjaman aktif</p>
-            <p className="text-[15px] text-muted mt-1">Semua alat laboratorium sudah dikembalikan.</p>
+            <p className="mt-1 text-sm text-muted">Semua alat laboratorium sudah dikembalikan.</p>
           </div>
         ) : (
           <div className="divide-y divide-gray-200">
             {activeCards.map((card) => (
-              <div key={card.uid_kartu} className="px-4 sm:px-5 py-4">
-                <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-                  <div>
-                    <p className="text-base font-semibold text-main">kelas : {card.kelas}</p>
+              <div key={card.uid_kartu} className="px-4 py-4 sm:px-5">
+                <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-semibold text-main">Kelas {card.kelas}</p>
                     {card.nama_pemegang && (
-                      <p className="text-[15px] text-muted">pemegang : {card.nama_pemegang}</p>
+                      <p className="text-sm text-muted">Pemegang: {card.nama_pemegang}</p>
                     )}
                   </div>
-                  <p className="text-[15px] text-muted">{card.items.length} alat</p>
+                  <span className="inline-flex shrink-0 items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-[#1E5AAB]">
+                    {card.items.length} alat
+                  </span>
                 </div>
-                <ul className="space-y-1.5">
+                <ul className="space-y-1">
                   {card.items.map((item) => (
                     <li
                       key={item.transaksi_id || item.id}
-                      className="flex items-center justify-between gap-3 text-[15px] py-1.5 border-b border-gray-100 last:border-0"
+                      className="flex flex-col gap-0.5 border-b border-gray-100 py-2 text-sm last:border-0 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-between min-[420px]:gap-3"
                     >
-                      <span className="text-gray-800">{item.alat_nama}</span>
-                      <span className="text-muted shrink-0">{formatDuration(item.waktu_pinjam)}</span>
+                      <span className="min-w-0 text-gray-800">{item.alat_nama}</span>
+                      <span className="shrink-0 text-xs text-muted min-[420px]:text-sm">{formatDuration(item.waktu_pinjam)}</span>
                     </li>
                   ))}
                 </ul>
                 <button
+                  type="button"
                   onClick={() => setCurrentTab('pengembalian')}
-                  className="mt-3 text-[15px] font-semibold text-[#1E5AAB] hover:underline min-h-10"
+                  className="mt-2 inline-flex min-h-11 items-center gap-1 rounded-lg text-sm font-semibold text-[#1E5AAB] transition hover:bg-blue-50 active:bg-blue-100 sm:px-2.5"
                 >
-                  Proses pengembalian
+                  Proses pengembalian <IconArrowRight size={15} />
                 </button>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="bg-surface border border-main">
-          <div className="px-4 sm:px-5 py-4 border-b border-main flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-main">Peminjaman terbaru</h2>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <section className="overflow-hidden rounded-xl border border-main bg-surface shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-main px-4 py-4 sm:px-5">
+            <h2 className="text-base font-semibold text-main sm:text-lg">Peminjaman terbaru</h2>
             <button
+              type="button"
               onClick={() => setCurrentTab('riwayat')}
-              className="text-[15px] font-semibold text-[#1E5AAB] hover:underline"
+              className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-2 text-sm font-semibold text-[#1E5AAB] transition hover:bg-blue-50 active:bg-blue-100"
             >
               Lihat semua
             </button>
@@ -390,54 +394,64 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
           {recentLoans.length === 0 ? (
             <div className="px-5 py-8">
               <p className="font-semibold text-main">Belum ada peminjaman</p>
-              <p className="text-[15px] text-muted mt-1">Data peminjaman akan muncul di sini.</p>
+              <p className="mt-1 text-sm text-muted">Data peminjaman akan muncul di sini.</p>
             </div>
           ) : (
             <ul className="divide-y divide-gray-200">
               {recentLoans.map((row) => (
-                <li key={row.id} className="px-4 sm:px-5 py-3 flex items-start justify-between gap-3">
+                <li key={row.id} className="flex items-start justify-between gap-3 px-4 py-3 sm:px-5">
                   <div className="min-w-0">
-                    <p className="text-[15px] font-medium text-main truncate">{row.nama_alat}</p>
-                    <p className="text-sm text-muted mt-0.5">{row.kelas} · {FMT(row.waktu_pinjam)}</p>
+                    <p className="truncate text-sm font-medium text-main">{row.nama_alat}</p>
+                    <p className="mt-0.5 text-xs text-muted sm:text-sm">{row.kelas} · {FMT(row.waktu_pinjam)}</p>
                   </div>
-                  <Badge status={row.status} />
+                  <span className="shrink-0">
+                    <Badge status={row.status} />
+                  </span>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </section>
 
-        <div className="bg-surface border border-main">
-          <div className="px-4 sm:px-5 py-4 border-b border-main flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-main">Aktivitas Transaksi</h2>
+        <section className="overflow-hidden rounded-xl border border-main bg-surface shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-main px-4 py-4 sm:px-5">
+            <h2 className="text-base font-semibold text-main sm:text-lg">Aktivitas Transaksi</h2>
             <button
+              type="button"
               onClick={() => setCurrentTab('realtime_card')}
-              className="text-[15px] font-semibold text-[#1E5AAB] hover:underline"
+              className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-2 text-sm font-semibold text-[#1E5AAB] transition hover:bg-blue-50 active:bg-blue-100"
             >
               Lihat semua
             </button>
           </div>
           {recentTaps.length === 0 ? (
             <div className="px-5 py-8">
-              <p className="font-semibold text-main">Belum ada aktivitas Kartu</p>
-              <p className="text-[15px] text-muted mt-1">Aktivitas kartu yang masuk akan muncul di sini.</p>
+              <p className="font-semibold text-main">Belum ada aktivitas kartu</p>
+              <p className="mt-1 text-sm text-muted">Aktivitas kartu yang masuk akan muncul di sini.</p>
             </div>
           ) : (
             <ul className="divide-y divide-gray-200">
-              {recentTaps.map((row) => (
-                <li key={row.id} className="px-4 sm:px-5 py-3">
-                  <p className="text-[15px] font-medium text-main">
-                    {row.kelas || 'Kartu tidak dikenal'}
-                    {row.nama_alat ? ` · ${row.nama_alat}` : ''}
-                  </p>
-                  <p className="text-sm text-muted mt-0.5">
-                    {row.status === 'ditolak' ? 'Ditolak' : 'Berhasil'} · {FMT(row.waktu_tap)}
-                  </p>
-                </li>
-              ))}
+              {recentTaps.map((row) => {
+                const rejected = row.status === 'ditolak';
+                return (
+                  <li key={row.id} className="px-4 py-3 sm:px-5">
+                    <p className="text-sm font-medium text-main">
+                      {row.kelas || 'Kartu tidak dikenal'}
+                      {row.nama_alat ? ` · ${row.nama_alat}` : ''}
+                    </p>
+                    <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted sm:text-sm">
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${rejected ? 'bg-red-500' : 'bg-emerald-500'}`}
+                        aria-hidden="true"
+                      />
+                      {rejected ? 'Ditolak' : 'Berhasil'} · {FMT(row.waktu_tap)}
+                    </p>
+                  </li>
+                );
+              })}
             </ul>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

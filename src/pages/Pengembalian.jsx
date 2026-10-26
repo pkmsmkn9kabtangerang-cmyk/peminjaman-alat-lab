@@ -9,7 +9,7 @@ import { showFeedback, friendlyError } from '../lib/feedback';
 import Button from '../components/Button';
 import Badge from '../components/Badge';
 import FilterDropdown from '../components/FilterDropdown';
-import { IconCheck, IconUsers, IconRefresh, IconMail } from '@tabler/icons-react';
+import { IconCheck, IconUsers, IconRefresh, IconMail, IconAlertCircle } from '@tabler/icons-react';
 import PageHeader from '../components/PageHeader';
 import PageNote from '../components/PageNote';
 
@@ -211,11 +211,11 @@ export default function PengembalianPage({ user }) {
         Fitur pengembalian manual ini di gunakan jika kartu atau alat stiker sedang bermasalah, rusak, atau hilang. anda bisa menggunakan fitur pengembalian ini secara manual.
       </PageNote>
 
-      <form onSubmit={handleSubmit} className="bg-white border border-main">
-        <div className="px-5 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-          <div>
-            <h2 className="font-bold text-lg text-gray-800">Form Pengembalian Manual</h2>
-            <p className="text-sm text-gray-600 mt-1">Gunakan formulir ini untuk mencatat pengembalian alat secara manual.</p>
+      <form onSubmit={handleSubmit} className="overflow-hidden rounded-xl border border-main bg-white shadow-sm">
+        <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 sm:px-5">
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-gray-800 sm:text-lg">Form Pengembalian Manual</h2>
+            <p className="mt-1 text-sm text-gray-600">Gunakan formulir ini untuk mencatat pengembalian alat secara manual.</p>
           </div>
           <button
             type="button"
@@ -227,22 +227,29 @@ export default function PengembalianPage({ user }) {
               }
             }}
             disabled={loadingKartu}
-            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition disabled:opacity-50"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
             title="Refresh data"
+            aria-label="Muat ulang data pengembalian"
           >
             <IconRefresh size={18} className={loadingKartu ? 'animate-spin' : ''} />
           </button>
         </div>
 
-        <div className="p-5 space-y-6">
+        <div className="space-y-6 p-4 sm:p-5">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">{error}</div>
+            <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <IconAlertCircle size={18} className="mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {/* Kolom Kiri: Pilih Kartu */}
             <div className="space-y-3">
-              <p className="font-bold text-base text-gray-800">1. Kelas Siapa yang Mengembalikan? *</p>
+              <p className="flex items-center gap-2 text-base font-bold text-gray-800">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-[#1E5AAB]">1</span>
+                Kelas siapa yang mengembalikan? <span className="text-red-500">*</span>
+              </p>
 
               <FilterDropdown
                 icon={IconUsers}
@@ -259,37 +266,38 @@ export default function PengembalianPage({ user }) {
               />
 
               {selectedKartuObj && (
-                <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                  <p className="font-bold text-blue-900 text-lg">{selectedKartuObj.kelas}</p>
-                  <p className="text-blue-700 mt-1">{selectedKartuObj.nama_pemegang || 'Tanpa nama'}</p>
-                  <p className="text-blue-500 text-xs mt-1 font-mono">{selectedKartuObj.uid_kartu}</p>
+                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <p className="text-lg font-bold text-blue-900">{selectedKartuObj.kelas}</p>
+                  <p className="mt-1 text-sm text-blue-800">{selectedKartuObj.nama_pemegang || 'Tanpa nama'}</p>
+                  <p className="mt-1 break-all font-mono text-xs text-blue-600">{selectedKartuObj.uid_kartu}</p>
                 </div>
               )}
             </div>
 
             {/* Kolom Kanan: Daftar Pinjaman Aktif */}
             <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-base text-gray-800">
-                  2. Pilih Alat yang Mau Dikembalikan
-                  {selectedKartuId && !loadingPinjaman && (
-                    <span className="ml-2 text-sm font-normal text-gray-500">
-                      ({pinjamanAktif.length} dipinjam)
-                    </span>
-                  )}
-                </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="flex items-center gap-2 text-base font-bold text-gray-800">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-[#1E5AAB]">2</span>
+                  Pilih alat yang mau dikembalikan
+                </p>
+                {selectedKartuId && !loadingPinjaman && (
+                  <span className="text-sm font-normal text-gray-500">
+                    ({pinjamanAktif.length} dipinjam)
+                  </span>
+                )}
               </div>
 
               {!selectedKartuId ? (
-                <div className="p-6 bg-gray-50 border border-gray-200 border-dashed rounded-xl text-center text-sm text-gray-500">
-                  Silakan pilih kelas di sebelah kiri terlebih dahulu.
+                <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+                  Silakan pilih kelas di kolom sebelumnya terlebih dahulu.
                 </div>
               ) : loadingPinjaman ? (
-                <div className="p-6 bg-gray-50 border border-gray-200 rounded-xl text-center text-sm text-gray-500">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
                   Memuat data pinjaman...
                 </div>
               ) : pinjamanAktif.length === 0 ? (
-                <div className="p-6 bg-gray-50 border border-gray-200 rounded-xl text-center text-sm text-gray-500">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
                   Kelas ini tidak sedang meminjam alat apa pun.
                 </div>
               ) : (
@@ -299,25 +307,26 @@ export default function PengembalianPage({ user }) {
                       key={t.alat_id || t.id}
                       type="button"
                       onClick={() => setSelectedAlatId(selectedAlatId === t.alat_id ? '' : t.alat_id)}
-                      className={`w-full text-left px-4 py-4 rounded-xl border transition-all text-sm ${selectedAlatId === t.alat_id
-                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200 shadow-sm'
-                        : 'border-gray-300 bg-white hover:bg-gray-50 hover:border-gray-400'
+                      aria-pressed={selectedAlatId === t.alat_id}
+                      className={`w-full rounded-xl border px-4 py-4 text-left text-sm transition ${selectedAlatId === t.alat_id
+                        ? 'border-blue-500 bg-blue-50 shadow-sm ring-2 ring-blue-200'
+                        : 'border-gray-300 bg-white hover:border-gray-400 hover:bg-gray-50'
                         }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-gray-900 text-base">{t.nama_alat}</p>
-                          <p className="text-gray-500 text-xs mt-1">Dipinjam: {FMT(t.waktu_pinjam)}</p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="break-words text-base font-bold text-gray-900">{t.nama_alat}</p>
+                          <p className="mt-1 text-xs text-gray-500">Dipinjam: {FMT(t.waktu_pinjam)}</p>
                           {t.kondisi_pinjam && (
-                            <p className="text-gray-500 text-xs">Kondisi pinjam: <span className="capitalize">{t.kondisi_pinjam}</span></p>
+                            <p className="text-xs text-gray-500">Kondisi pinjam: <span className="capitalize">{t.kondisi_pinjam}</span></p>
                           )}
                         </div>
-                        <div className="flex items-center gap-3">
-                          <Badge status="dipinjam" />
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${selectedAlatId === t.alat_id ? 'bg-blue-600' : 'bg-gray-200'}`}>
-                            <IconCheck size={14} className={selectedAlatId === t.alat_id ? 'text-white' : 'text-gray-400'} />
-                          </div>
+                        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${selectedAlatId === t.alat_id ? 'bg-blue-600' : 'bg-gray-200'}`}>
+                          <IconCheck size={15} className={selectedAlatId === t.alat_id ? 'text-white' : 'text-gray-400'} />
                         </div>
+                      </div>
+                      <div className="mt-2">
+                        <Badge status="dipinjam" />
                       </div>
                     </button>
                   ))}
@@ -328,20 +337,21 @@ export default function PengembalianPage({ user }) {
 
           {/* Kondisi kembali & catatan */}
           {selectedAlatId && selectedTrx && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-gray-100 pt-4">
+            <div className="grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2">
               <div>
-                <label className="block font-bold text-sm text-gray-800 mb-2">Kondisi alat saat dikembalikan</label>
+                <label className="mb-2 block text-sm font-bold text-gray-800">Kondisi alat saat dikembalikan</label>
                 <div className="flex gap-2">
                   {['baik', 'rusak'].map((k) => (
                     <button
                       key={k}
                       type="button"
                       onClick={() => setKondisiKembali(k)}
-                      className={`flex-1 py-2.5 rounded-xl border text-sm font-semibold transition capitalize ${kondisiKembali === k
+                      aria-pressed={kondisiKembali === k}
+                      className={`min-h-11 flex-1 rounded-xl border text-sm font-semibold capitalize transition ${kondisiKembali === k
                         ? k === 'baik'
-                          ? 'bg-emerald-600 border-emerald-600 text-white'
-                          : 'bg-orange-500 border-orange-500 text-white'
-                        : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+                          ? 'border-emerald-600 bg-emerald-600 text-white'
+                          : 'border-orange-500 bg-orange-500 text-white'
+                        : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
                         }`}
                     >
                       {k}
@@ -350,13 +360,13 @@ export default function PengembalianPage({ user }) {
                 </div>
               </div>
               <div>
-                <label htmlFor="catatan-kembali" className="block font-bold text-sm text-gray-800 mb-2">Catatan (opsional)</label>
+                <label htmlFor="catatan-kembali" className="mb-2 block text-sm font-bold text-gray-800">Catatan (opsional)</label>
                 <input
                   id="catatan-kembali"
                   type="text"
                   value={catatan}
                   onChange={(e) => setCatatan(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                  className="min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 text-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Catatan kondisi saat kembali..."
                 />
               </div>
@@ -364,11 +374,11 @@ export default function PengembalianPage({ user }) {
           )}
         </div>
 
-        <div className="px-5 lg:px-6 pb-5 lg:pb-6 border-t border-gray-100 pt-4">
+        <div className="border-t border-gray-100 bg-gray-50 px-4 pb-4 pt-4 sm:px-5 sm:pb-5">
           <Button
             type="submit"
             variant="success"
-            className="w-full lg:w-auto lg:min-w-[240px] justify-center h-12 text-base font-bold"
+            className="h-12 w-full justify-center text-base font-bold lg:w-auto lg:min-w-[240px]"
             disabled={saving || !selectedKartuId || !selectedAlatId}
           >
             {saving ? 'Menyimpan...' : 'Simpan Pengembalian Sekarang'}

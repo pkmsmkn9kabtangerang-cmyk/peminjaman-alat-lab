@@ -25,7 +25,7 @@ export default function ConfirmDialog({
     >
       <div className="space-y-5">
         {message && (
-          <p className="text-[15px] text-gray-700 leading-relaxed whitespace-pre-line">{message}</p>
+          <p className="text-[13.5px] text-gray-700 leading-relaxed whitespace-pre-line">{message}</p>
         )}
         {children}
         <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 pt-1 border-t border-gray-200">
