@@ -80,6 +80,7 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
     activeCardsCache = initial;
     return initial;
   });
+  const [sekaliPakaiRefreshKey, setSekaliPakaiRefreshKey] = useState(0);
 
   const [, setTick] = useState(0);
   const isReloadingRef = useRef(false);
@@ -227,6 +228,7 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
 
     let channel = null;
     let unregisterSync = () => {};
+    let handleStorage = null;
 
     if (isSupabaseConfigured) {
       channel = supabase.channel('dashboard-realtime')
@@ -236,12 +238,14 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
           if (isActive) reloadData();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tap_log' }, () => {
+          setSekaliPakaiRefreshKey((key) => key + 1);
           if (isActive) reloadData();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'alat' }, () => {
           if (isActive) reloadData();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'permintaan_habis_pakai' }, () => {
+          setSekaliPakaiRefreshKey((key) => key + 1);
           if (isActive) reloadData();
         })
         .subscribe((status) => {
@@ -255,7 +259,11 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
         if (isActive) reloadData();
       });
     } else {
-      window.addEventListener('simlab_storage_updated', reloadData);
+      handleStorage = () => {
+        setSekaliPakaiRefreshKey((key) => key + 1);
+        reloadData();
+      };
+      window.addEventListener('simlab_storage_updated', handleStorage);
     }
 
     const durationInterval = setInterval(() => setTick((t) => t + 1), 30000);
@@ -269,7 +277,7 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
 
     return () => {
       if (channel) supabase.removeChannel(channel);
-      if (!isSupabaseConfigured) window.removeEventListener('simlab_storage_updated', reloadData);
+      if (handleStorage) window.removeEventListener('simlab_storage_updated', handleStorage);
       unregisterSync();
       clearInterval(durationInterval);
       clearInterval(polling);
@@ -311,7 +319,11 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
       </div>
 
       {/* ── Persetujuan Alat Sekali Pakai ── */}
-      <PersetujuanSekaliPakai user={user} />
+      <PersetujuanSekaliPakai
+        user={user}
+        isActive={isActive}
+        refreshKey={sekaliPakaiRefreshKey}
+      />
 
       <section className="overflow-hidden rounded-xl border border-main bg-surface shadow-sm">
         <div className="flex flex-col gap-3 border-b border-main px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">

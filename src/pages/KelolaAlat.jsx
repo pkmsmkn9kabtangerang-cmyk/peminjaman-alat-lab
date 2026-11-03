@@ -8,12 +8,18 @@ import PageHeader from '../components/PageHeader';
 import ConfirmDialog from '../components/ConfirmDialog';
 import FormField, { inputClass } from '../components/FormField';
 import { showFeedback, friendlyError } from '../lib/feedback';
+import { beginTapCapture } from '../lib/tapCapture';
 import PageNote from '../components/PageNote';
 import { IconPlus, IconRefresh, IconMail } from '@tabler/icons-react';
 
 const EMPTY_FORM = {
   id: '', kode: '', nama: '', kategori: 'elektronik', jumlah_total: 1, jumlah_rusak: 0, tipe: 'pinjam', satuan: 'unit'
 };
+
+// Alat bertipe pinjam selalu memakai satuan unit. Satuan bebas hanya
+// diperlukan untuk alat sekali pakai (cm, pcs, meter, pack, dll).
+const satuanAlat = (item) =>
+  item?.tipe === 'habis_pakai' ? (item.satuan || 'unit') : 'unit';
 
 // ── Data access: Supabase jika ada, localStorage jika tidak ──
 async function fetchAlat() {
@@ -199,11 +205,6 @@ export default function KelolaAlat() {
               setForm((prev) => ({ ...prev, kode: scannedUid }));
               if (check.used) {
                 setErrors((prev) => ({ ...prev, kode: check.message }));
-                showFeedback({
-                  type: 'error',
-                  title: 'UID Sudah Terdaftar!',
-                  message: check.message,
-                });
               } else {
                 setErrors((prev) => ({ ...prev, kode: null }));
               }
@@ -226,11 +227,6 @@ export default function KelolaAlat() {
             setForm((prev) => ({ ...prev, kode: scannedUid }));
             if (check.used) {
               setErrors((prev) => ({ ...prev, kode: check.message }));
-              showFeedback({
-                type: 'error',
-                title: 'UID Sudah Terdaftar!',
-                message: check.message,
-              });
             } else {
               setErrors((prev) => ({ ...prev, kode: null }));
             }
@@ -244,6 +240,11 @@ export default function KelolaAlat() {
       };
     }
   }, [modal, editItem]);
+
+  useEffect(() => {
+    if (!modal) return undefined;
+    return beginTapCapture();
+  }, [modal]);
 
   const openAdd = async () => {
     setEditItem(null);
@@ -273,11 +274,6 @@ export default function KelolaAlat() {
               setForm((prev) => ({ ...prev, kode: uid }));
               if (check.used) {
                 setErrors((prev) => ({ ...prev, kode: check.message }));
-                showFeedback({
-                  type: 'warning',
-                  title: 'UID Baru Saja Ditap Sudah Terdaftar!',
-                  message: check.message,
-                });
               }
             }
           }
@@ -293,7 +289,7 @@ export default function KelolaAlat() {
     setErrors({});
     setForm({
       ...item,
-      satuan: item.satuan || 'unit',
+      satuan: satuanAlat(item),
       tipe: item.tipe || 'pinjam',
     });
     setModal(true);
@@ -339,7 +335,7 @@ export default function KelolaAlat() {
         jumlah_total: Number(form.jumlah_total),
         jumlah_rusak: form.tipe === 'habis_pakai' ? 0 : (Number(form.jumlah_rusak) || 0),
         tipe: form.tipe,
-        satuan: form.satuan || 'unit',
+        satuan: form.tipe === 'habis_pakai' ? (form.satuan || 'unit') : 'unit',
       };
 
       if (editItem) {
@@ -400,20 +396,20 @@ export default function KelolaAlat() {
       key: 'jumlah_total',
       label: 'Total Stok',
       sortable: true,
-      render: (row) => <span className="font-medium">{row.jumlah_total} {row.satuan || 'unit'}</span>,
+      render: (row) => <span className="font-medium">{row.jumlah_total} {satuanAlat(row)}</span>,
     },
     {
       key: 'satuan',
       label: 'Satuan',
       sortable: true,
-      render: (row) => <span className="text-main font-semibold">{row.satuan || 'unit'}</span>,
+      render: (row) => <span className="text-main font-semibold">{satuanAlat(row)}</span>,
     },
     {
       key: 'jumlah_rusak',
       label: 'Rusak',
       render: (row) => row.tipe === 'habis_pakai' ? <span className="text-muted">—</span> : (
         <span className={row.jumlah_rusak > 0 ? 'text-orange-800 font-medium' : 'text-muted'}>
-          {row.jumlah_rusak} {row.satuan || 'unit'}
+          {row.jumlah_rusak} {satuanAlat(row)}
         </span>
       ),
     },
@@ -585,11 +581,18 @@ export default function KelolaAlat() {
             </FormField>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className={`grid grid-cols-1 gap-3 ${form.tipe === 'habis_pakai' ? 'sm:grid-cols-2' : ''}`}>
             <FormField label="Tipe Alat" required error={errors.tipe}>
               <select
                 value={form.tipe}
-                onChange={(e) => setForm({ ...form, tipe: e.target.value })}
+                onChange={(e) => {
+                  const tipe = e.target.value;
+                  setForm({
+                    ...form,
+                    tipe,
+                    satuan: tipe === 'pinjam' ? 'unit' : (form.satuan || 'unit'),
+                  });
+                }}
                 className={inputClass}
               >
                 <option value="pinjam">Pinjam (Biasa)</option>
@@ -597,23 +600,31 @@ export default function KelolaAlat() {
               </select>
             </FormField>
 
-            <FormField label="Satuan" required error={errors.satuan} hint="Contoh: unit, pcs, cm, meter, pack">
-              <select
-                value={form.satuan || 'unit'}
-                onChange={(e) => setForm({ ...form, satuan: e.target.value })}
-                className={inputClass}
-              >
-                <option value="unit">Unit</option>
-                <option value="pcs">Pcs</option>
-                <option value="cm">Cm</option>
-                <option value="meter">Meter</option>
-                <option value="pack">Pack</option>
-                <option value="set">Set</option>
-                <option value="roll">Roll</option>
-                <option value="box">Box</option>
-              </select>
-            </FormField>
+            {form.tipe === 'habis_pakai' && (
+              <FormField label="Satuan" required error={errors.satuan} hint="Contoh: unit, pcs, cm, meter, pack">
+                <select
+                  value={form.satuan || 'unit'}
+                  onChange={(e) => setForm({ ...form, satuan: e.target.value })}
+                  className={inputClass}
+                >
+                  <option value="unit">Unit</option>
+                  <option value="pcs">Pcs</option>
+                  <option value="cm">Cm</option>
+                  <option value="meter">Meter</option>
+                  <option value="pack">Pack</option>
+                  <option value="set">Set</option>
+                  <option value="roll">Roll</option>
+                  <option value="box">Box</option>
+                </select>
+              </FormField>
+            )}
           </div>
+
+          {form.tipe !== 'habis_pakai' && (
+            <p className="-mt-1 text-xs text-muted">
+              Alat tipe pinjam otomatis menggunakan satuan <b className="text-main">unit</b>.
+            </p>
+          )}
 
           {form.tipe !== 'habis_pakai' && editItem && (
             <FormField

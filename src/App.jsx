@@ -23,6 +23,7 @@ import ChangePasswordMandiri from './pages/ChangePasswordMandiri';
 import { IconBell, IconX, IconCheck, IconAlertTriangle, IconMenu2 } from '@tabler/icons-react';
 import NetworkStatusBanner from './components/NetworkStatusBanner';
 import { isOnline, registerOnlineSync } from './lib/networkStatus';
+import { isTapCaptureActive, subscribeTapCapture } from './lib/tapCapture';
 
 // ── Internal tab keys (tidak berubah) ────────────────────────
 const PAGE_TITLES = {
@@ -284,12 +285,21 @@ export default function App() {
 
   // ── Unread count & Realtime tap notifications ────────────────
   const triggerNotification = useCallback((latest) => {
+    // Saat pengguna sedang di dalam form Kelola Kartu/Alat, tap dibaca
+    // langsung oleh form. Jangan tampilkan toast global agar tidak bentrok.
+    if (isTapCaptureActive()) return;
     const id = 'notif-' + Date.now();
     setNotifications([{ id, ...tapNotification(latest) }]);
   }, []);
 
   const dismissNotification = useCallback((id) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+  }, []);
+
+  useEffect(() => {
+    return subscribeTapCapture((active) => {
+      if (active) setNotifications([]);
+    });
   }, []);
 
   useEffect(() => {

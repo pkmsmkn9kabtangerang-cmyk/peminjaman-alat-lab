@@ -9,6 +9,7 @@ import PageHeader from '../components/PageHeader';
 import ConfirmDialog from '../components/ConfirmDialog';
 import FormField, { inputClass } from '../components/FormField';
 import { showFeedback, friendlyError } from '../lib/feedback';
+import { beginTapCapture } from '../lib/tapCapture';
 import PageNote from '../components/PageNote';
 import { IconPlus, IconRefresh, IconMail } from '@tabler/icons-react';
 
@@ -25,19 +26,6 @@ async function fetchKartu() {
     return data ?? [];
   }
   return dbService.getKartu();
-}
-
-async function fetchActiveLoansByCard(uid_kartu) {
-  if (isSupabaseConfigured) {
-    const { data, error } = await supabase
-      .from('transaksi')
-      .select('id, nama_alat')
-      .eq('uid_kartu', uid_kartu)
-      .eq('status', 'dipinjam');
-    if (error) return [];
-    return data ?? [];
-  }
-  return dbService.getActiveLoansByCard(uid_kartu);
 }
 
 async function upsertKartu(payload, isEdit) {
@@ -235,11 +223,6 @@ export default function KartuRfidPage() {
               setForm((prev) => ({ ...prev, uid_kartu: scannedUid }));
               if (check.used) {
                 setErrors((prev) => ({ ...prev, uid_kartu: check.message }));
-                showFeedback({
-                  type: 'error',
-                  title: 'UID Sudah Terdaftar!',
-                  message: check.message,
-                });
               } else {
                 setErrors((prev) => ({ ...prev, uid_kartu: null }));
               }
@@ -262,11 +245,6 @@ export default function KartuRfidPage() {
             setForm((prev) => ({ ...prev, uid_kartu: scannedUid }));
             if (check.used) {
               setErrors((prev) => ({ ...prev, uid_kartu: check.message }));
-              showFeedback({
-                type: 'error',
-                title: 'UID Sudah Terdaftar!',
-                message: check.message,
-              });
             } else {
               setErrors((prev) => ({ ...prev, uid_kartu: null }));
             }
@@ -280,6 +258,11 @@ export default function KartuRfidPage() {
       };
     }
   }, [modal, editItem]);
+
+  useEffect(() => {
+    if (!modal) return undefined;
+    return beginTapCapture();
+  }, [modal]);
 
   const openAdd = async () => {
     setEditItem(null);
@@ -310,11 +293,6 @@ export default function KartuRfidPage() {
               setForm((prev) => ({ ...prev, uid_kartu: uid }));
               if (check.used) {
                 setErrors((prev) => ({ ...prev, uid_kartu: check.message }));
-                showFeedback({
-                  type: 'warning',
-                  title: 'UID Baru Saja Ditap Sudah Terdaftar!',
-                  message: check.message,
-                });
               }
             }
           }

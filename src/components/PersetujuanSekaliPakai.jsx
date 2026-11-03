@@ -44,7 +44,7 @@ function StatusPermintaan({ status }) {
   return <span className="text-xs text-gray-400">—</span>;
 }
 
-export default function PersetujuanSekaliPakai({ user }) {
+export default function PersetujuanSekaliPakai({ user, isActive = true, refreshKey = 0 }) {
   const isDemo = !isSupabaseConfigured;
 
   const [activeTab, setActiveTab] = useState('menunggu'); // 'menunggu' | 'riwayat'
@@ -68,18 +68,21 @@ export default function PersetujuanSekaliPakai({ user }) {
   const [catatanBatal, setCatatanBatal] = useState('');
   const [processing, setProcessing] = useState(false);
 
-  const isFetchingRef = useRef(false);
+  const fetchSeqRef = useRef(0);
 
   // ── Fetch data ──────────────────────────────────────────────
+  // Memakai nomor urut permintaan agar respons lama tidak menimpa data baru.
+  // Dengan begitu beberapa pemicu (realtime, polling, refreshKey) aman
+  // berjalan berdekatan tanpa saling mengunci.
   const fetchData = useCallback(async () => {
     if (!isOnline()) {
       setLoading(false);
       return;
     }
-    if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
 
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
+
     try {
       if (isDemo) {
         const allReq = dbService.getPermintaan();
@@ -113,8 +116,10 @@ export default function PersetujuanSekaliPakai({ user }) {
           )
           .map(enrich);
 
-        setMenungguList(waiting);
-        setRiwayatList(history);
+        if (seq === fetchSeqRef.current) {
+          setMenungguList(waiting);
+          setRiwayatList(history);
+        }
       } else {
         // Mode Supabase
         const [resWaiting, resHistory] = await Promise.all([
@@ -133,6 +138,8 @@ export default function PersetujuanSekaliPakai({ user }) {
           }),
         ]);
 
+        if (seq !== fetchSeqRef.current) return;
+
         const now = Date.now();
         const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
@@ -147,7 +154,7 @@ export default function PersetujuanSekaliPakai({ user }) {
         }
       }
     } catch (err) {
-      if (!isNetworkError(err)) {
+      if (seq === fetchSeqRef.current && !isNetworkError(err)) {
         console.error('[PersetujuanSekaliPakai] fetch error:', err);
         showFeedback({
           type: 'error',
@@ -156,8 +163,7 @@ export default function PersetujuanSekaliPakai({ user }) {
         });
       }
     } finally {
-      setLoading(false);
-      isFetchingRef.current = false;
+      if (seq === fetchSeqRef.current) setLoading(false);
     }
   }, [isDemo]);
 
@@ -199,6 +205,46 @@ export default function PersetujuanSekaliPakai({ user }) {
       return () => window.removeEventListener('simlab_storage_updated', handler);
     }
   }, [isDemo, fetchData]);
+
+  // Muat ulang setiap dashboard kembali aktif atau ada sinyal tap baru
+  // dari Dashboard (refreshKey berubah). Fetch pertama sudah ditangani
+  // effect listener di atas, jadi lewati mount awal agar tidak dobel.
+  const refreshStateRef = useRef({ active: isActive, key: refreshKey });
+  useEffect(() => {
+    const prev = refreshStateRef.current;
+    refreshStateRef.current = { active: isActive, key: refreshKey };
+
+    if (!isActive) return;
+    if (prev.active === isActive && prev.key === refreshKey) return;
+
+    // Refetch disengaja saat tab aktif kembali atau ada tap baru.
+    fetchData();
+  }, [isActive, refreshKey, fetchData]);
+
+  // Jaring pengaman: polling ringan saat dashboard terlihat agar permintaan
+  // baru tetap muncul meskipun event realtime terlewat.
+  useEffect(() => {
+    if (!isActive) return undefined;
+
+    const timer = setInterval(() => {
+      if (isOnline() && typeof document !== 'undefined' && !document.hidden) {
+        fetchData();
+      }
+    }, 10000);
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        fetchData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [isActive, fetchData]);
 
   // ── Helper ambil stok alat saat buka modal setujui ────────────
   const openSetujuModal = async (req) => {
