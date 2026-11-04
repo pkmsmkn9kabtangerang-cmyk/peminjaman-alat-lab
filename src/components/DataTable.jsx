@@ -18,6 +18,7 @@ export default function DataTable({
   searchPlaceholder = 'Cari...',
   searchKeys = [],
   defaultPageSize = 10,
+  showPageSize = true,
   loading = false,
   emptyMessage = 'Belum ada data yang masuk',
   emptyDescription = 'Data yang masuk akan muncul di sini.',
@@ -232,30 +233,32 @@ export default function DataTable({
         )}
       </div>
 
-      <div className="flex flex-col items-center justify-between gap-2.5 border-t border-main bg-white px-3 py-3 text-[12.5px] text-gray-700 sm:flex-row sm:px-4">
-        <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start">
-          <span className="whitespace-nowrap text-muted">Baris per halaman</span>
-          <div className="relative inline-flex items-center">
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setPage(1);
-              }}
-              aria-label="Jumlah baris per halaman"
-              className="h-11 cursor-pointer appearance-none rounded-lg border border-gray-300 bg-white pl-2.5 pr-7 text-[13px] font-medium text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-700/20"
-            >
-              {PAGE_SIZE_OPTIONS.map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1.5 text-gray-500">
-              <IconChevronDown size={14} />
+      <div className={`flex flex-col items-center justify-between gap-2.5 border-t border-main bg-white px-3 py-3 text-[12.5px] text-gray-700 sm:flex-row sm:px-4 ${showPageSize ? '' : 'sm:justify-end'}`}>
+        {showPageSize && (
+          <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start">
+            <span className="whitespace-nowrap text-muted">Baris per halaman</span>
+            <div className="relative inline-flex items-center">
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+                aria-label="Jumlah baris per halaman"
+                className="h-11 cursor-pointer appearance-none rounded-lg border border-gray-300 bg-white pl-2.5 pr-7 text-[13px] font-medium text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-700/20"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1.5 text-gray-500">
+                <IconChevronDown size={14} />
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-3">
           <span className="whitespace-nowrap text-muted" aria-live="polite">

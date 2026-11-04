@@ -20,7 +20,7 @@ import PemberianSekaliPakai from './pages/PemberianSekaliPakai';
 import GantiPassword from './pages/GantiPassword';
 import SetPassword from './pages/SetPassword';
 import ChangePasswordMandiri from './pages/ChangePasswordMandiri';
-import { IconBell, IconX, IconCheck, IconAlertTriangle, IconMenu2 } from '@tabler/icons-react';
+import { IconBell, IconX, IconCheck, IconAlertTriangle, IconArrowRight, IconMenu2 } from '@tabler/icons-react';
 import NetworkStatusBanner from './components/NetworkStatusBanner';
 import { isOnline, registerOnlineSync } from './lib/networkStatus';
 import { isTapCaptureActive, subscribeTapCapture } from './lib/tapCapture';
@@ -113,11 +113,17 @@ function tapNotification(latest) {
     subMessage = 'Peminjaman berhasil dicatat.';
   } else if (latest.jenis_tap === 'kembali' || latest.status === 'dikembalikan') {
     subMessage = 'Pengembalian berhasil dicatat.';
+  } else if (latest.jenis_tap === 'selesai') {
+    subMessage = 'Sesi kartu berakhir.';
   } else if (latest.jenis_tap === 'kartu') {
     subMessage = 'Kartu kelas terdeteksi.';
   }
   return {
-    title: rejected ? 'Kartu ditolak' : 'Kartu RFID terdeteksi',
+    title: rejected
+      ? 'Kartu ditolak'
+      : latest.jenis_tap === 'selesai'
+        ? 'Sesi kartu berakhir'
+        : 'Kartu RFID terdeteksi',
     status: rejected ? 'ditolak' : 'berhasil',
     jenis: latest.jenis_tap,
     kelas: latest.kelas,
@@ -144,7 +150,7 @@ function FeedbackToast() {
 
   useEffect(() => {
     if (!item) return undefined;
-    const t = setTimeout(() => setItem(null), 4200);
+    const t = setTimeout(() => setItem(null), item.duration ?? 4200);
     return () => clearTimeout(t);
   }, [item]);
 
@@ -153,8 +159,15 @@ function FeedbackToast() {
   const isError = item.type === 'error';
   const isWarning = item.type === 'warning';
 
+  const handleAction = () => {
+    if (!item.actionPath) return;
+    setItem(null);
+    navigateTo(item.actionPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
   return (
-    <div className="pointer-events-none fixed inset-x-3 bottom-[calc(1rem+var(--safe-bottom))] z-[60] flex justify-center sm:inset-x-auto sm:right-4 sm:justify-end">
+    <div className="pointer-events-none fixed inset-x-3 bottom-[calc(1rem+var(--safe-bottom))] z-[120] flex justify-center sm:inset-x-auto sm:right-4 sm:justify-end">
       <div
         role={isError ? 'alert' : 'status'}
         className={`pointer-events-auto w-full max-w-sm animate-slideUp overflow-hidden rounded-xl border bg-white shadow-lg shadow-slate-900/10 ${
@@ -183,6 +196,18 @@ function FeedbackToast() {
             <p className="text-[13.5px] font-semibold leading-snug text-gray-900">{item.title}</p>
             {item.message && (
               <p className="mt-0.5 text-[12.5px] leading-relaxed text-gray-600">{item.message}</p>
+            )}
+            {item.actionPath && (
+              <button
+                type="button"
+                onClick={handleAction}
+                className={`mt-2 inline-flex min-h-9 items-center gap-1 text-[12px] font-semibold transition hover:underline ${
+                  isError ? 'text-red-700' : isWarning ? 'text-amber-700' : 'text-emerald-700'
+                }`}
+              >
+                {item.actionLabel || 'Lihat'}
+                <IconArrowRight size={13} />
+              </button>
             )}
           </div>
           <button

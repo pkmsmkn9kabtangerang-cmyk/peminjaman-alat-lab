@@ -1,13 +1,23 @@
 // src/lib/feedback.js
 // Umpan balik UI: toast ringkas + pesan error yang ramah dan mudah dipahami pengguna
 
-export function showFeedback({ type = 'success', title, message } = {}) {
+export function showFeedback({
+  type = 'success',
+  title,
+  message,
+  actionLabel,
+  actionPath,
+  duration,
+} = {}) {
   window.dispatchEvent(
     new CustomEvent('simlab_feedback', {
       detail: {
         type,
         title,
         message,
+        actionLabel,
+        actionPath,
+        duration,
         id: 'fb-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
       },
     })
@@ -94,9 +104,11 @@ export function friendlyError(error, fallback = 'Terjadi kendala saat memproses 
 export const ERROR_MESSAGES = {
   kartu_nonaktif: 'Kartu ini sedang dinonaktifkan, sehingga belum bisa digunakan.',
   uid_tidak_dikenal: 'Kartu belum terdaftar. Silakan daftarkan kartu terlebih dahulu di menu Kelola Kartu.',
-  sesi_tidak_ada: 'Belum ada kartu yang terdeteksi, atau waktu 20 detik telah habis. Tempelkan kartu kelas terlebih dahulu.',
+  sesi_tidak_ada: 'Belum ada kartu yang terdeteksi, atau waktu 10 detik telah habis. Tempelkan kartu kelas terlebih dahulu.',
   sesi_kartu_lain_aktif: 'Kartu kelas lain sedang aktif. Tunggu sesi tersebut selesai, lalu coba lagi.',
   stok_habis: 'Stok alat habis, tidak ada unit yang dapat dipinjam saat ini.',
+  alat_sedang_dipinjam: 'Alat ini sedang dipinjam oleh kelas lain. Tunggu sampai alat dikembalikan.',
+  tap_duplikat: 'Stiker alat ini sudah diproses pada sesi yang sama. Akhiri sesi lalu mulai sesi baru untuk memproses ulang.',
   alat_rusak: 'Alat dalam kondisi rusak dan tidak dapat dipinjam.',
   payload_tidak_lengkap: 'Data yang dikirim belum lengkap. Silakan coba lagi.',
 };

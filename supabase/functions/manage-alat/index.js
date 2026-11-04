@@ -8,10 +8,9 @@
 //
 // Body POST/PUT: {
 //   nama: string,
-//   kode: string,          // kode unik alat
+//   kode: string,          // UID stiker RFID alat (unik per unit fisik)
 //   kategori?: string,
-//   uid_rfid?: string,     // kode stiker RFID pada alat
-//   jumlah_total?: number,
+//   jumlah_total?: number, // alat pinjam selalu 1
 //   jumlah_rusak?: number,
 //   tipe?: string,         // "pinjam" | "habis_pakai"
 //   satuan?: string,       // "unit" | "cm" | "pcs"
@@ -84,10 +83,18 @@ Deno.serve(async (req) => {
       }
 
       const body = await req.json();
-      const { nama, kode, kategori = "umum", uid_rfid, jumlah_total = 1, jumlah_rusak = 0, tipe = "pinjam", satuan = "unit" } = body;
+      const { nama, kode, kategori = "umum", jumlah_total = 1, jumlah_rusak = 0, tipe = "pinjam", satuan = "unit" } = body;
 
       if (!nama?.trim())  return json({ success: false, message: "Nama alat wajib diisi" }, 400);
       if (!kode?.trim())  return json({ success: false, message: "Kode alat wajib diisi" }, 400);
+
+      const finalTipe = tipe === "habis_pakai" ? "habis_pakai" : "pinjam";
+      const finalJumlahTotal = finalTipe === "habis_pakai"
+        ? Math.max(1, Number(jumlah_total) || 1)
+        : 1;
+      const finalJumlahRusak = finalTipe === "habis_pakai"
+        ? 0
+        : Math.min(1, Math.max(0, Number(jumlah_rusak) || 0));
 
       // Cek duplikat kode
       const { data: existing } = await supabaseAdmin
@@ -100,19 +107,6 @@ Deno.serve(async (req) => {
         return json({ success: false, message: `Kode alat "${kode}" sudah digunakan` }, 409);
       }
 
-      // Cek duplikat uid_rfid
-      if (uid_rfid?.trim()) {
-        const { data: existingRfid } = await supabaseAdmin
-          .from("alat")
-          .select("id")
-          .eq("uid_rfid", uid_rfid.trim())
-          .maybeSingle();
-
-        if (existingRfid) {
-          return json({ success: false, message: "Kode stiker RFID sudah dipakai alat lain" }, 409);
-        }
-      }
-
       const newId = `ALT-${Date.now()}`;
       const now   = new Date().toISOString();
 
@@ -123,11 +117,10 @@ Deno.serve(async (req) => {
           kode:         kode.trim().toUpperCase(),
           nama:         nama.trim(),
           kategori:     kategori?.trim() ?? "umum",
-          uid_rfid:     uid_rfid?.trim() || null,
-          jumlah_total: Number(jumlah_total) || 1,
-          jumlah_rusak: tipe === "habis_pakai" ? 0 : (Number(jumlah_rusak) || 0),
-          tipe:         tipe,
-          satuan:       satuan,
+          jumlah_total: finalJumlahTotal,
+          jumlah_rusak: finalJumlahRusak,
+          tipe:         finalTipe,
+          satuan:       finalTipe === "habis_pakai" ? satuan : "unit",
           created_at:   now,
         })
         .select()
@@ -142,12 +135,12 @@ Deno.serve(async (req) => {
       if (!id) return json({ success: false, message: "Parameter id diperlukan" }, 400);
 
       const body = await req.json();
-      const { nama, kode, kategori, uid_rfid, jumlah_total, jumlah_rusak, tipe, satuan } = body;
+      const { nama, kode, kategori, jumlah_total, jumlah_rusak, tipe, satuan } = body;
 
       // Cek alat ada
       const { data: existing } = await supabaseAdmin
         .from("alat")
-        .select("id, kode, uid_rfid, tipe")
+        .select("id, kode, tipe, jumlah_total, jumlah_rusak")
         .eq("id", id)
         .maybeSingle();
 
@@ -179,33 +172,30 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Cek duplikat uid_rfid (kecuali diri sendiri)
-      if (uid_rfid?.trim() && uid_rfid.trim() !== existing.uid_rfid) {
-        const { data: dupRfid } = await supabaseAdmin
-          .from("alat")
-          .select("id")
-          .eq("uid_rfid", uid_rfid.trim())
-          .neq("id", id)
-          .maybeSingle();
-
-        if (dupRfid) {
-          return json({ success: false, message: "Kode stiker RFID sudah dipakai alat lain" }, 409);
-        }
-      }
-
       const finalTipe = tipe || existing.tipe;
-      const finalJumlahRusak = finalTipe === "habis_pakai" ? 0 : (jumlah_rusak !== undefined ? Number(jumlah_rusak) : undefined);
+      const finalJumlahRusak = finalTipe === "habis_pakai"
+        ? 0
+        : (jumlah_rusak !== undefined
+            ? Math.min(1, Math.max(0, Number(jumlah_rusak) || 0))
+            : undefined);
 
       // Bangun payload update (hanya field yang dikirim)
       const payload = {};
       if (nama       !== undefined) payload.nama         = nama.trim();
       if (kode       !== undefined) payload.kode         = kode.trim().toUpperCase();
       if (kategori   !== undefined) payload.kategori     = kategori.trim();
-      if (uid_rfid   !== undefined) payload.uid_rfid     = uid_rfid?.trim() || null;
-      if (jumlah_total !== undefined) payload.jumlah_total = Number(jumlah_total);
+      if (jumlah_total !== undefined) {
+        payload.jumlah_total = finalTipe === "habis_pakai"
+          ? Math.max(1, Number(jumlah_total) || 1)
+          : 1;
+      } else if (tipe !== undefined) {
+        payload.jumlah_total = finalTipe === "habis_pakai"
+          ? Math.max(1, Number(existing.jumlah_total) || 1)
+          : 1;
+      }
       if (finalJumlahRusak !== undefined) payload.jumlah_rusak = finalJumlahRusak;
-      if (tipe       !== undefined) payload.tipe         = tipe;
-      if (satuan     !== undefined) payload.satuan       = satuan;
+      if (tipe       !== undefined) payload.tipe         = finalTipe;
+      if (satuan     !== undefined) payload.satuan       = finalTipe === "habis_pakai" ? satuan : "unit";
 
       const { data: updated, error: updateErr } = await supabaseAdmin
         .from("alat")
@@ -237,6 +227,16 @@ Deno.serve(async (req) => {
           message: "Alat tidak dapat dihapus karena masih ada pinjaman aktif",
         }, 422);
       }
+
+      // Riwayat tidak ikut dihapus. Lepaskan relasi sebelum menghapus alat.
+      const detachResults = await Promise.all([
+        supabaseAdmin.from("transaksi").update({ alat_id: null }).eq("alat_id", id),
+        supabaseAdmin.from("permintaan_habis_pakai").update({ alat_id: null }).eq("alat_id", id),
+        supabaseAdmin.from("stok_mutasi").update({ alat_id: null }).eq("alat_id", id),
+      ]);
+
+      const detachError = detachResults.find((result) => result.error)?.error;
+      if (detachError) throw detachError;
 
       const { error: deleteErr } = await supabaseAdmin.from("alat").delete().eq("id", id);
       if (deleteErr) throw deleteErr;

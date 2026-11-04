@@ -55,12 +55,12 @@ export default function SimulasiIotPage() {
     };
   }, []);
 
-  // Countdown timer untuk sesi aktif (20 detik)
+  // Countdown timer untuk sesi aktif (10 detik)
   useEffect(() => {
     const updateCountdown = () => {
       if (!activeSession) {
         if (prevSessionUidRef.current) {
-          addLog('[SYS] Waktu sesi habis (timeout 20s). Slot kartu kini bebas untuk kelas berikutnya.', 'system');
+          addLog('[SYS] Waktu sesi habis (timeout 10s). Slot kartu kini bebas untuk kelas berikutnya.', 'system');
           prevSessionUidRef.current = null;
         }
         setTimeLeft(0);
@@ -77,7 +77,7 @@ export default function SimulasiIotPage() {
         // Otomatis bersihkan sesi ketika waktu habis
         const current = loadData();
         if (!current) {
-          addLog('[SYS] Waktu sesi 20s telah berakhir. Slot kartu kembali bebas.', 'system');
+          addLog('[SYS] Waktu sesi 10s telah berakhir. Slot kartu kembali bebas.', 'system');
           prevSessionUidRef.current = null;
         }
       }
@@ -112,7 +112,7 @@ export default function SimulasiIotPage() {
         if (res.action === 'selesai') {
           addLog(`[RX] OK Sesi Selesai: ${res.kelas} mengakhiri sesi. Slot kartu kini bebas!`, 'success');
         } else if (res.action === 'mulai') {
-          addLog(`[RX] OK Sesi ${res.kelas} aktif (${res.jenis === 'pinjam' ? 'Mode Pinjam' : 'Mode Kembali'}) - Durasi 20 detik`, 'success');
+          addLog(`[RX] OK Sesi ${res.kelas} aktif (${res.jenis === 'pinjam' ? 'Mode Pinjam' : 'Mode Kembali'}) - Durasi 10 detik`, 'success');
         } else if (res.type === 'alat') {
           if (res.status === 'menunggu_persetujuan') {
             addLog(
@@ -121,7 +121,7 @@ export default function SimulasiIotPage() {
             );
           } else {
             addLog(
-              `[RX] OK ${res.jenis === 'pinjam' ? 'Pinjam' : 'Kembali'} "${res.alat}" (${res.kelas}) - Sesi di-reset ke 20s`,
+              `[RX] OK ${res.jenis === 'pinjam' ? 'Pinjam' : 'Kembali'} "${res.alat}" (${res.kelas}) - Sesi di-reset ke 10s`,
               'success'
             );
           }
@@ -137,15 +137,23 @@ export default function SimulasiIotPage() {
         } else if (res.error === 'sesi_kartu_lain_aktif') {
           const activeName = res.activeCard?.kelas || res.activeCard?.uid_kartu || 'lain';
           addLog(
-            `[RX] TOLAK: Kartu ${label} tidak bisa tap! Sesi ${activeName} sedang aktif. Tunggu selesai atau habis (20s).`,
+            `[RX] TOLAK: Kartu ${label} tidak bisa tap! Sesi ${activeName} sedang aktif. Tunggu selesai atau habis (10s).`,
             'error'
           );
         } else if (res.error === 'kartu_nonaktif') {
           addLog(`[RX] TOLAK: Kartu ${label} tidak aktif / diblokir.`, 'error');
         } else if (res.error === 'sesi_tidak_ada') {
-          addLog(`[RX] TOLAK: Belum ada kartu yang di-tap atau sesi sudah habis (20 detik).`, 'error');
+          addLog(`[RX] TOLAK: Belum ada kartu yang di-tap atau sesi sudah habis (10 detik).`, 'error');
         } else if (res.error === 'stok_habis') {
           addLog(`[RX] TOLAK: Stok alat "${label}" habis.`, 'error');
+        } else if (res.error === 'alat_sedang_dipinjam') {
+          const peminjam = res.peminjam_kelas ? ` oleh ${res.peminjam_kelas}` : '';
+          addLog(`[RX] TOLAK: Alat "${label}" sedang dipinjam${peminjam}.`, 'error');
+        } else if (res.error === 'tap_duplikat') {
+          addLog(
+            `[RX] TOLAK: "${label}" sudah diproses pada sesi ini. Akhiri sesi lalu mulai sesi baru.`,
+            'error'
+          );
         } else if (res.error === 'uid_tidak_dikenal') {
           addLog(`[RX] TOLAK: UID "${uid}" belum terdaftar di sistem.`, 'error');
         } else {
@@ -160,6 +168,14 @@ export default function SimulasiIotPage() {
         addLog(`[RX] TOLAK: Stok alat habis.`, 'error');
       } else if (err?.error === 'kartu_nonaktif') {
         addLog(`[RX] TOLAK: Kartu diblokir.`, 'error');
+      } else if (err?.error === 'alat_sedang_dipinjam') {
+        const peminjam = err.peminjam_kelas ? ` oleh ${err.peminjam_kelas}` : '';
+        addLog(`[RX] TOLAK: Alat "${label}" sedang dipinjam${peminjam}.`, 'error');
+      } else if (err?.error === 'tap_duplikat') {
+        addLog(
+          `[RX] TOLAK: "${label}" sudah diproses pada sesi ini. Akhiri sesi lalu mulai sesi baru.`,
+          'error'
+        );
       } else {
         addLog(`[RX] ERROR: ${err?.message || String(err)}`, 'error');
       }
@@ -174,7 +190,7 @@ export default function SimulasiIotPage() {
     handleTap(activeSession.uid_kartu, activeSession.kelas || activeSession.uid_kartu);
   };
 
-  const maxDuration = SESSION_DURATION_SECONDS || 20;
+  const maxDuration = SESSION_DURATION_SECONDS || 10;
   const progressPercent = Math.min(100, Math.max(0, (timeLeft / maxDuration) * 100));
 
   return (
@@ -187,7 +203,7 @@ export default function SimulasiIotPage() {
             Simulator Perangkat IoT (ESP32 RFID)
           </h2>
           <p className="text-xs text-muted">
-            Uji coba alur tap kartu RFID dan stiker alat. Sesi dibatasi 20 detik dan mengunci akses untuk kelas lain selama sesi aktif.
+            Uji coba alur tap kartu RFID dan stiker alat. Sesi dibatasi 10 detik dan mengunci akses untuk kelas lain selama sesi aktif.
           </p>
         </div>
         <div className={`inline-flex items-center gap-2 self-stretch rounded-full border px-3 py-1.5 text-xs font-semibold shadow-sm sm:self-auto ${
@@ -215,7 +231,7 @@ export default function SimulasiIotPage() {
               </span>
             </div>
             <p className="text-xs text-muted mb-4">
-              Tap kartu kelas untuk membuka sesi (20 detik). Jika User 1 sedang aktif, User 2 yang men-tap akan ditolak sampai User 1 selesai men-tap kembali atau waktu habis.
+              Tap kartu kelas untuk membuka sesi (10 detik). Jika User 1 sedang aktif, User 2 yang men-tap akan ditolak sampai User 1 selesai men-tap kembali atau waktu habis.
             </p>
 
             <div className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
@@ -271,7 +287,7 @@ export default function SimulasiIotPage() {
                         </span>
                       ) : (
                         <span className="text-muted group-hover:text-blue-600">
-                          Tap untuk mulai (20s)
+                          Tap untuk mulai (10s)
                         </span>
                       )}
                     </div>
@@ -298,7 +314,7 @@ export default function SimulasiIotPage() {
             </div>
             <p className="text-xs text-muted mb-4">
               {activeSession
-                ? `Alat yang di-tap otomatis dipinjam/dikembalikan atas nama ${activeSession.kelas}. Setiap tap alat akan mereset waktu sesi kembali ke 20 detik.`
+                ? `Alat yang di-tap otomatis dipinjam/dikembalikan atas nama ${activeSession.kelas}. Setiap tap alat akan mereset waktu sesi kembali ke 10 detik.`
                 : 'Tap alat saat sesi belum aktif akan ditolak sistem (membutuhkan otentikasi kartu terlebih dahulu).'}
             </p>
 
@@ -378,7 +394,7 @@ export default function SimulasiIotPage() {
                   </p>
                 </div>
 
-                {/* Progress bar countdown 20s */}
+                {/* Progress bar countdown 10s */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-blue-800 font-semibold flex items-center gap-1">
@@ -401,7 +417,7 @@ export default function SimulasiIotPage() {
                   <p className="font-semibold text-blue-950 flex items-center gap-1 mb-1">
                     <IconLock size={12} className="text-blue-600" /> Akses Terkunci:
                   </p>
-                  User lain tidak dapat men-tap kartu sampai sesi ini diakhiri atau waktu 20s habis.
+                  User lain tidak dapat men-tap kartu sampai sesi ini diakhiri atau waktu 10s habis.
                 </div>
 
                 <button
@@ -420,7 +436,7 @@ export default function SimulasiIotPage() {
                 </div>
                 <p className="text-xs font-medium text-gray-700">Slot Kartu Bebas</p>
                 <p className="text-[11px] text-muted mt-1 leading-relaxed">
-                  Silakan tap salah satu kartu kelas di sebelah kiri untuk membuka sesi baru (durasi 20 detik).
+                  Silakan tap salah satu kartu kelas di sebelah kiri untuk membuka sesi baru (durasi 10 detik).
                 </p>
               </div>
             )}

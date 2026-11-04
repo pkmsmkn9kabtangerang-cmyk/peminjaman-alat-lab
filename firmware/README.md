@@ -23,20 +23,20 @@ Sketch: [`simlab_rfid/simlab_rfid.ino`](simlab_rfid/simlab_rfid.ino)
 | SCK | GPIO 18 |
 | MOSI | GPIO 23 |
 | MISO | GPIO 19 |
-| RST | GPIO 4 |
+| RST | GPIO 27 |
 | 3.3V | **3V3** (jangan ke 5V) |
 | GND | GND |
 
 | LCD 1602 I2C | ESP32 |
 |---|---|
-| SDA | GPIO 21 |
-| SCL | GPIO 22 |
+| SDA | GPIO 4 |
+| SCL | GPIO 21 |
 | VCC | VIN (5V) |
 | GND | GND |
 
 | Buzzer | ESP32 |
 |---|---|
-| + (atau I/O) | GPIO 25 |
+| + (atau I/O) | GPIO 22 |
 | − | GND |
 
 ## Setup Arduino IDE
@@ -58,11 +58,16 @@ Sketch: [`simlab_rfid/simlab_rfid.ino`](simlab_rfid/simlab_rfid.ino)
 
 1. Tap kartu/stiker yang belum terdaftar → LCD menampilkan **"Tag tdk dikenal"** + UID-nya
    (juga tercetak di Serial Monitor).
-2. Daftarkan UID tersebut di web: **Kartu RFID** (untuk kartu kelas) atau **Inventaris** (kolom UID RFID alat).
+2. Daftarkan UID tersebut di web: **Kartu RFID** (untuk kartu kelas) atau **Kelola Alat** (kolom *Kode stiker / Tag RFID alat*).
 3. Alur peminjaman:
-   - Tap **kartu kelas** → sesi mulai (`Mode PINJAM` / `Mode KEMBALI`, hitung mundur 20 detik)
-   - Tap **stiker alat** → `DIPINJAM` / `DIKEMBALIKAN`
-   - Tap **kartu kelas** lagi → `Sesi selesai`
+   - Tap **kartu kelas** → sesi mulai, LCD menampilkan **nama perwakilan** (`Mode PINJAM` / `Mode KEMBALI`, hitung mundur 10 detik)
+   - Tap **stiker alat** → `DIPINJAM` / `DIKEMBALIKAN`; setiap tap berhasil memperpanjang sesi 10 detik
+   - Tap **stiker alat yang sama** pada sesi yang sama → `TAP DUPLIKAT` (bukan pengembalian)
+   - Tap **stiker alat milik kelas lain yang sedang dipinjam** → `SUDAH DIPINJAM`
+   - Tap **kartu kelas** lagi → `Sesi selesai` dan LCD menampilkan nama perwakilan
+
+   Satu baris data alat mewakili **satu unit fisik** dengan `jumlah_total = 1`.
+   UID stiker disimpan di kolom `alat.kode` (bukan `uid_rfid`).
 
 ## Bunyi buzzer
 
@@ -77,7 +82,7 @@ Sketch: [`simlab_rfid/simlab_rfid.ino`](simlab_rfid/simlab_rfid.ino)
 
 - **LCD menyala tapi tidak ada tulisan** → putar potensiometer di belakang modul I2C, atau ganti `LCD_ADDRESS` ke `0x3F`.
 - **"RFID error! Cek kabel RC522"** → cek wiring SPI dan pastikan RC522 di 3.3V.
-- **Buzzer bunyi terus** → ganti `BUZZER_ON_LEVEL` ke `LOW`.
+- **Buzzer bunyi terus / tidak mau bunyi** → sesuaikan `BUZZER_ON_LEVEL` antara `LOW` dan `HIGH` mengikuti modul buzzer.
 - **Buzzer tidak bunyi / hanya klik** → kemungkinan buzzer pasif, set `BUZZER_PASSIVE` ke `true`.
 - **HTTP 401** → anon key salah, atau project memakai key baru `sb_publishable_...`;
   deploy function dengan `supabase functions deploy rfid-tap --no-verify-jwt`.

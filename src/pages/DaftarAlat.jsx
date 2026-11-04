@@ -10,7 +10,6 @@ import FilterDropdown from '../components/FilterDropdown';
 import { IconFilter, IconRefresh, IconMail } from '@tabler/icons-react';
 import PageHeader from '../components/PageHeader';
 import PageNote from '../components/PageNote';
-import { friendlyError } from '../lib/feedback';
 
 import { isOnline, isNetworkError, registerOnlineSync } from '../lib/networkStatus';
 
@@ -133,6 +132,16 @@ export default function DaftarAlatPage() {
       label: 'Kode Alat',
       sortable: true,
       render: (row) => <p className="">{row.kode || '—'}</p>,
+    },
+    {
+      key: 'jumlah_total',
+      label: 'Total Unit',
+      sortable: true,
+      render: (row) => (
+        <span className="font-semibold text-main">
+          {row.tipe === 'habis_pakai' ? `${row.jumlah_total} ${row.satuan || 'unit'}` : '1 unit'}
+        </span>
+      ),
     },
     {
       key: 'stok_tersedia',

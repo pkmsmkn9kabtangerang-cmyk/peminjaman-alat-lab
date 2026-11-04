@@ -1,7 +1,5 @@
 // src/pages/AktivitasKartu.jsx
-// Realtime tap log — hari ini saja, tanpa filter waktu
-// Tiga tabel: transaksi kartu (semua tap), peminjaman/pengembalian (berhasil),
-// dan transaksi alat sekali pakai (yang sudah disetujui).
+// Realtime tap log dengan filter rentang waktu untuk kedua tabel aktivitas.
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { dbService } from '../services/store';
@@ -13,35 +11,20 @@ import Modal from '../components/Modal';
 import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
 import PageNote from '../components/PageNote';
+import TimeRangeFilter from '../components/TimeRangeFilter';
+import {
+  ACTIVITY_RANGE_OPTIONS,
+  ACTIVITY_TIME_FILTER,
+  getRangeStartMs,
+  matchesTimeRange,
+} from '../lib/timeRange';
 import { showFeedback, friendlyError } from '../lib/feedback';
 import {
+  IconAlertTriangle,
   IconTrash,
   IconRefresh,
   IconMail
 } from '@tabler/icons-react';
-
-const TODAY_WIB = () => {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Jakarta',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-};
-
-const dayWIB = (iso) => {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Jakarta',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date);
-};
-
-const isTodayWIB = (iso) => dayWIB(iso) === TODAY_WIB();
 
 const FORMAT_WIB = (iso) => {
   if (!iso) return '—';
@@ -63,129 +46,22 @@ const FORMAT_WIB = (iso) => {
 
 import { isOnline, isNetworkError, registerOnlineSync } from '../lib/networkStatus';
 
-const SHORT_ERROR_LABELS = {
-  kartu_nonaktif: 'Kartu sedang diblokir',
-  uid_tidak_dikenal: 'UID belum terdaftar',
-  sesi_tidak_ada: 'Belum ada sesi kartu',
-  sesi_kartu_lain_aktif: 'Sesi kartu lain sedang aktif',
-  stok_habis: 'Stok alat habis',
-  permintaan_sudah_ada: 'Sudah menunggu persetujuan',
-  alat_habis_pakai_tidak_bisa_dikembalikan: 'Tidak bisa dikembalikan',
-};
-
-function getHasilTransaksi(row) {
-  // Hasil untuk permintaan alat sekali pakai harus dicek lebih dulu karena
-  // tap_log aslinya tetap berstatus "menunggu" meskipun sudah diproses.
-  if (row.status_sekali_pakai === 'ditolak') {
-    return {
-      status: 'ditolak',
-      label: 'Ditolak',
-      detail: 'Permintaan alat sekali pakai ditolak',
-      tone: 'danger',
-    };
-  }
-  if (row.status_sekali_pakai === 'dibatalkan') {
-    return {
-      status: 'dibatalkan',
-      label: 'Dibatalkan',
-      detail: 'Persetujuan dibatalkan petugas',
-      tone: 'muted',
-    };
-  }
-  if (row.status === 'ditolak') {
-    return {
-      status: 'ditolak',
-      label: 'Ditolak',
-      detail:
-        SHORT_ERROR_LABELS[row.error_code] ||
-        row.error_code?.replace(/_/g, ' ') ||
-        'Scan ditolak',
-      tone: 'danger',
-    };
-  }
-  if (row.status === 'menunggu' || row.status_sekali_pakai === 'menunggu') {
-    return {
-      status: 'menunggu',
-      label: 'Menunggu',
-      detail: 'Menunggu persetujuan petugas',
-      tone: 'warning',
-    };
-  }
-  if (row.status_sekali_pakai === 'disetujui') {
-    return {
-      status: 'berhasil',
-      label: 'Berhasil',
-      detail: row.nama_alat ? `${row.nama_alat} diberikan` : 'Alat sekali pakai diberikan',
-      tone: 'success',
-    };
-  }
-  if (row.jenis_tap === 'pinjam') {
-    return {
-      status: 'dipinjam',
-      label: 'Berhasil',
-      detail: row.nama_alat ? `${row.nama_alat} dipinjam` : 'Alat dipinjam',
-      tone: 'success',
-    };
-  }
-  if (row.jenis_tap === 'kembali') {
-    return {
-      status: 'dikembalikan',
-      label: 'Berhasil',
-      detail: row.nama_alat ? `${row.nama_alat} dikembalikan` : 'Alat dikembalikan',
-      tone: 'success',
-    };
-  }
-  if (row.jenis_tap === 'selesai') {
-    return {
-      status: 'berhasil',
-      label: 'Berhasil',
-      detail: 'Sesi kartu selesai',
-      tone: 'success',
-    };
-  }
-  return {
-    status: 'berhasil',
-    label: 'Berhasil',
-    detail: 'Kartu berhasil dikenali',
-    tone: 'success',
-  };
-}
-
-function HasilCell({ row }) {
-  const hasil = getHasilTransaksi(row);
-  const toneClass =
-    hasil.tone === 'danger'
-      ? 'text-red-600'
-      : hasil.tone === 'warning'
-        ? 'text-amber-700'
-        : hasil.tone === 'muted'
-          ? 'text-gray-500'
-          : 'text-gray-500';
-
-  return (
-    <div className="flex flex-col items-start gap-1 text-left">
-      <Badge status={hasil.status} label={hasil.label} />
-      {hasil.detail && (
-        <span className={`text-[11.5px] font-medium leading-snug ${toneClass}`}>
-          {hasil.detail}
-        </span>
-      )}
-    </div>
-  );
-}
-
-async function fetchTapLog() {
+async function fetchTapLog(timeFilter) {
   if (isSupabaseConfigured) {
     if (!isOnline()) return null;
     try {
-      const todayStr = TODAY_WIB();
-      const { data, error } = await supabase
+      const cutoff = getRangeStartMs(timeFilter);
+      let query = supabase
         .from('tap_log')
         .select('*')
         .or('jenis_terdeteksi.neq.manual,jenis_terdeteksi.is.null')
-        .gte('waktu_tap', `${todayStr}T00:00:00+07:00`)
         .order('waktu_tap', { ascending: false });
 
+      if (cutoff !== null) {
+        query = query.gte('waktu_tap', new Date(cutoff).toISOString());
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []).filter(d => d.jenis_terdeteksi !== 'manual' && d.sumber !== 'manual');
     } catch (err) {
@@ -200,7 +76,7 @@ async function fetchTapLog() {
     .filter(d => {
       if (!d.waktu_tap) return false;
       if (d.jenis_terdeteksi === 'manual' || d.sumber === 'manual') return false;
-      return isTodayWIB(d.waktu_tap);
+      return matchesTimeRange(d.waktu_tap, timeFilter);
     });
 }
 
@@ -221,16 +97,21 @@ async function fetchKartuList() {
   return dbService.getKartu();
 }
 
-async function fetchSekaliPakaiHariIni() {
+async function fetchSekaliPakai(timeFilter) {
   if (isSupabaseConfigured) {
     if (!isOnline()) return null;
     try {
-      const todayStr = TODAY_WIB();
-      const { data, error } = await supabase
+      const cutoff = getRangeStartMs(timeFilter);
+      let query = supabase
         .from('permintaan_habis_pakai')
         .select('*, kartu_rfid(nama_pemegang)')
-        .gte('created_at', `${todayStr}T00:00:00+07:00`)
         .order('created_at', { ascending: false });
+
+      if (cutoff !== null) {
+        query = query.gte('created_at', new Date(cutoff).toISOString());
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         // HANYA jalankan fallback waktu_tap jika kolom created_at belum ada di schema database
@@ -239,9 +120,9 @@ async function fetchSekaliPakaiHariIni() {
             .from('permintaan_habis_pakai')
             .select('*, kartu_rfid(nama_pemegang)')
             .order('waktu_tap', { ascending: false })
-            .limit(30);
+            .limit(500);
           return (fallback || [])
-            .filter(r => isTodayWIB(r.created_at || r.waktu_tap || r.waktu_proses))
+            .filter(r => matchesTimeRange(r.created_at || r.waktu_tap, timeFilter))
             .map(r => ({
               ...r,
               pemegang: r.kartu_rfid?.nama_pemegang || '—',
@@ -257,7 +138,7 @@ async function fetchSekaliPakaiHariIni() {
       }));
     } catch (err) {
       if (isNetworkError(err)) return null;
-      console.warn('[AktivitasKartu] fetchSekaliPakaiHariIni error:', err?.message || err);
+      console.warn('[AktivitasKartu] fetchSekaliPakai error:', err?.message || err);
       return null;
     }
   }
@@ -265,7 +146,7 @@ async function fetchSekaliPakaiHariIni() {
   const all = dbService.getPermintaan();
   const kartu = dbService.getKartu();
   return all
-    .filter(d => isTodayWIB(d.created_at || d.waktu_tap || d.waktu_proses))
+    .filter(d => matchesTimeRange(d.created_at || d.waktu_tap || d.waktu_proses, timeFilter))
     .sort((a, b) => new Date(b.created_at || b.waktu_tap || 0) - new Date(a.created_at || a.waktu_tap || 0))
     .map(r => {
       const k = kartu.find(x => x.uid_kartu === r.uid_kartu);
@@ -276,8 +157,9 @@ async function fetchSekaliPakaiHariIni() {
 export default function AktivitasKartuPage() {
   const [taps, setTaps] = useState([]);
   const [kartuList, setKartuList] = useState([]);
-  const [sekaliPakaiToday, setSekaliPakaiToday] = useState([]);
-  const [activeTab, setActiveTab] = useState('kartu'); // 'kartu' | 'peminjaman' | 'sekali_pakai'
+  const [sekaliPakaiData, setSekaliPakaiData] = useState([]);
+  const [timeFilter, setTimeFilter] = useState(ACTIVITY_TIME_FILTER);
+  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'rfid' | 'sekali_pakai'
   const [loading, setLoading] = useState(true);
   const [newIds, setNewIds] = useState(new Set());
   const [showClearModal, setShowClearModal] = useState(false);
@@ -286,8 +168,6 @@ export default function AktivitasKartuPage() {
   const CONFIRM_TEXT = 'hapus semua log';
   const prevLen = useRef(0);
   const isReloadingRef = useRef(false);
-  const queuedReloadRef = useRef(false);
-  const reloadRef = useRef(null);
 
   // Ambil user dari Supabase auth session, atau fallback
   const [user, setUser] = useState(null);
@@ -312,26 +192,21 @@ export default function AktivitasKartuPage() {
       setLoading(false);
       return;
     }
-    if (isReloadingRef.current) {
-      // Ada event baru saat fetch masih berjalan: jalankan sekali lagi
-      // setelah fetch selesai agar data tap terbaru tidak terlewat.
-      queuedReloadRef.current = true;
-      return;
-    }
+    if (isReloadingRef.current) return;
     isReloadingRef.current = true;
 
     if (!isRealtimeEvent) setLoading(true);
     try {
       const [logsData, kartuData, sekaliData] = await Promise.all([
-        fetchTapLog(),
+        fetchTapLog(timeFilter),
         fetchKartuList(),
-        fetchSekaliPakaiHariIni(),
+        fetchSekaliPakai(timeFilter),
       ]);
 
       // Pertahankan data sebelumnya jika terjadi gangguan koneksi (null)
       if (logsData !== null) setTaps(logsData);
       if (kartuData !== null) setKartuList(kartuData);
-      if (sekaliData !== null) setSekaliPakaiToday(sekaliData);
+      if (sekaliData !== null) setSekaliPakaiData(sekaliData);
 
       if (logsData && logsData.length > prevLen.current && prevLen.current > 0) {
         const added = logsData.slice(0, logsData.length - prevLen.current).map((l) => l.id);
@@ -352,16 +227,12 @@ export default function AktivitasKartuPage() {
     } finally {
       setLoading(false);
       isReloadingRef.current = false;
-      if (queuedReloadRef.current) {
-        queuedReloadRef.current = false;
-        setTimeout(() => reloadRef.current?.(true), 0);
-      }
     }
-  }, []);
+  }, [timeFilter]);
 
   useEffect(() => {
-    reloadRef.current = reloadData;
-  }, [reloadData]);
+    prevLen.current = 0;
+  }, [timeFilter]);
 
   useEffect(() => {
     reloadData();
@@ -444,7 +315,7 @@ export default function AktivitasKartuPage() {
         // Cari status terkini dari permintaan alat sekali pakai
         let statusSekaliPakai = null;
         if (log.status === 'menunggu' || log.nama_alat) {
-          const matches = sekaliPakaiToday.filter(req =>
+          const matches = sekaliPakaiData.filter(req =>
             req.uid_kartu === log.uid_kartu &&
             (req.nama_alat === log.nama_alat || req.alat_id === log.uid_alat)
           );
@@ -471,26 +342,11 @@ export default function AktivitasKartuPage() {
         return {
           ...log,
           nama_pemegang: kartu?.nama_pemegang || log.nama_pemegang || null,
-          kelas: log.kelas || kartu?.kelas || null,
           status_sekali_pakai: statusSekaliPakai,
           _isNew: newIds.has(log.id),
         };
       });
-  }, [taps, kartuList, sekaliPakaiToday, newIds]);
-
-  // Tabel peminjaman/pengembalian: hanya tap alat yang benar-benar berhasil.
-  const peminjamanData = useMemo(
-    () => filteredData.filter(
-      (row) => row.status === 'berhasil' && (row.jenis_tap === 'pinjam' || row.jenis_tap === 'kembali')
-    ),
-    [filteredData]
-  );
-
-  // Tabel sekali pakai: hanya permintaan yang sudah disetujui.
-  const sekaliPakaiBerhasil = useMemo(
-    () => sekaliPakaiToday.filter((row) => row.status === 'disetujui'),
-    [sekaliPakaiToday]
-  );
+  }, [taps, kartuList, sekaliPakaiData, newIds]);
 
   const handleClearAll = async () => {
     if (clearInput.toLowerCase() !== CONFIRM_TEXT) return;
@@ -526,7 +382,7 @@ export default function AktivitasKartuPage() {
         dbService.saveTapLog([]);
         setTaps([]);
         reloadData();
-        showFeedback({ type: 'success', title: 'Semua log aktivitas tap RFID hari ini berhasil dibersihkan.' });
+        showFeedback({ type: 'success', title: 'Semua log aktivitas tap RFID berhasil dibersihkan.' });
       }
     } else {
       // clearTarget === 'sekali_pakai'
@@ -549,7 +405,7 @@ export default function AktivitasKartuPage() {
           }
 
           showFeedback({ type: 'success', title: 'Semua log transaksi alat sekali pakai berhasil dibersihkan.' });
-          setSekaliPakaiToday([]);
+          setSekaliPakaiData([]);
           reloadData();
         } catch (err) {
           console.error('[AktivitasKartu] clear sekali pakai error:', err);
@@ -558,9 +414,9 @@ export default function AktivitasKartuPage() {
       } else {
         const remaining = dbService.getPermintaan().filter((p) => p.status === 'menunggu');
         dbService.savePermintaan(remaining);
-        setSekaliPakaiToday([]);
+        setSekaliPakaiData([]);
         reloadData();
-        showFeedback({ type: 'success', title: 'Semua log transaksi alat sekali pakai hari ini berhasil dibersihkan.' });
+        showFeedback({ type: 'success', title: 'Semua log transaksi alat sekali pakai berhasil dibersihkan.' });
       }
     }
 
@@ -568,35 +424,32 @@ export default function AktivitasKartuPage() {
     setClearInput('');
   };
 
-  const renderIdKartu = (row) => (
-    <div className="flex items-center gap-2">
-      {row._isNew && (
-        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-600 text-white shadow-xs animate-pulse shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-          BARU
-        </span>
-      )}
-      <span
-        className={`font-medium text-[13px] lg:text-main px-2 py-0.5 rounded ${row._isNew
-          ? 'bg-emerald-100 text-emerald-900 font-bold border border-emerald-300'
-          : 'bg-gray-100 text-gray-700 font-medium'
-          }`}
-      >
-        {row.uid_kartu ?? '—'}
-      </span>
-    </div>
-  );
-
-  // ── Tabel 1: semua transaksi kartu (termasuk ditolak/menunggu) ──
-  const columnsKartu = [
+  const columns = [
     {
       key: 'uid_kartu',
       label: 'ID Kartu',
-      render: renderIdKartu,
+      render: (row) => (
+        <div className="flex items-center gap-2">
+          {row._isNew && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-600 text-white shadow-xs animate-pulse shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+              BARU
+            </span>
+          )}
+          <span
+            className={`font-medium text-[13px] lg:text-main px-2 py-0.5 rounded ${row._isNew
+              ? 'bg-emerald-100 text-emerald-900 font-bold border border-emerald-300'
+              : 'bg-gray-100 text-gray-700 font-medium'
+              }`}
+          >
+            {row.uid_kartu ?? '—'}
+          </span>
+        </div>
+      ),
     },
     {
       key: 'nama_pemegang',
-      label: 'Nama Perwakilan',
+      label: 'Nama/Perwakilan',
       sortable: true,
       render: (row) => <span className="font-semibold text-main">{row.nama_pemegang || '—'}</span>,
     },
@@ -607,36 +460,9 @@ export default function AktivitasKartuPage() {
       render: (row) => <span className="text-main">{row.kelas ?? '—'}</span>,
     },
     {
-      key: 'waktu_tap',
-      label: 'Waktu',
-      sortable: true,
-      render: (row) => <span className="font-medium text-[13px] lg:text-main">{FORMAT_WIB(row.waktu_tap)}</span>,
-    },
-    {
-      key: 'hasil',
-      label: 'Hasil',
-      render: (row) => <HasilCell row={row} />,
-    },
-  ];
-
-  // ── Tabel 2: transaksi peminjaman/pengembalian yang berhasil ──
-  const columnsPeminjaman = [
-    {
-      key: 'uid_kartu',
-      label: 'ID Kartu',
-      render: renderIdKartu,
-    },
-    {
-      key: 'nama_pemegang',
-      label: 'Nama Perwakilan',
-      sortable: true,
-      render: (row) => <span className="font-semibold text-main">{row.nama_pemegang || '—'}</span>,
-    },
-    {
-      key: 'kelas',
-      label: 'Kelas/Angkatan',
-      sortable: true,
-      render: (row) => <span className="text-main">{row.kelas ?? '—'}</span>,
+      key: 'jenis_tap',
+      label: 'Jenis Tap',
+      render: (row) => <Badge status={row.jenis_tap} />,
     },
     {
       key: 'nama_alat',
@@ -645,24 +471,80 @@ export default function AktivitasKartuPage() {
       render: (row) => <span className="font-semibold text-main">{row.nama_alat ?? '—'}</span>,
     },
     {
+      key: 'status_alat',
+      label: 'Status Alat',
+      render: (row) => {
+        if (row.status_sekali_pakai) {
+          if (row.status_sekali_pakai === 'disetujui') {
+            return <Badge status="disetujui" label="Disetujui" />;
+          }
+          if (row.status_sekali_pakai === 'ditolak') {
+            return <Badge status="ditolak" label="Ditolak" />;
+          }
+          if (row.status_sekali_pakai === 'dibatalkan') {
+            return <Badge status="dibatalkan" label="Dibatalkan" />;
+          }
+          if (row.status_sekali_pakai === 'menunggu') {
+            return <Badge status="menunggu" label="Menunggu" />;
+          }
+        }
+
+        if (row.status === 'menunggu') {
+          return <Badge status="menunggu" label="Menunggu" />;
+        }
+        let st = '';
+        if (row.status === 'berhasil') {
+          if (row.jenis_tap === 'pinjam') st = 'dipinjam';
+          if (row.jenis_tap === 'kembali') st = 'dikembalikan';
+        }
+        return st ? <Badge status={st} /> : <span className="text-[11px] text-gray-400">—</span>;
+      },
+    },
+    {
       key: 'waktu_tap',
       label: 'Waktu',
       sortable: true,
       render: (row) => <span className="font-medium text-[13px] lg:text-main">{FORMAT_WIB(row.waktu_tap)}</span>,
     },
     {
-      key: 'jenis_tap',
+      key: 'jenis_terdeteksi',
+      label: 'Sumber Tap',
+      sortable: true,
+      render: () => <Badge status="realtime" label="RFID Reader" />,
+    },
+    {
+      key: 'hasil',
       label: 'Hasil',
-      render: (row) => (
-        <Badge
-          status={row.jenis_tap === 'pinjam' ? 'dipinjam' : 'dikembalikan'}
-          label={row.jenis_tap === 'pinjam' ? 'Berhasil dipinjam' : 'Berhasil dikembalikan'}
-        />
-      ),
+      render: (row) => {
+        if (row.status === 'ditolak') {
+          const detail = row.error_code ? ` (${row.error_code.replace(/_/g, ' ')})` : '';
+          return (
+            <div className="flex items-center gap-1.5" title={row.error_code || 'Scan ditolak'}>
+              <IconAlertTriangle size={13} className="text-red-500 flex-shrink-0" />
+              <span className="text-xs text-red-600 font-medium">Ditolak{detail}</span>
+            </div>
+          );
+        }
+        if (row.status_sekali_pakai === 'disetujui') {
+          return <Badge status="berhasil" label="Disetujui" />;
+        }
+        if (row.status_sekali_pakai === 'ditolak') {
+          return <Badge status="ditolak" label="Ditolak" />;
+        }
+        if (row.status_sekali_pakai === 'dibatalkan') {
+          return <Badge status="dibatalkan" label="Dibatalkan" />;
+        }
+        if (row.status === 'menunggu' || row.status_sekali_pakai === 'menunggu') {
+          return <Badge status="menunggu" label="Menunggu" />;
+        }
+        if (row.jenis_tap === 'selesai') {
+          return <Badge status="selesai" label="Sesi berakhir" />;
+        }
+        return <Badge status="berhasil" />;
+      },
     },
   ];
 
-  // ── Tabel 3: transaksi alat sekali pakai yang sudah berhasil ──
   const columnsSekaliPakai = [
     {
       key: 'waktu',
@@ -675,27 +557,15 @@ export default function AktivitasKartuPage() {
       ),
     },
     {
-      key: 'uid_kartu',
-      label: 'ID Kartu',
-      render: (row) => (
-        <span className="font-medium text-[13px] lg:text-main px-2 py-0.5 rounded bg-gray-100 text-gray-700">
-          {row.uid_kartu ?? '—'}
-        </span>
-      ),
-    },
-    {
-      key: 'pemegang',
-      label: 'Nama Perwakilan',
-      sortable: true,
-      render: (row) => (
-        <span className="font-semibold text-main">{row.pemegang || row.nama_pemegang || '—'}</span>
-      ),
-    },
-    {
       key: 'kelas',
-      label: 'Kelas/Angkatan',
+      label: 'Kelas',
       sortable: true,
-      render: (row) => <span className="text-main">{row.kelas || '—'}</span>,
+      render: (row) => (
+        <div>
+          <span className="text-[13px] lg:text-main font-bold block">{row.kelas || '—'}</span>
+          <span className="text-[11px] text-gray-500">{row.pemegang || row.uid_kartu}</span>
+        </div>
+      ),
     },
     {
       key: 'nama_alat',
@@ -711,6 +581,21 @@ export default function AktivitasKartuPage() {
         <span className="font-bold text-main">
           {row.jumlah ?? 1} <span className="text-xs font-semibold text-emerald-700">{row.satuan || 'unit'}</span>
         </span>
+      ),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      sortable: true,
+      render: (row) => (
+        <Badge
+          status={row.status || 'disetujui'}
+          label={
+            row.status === 'disetujui' ? 'Diberikan' :
+              row.status === 'menunggu' ? 'Menunggu' :
+                row.status === 'ditolak' ? 'Ditolak' : 'Dibatalkan'
+          }
+        />
       ),
     },
     {
@@ -730,61 +615,67 @@ export default function AktivitasKartuPage() {
     },
   ];
 
-  const tabs = [
-    { key: 'kartu', label: 'Transaksi Kartu', shortLabel: 'Kartu', count: filteredData.length },
-    { key: 'peminjaman', label: 'Peminjaman/Pengembalian', shortLabel: 'Peminjaman', count: peminjamanData.length },
-    { key: 'sekali_pakai', label: 'Sekali Pakai', shortLabel: 'Sekali Pakai', count: sekaliPakaiBerhasil.length },
-  ];
-
   return (
     <div className="space-y-4 sm:space-y-5">
       <PageHeader
         title="Aktivitas Kartu & Alat Sekali Pakai"
-        description="Pantau transaksi kartu, peminjaman/pengembalian, dan pemberian alat sekali pakai hari ini"
+        description="Data aktivitas tap kartu realtime serta catatan transaksi alat sekali pakai"
       />
 
-      <PageNote title="Tiga Tabel Aktivitas" icon={IconMail}>
-        Data hari ini dipisahkan menjadi tiga tabel: <b>Transaksi Kartu</b> untuk semua tap (termasuk ditolak),
-        <b> Peminjaman/Pengembalian</b> untuk tap yang berhasil, dan <b>Sekali Pakai</b> untuk pemberian yang sudah disetujui.
-        Data akan hilang besok.
+      <PageNote title="Informasi Pemisahan Aktivitas" icon={IconMail}>
+        Aktivitas dipisahkan menjadi dua tabel: log scan Kartu dan catatan transaksi Alat sekali pakai.
+        Gunakan menu rentang waktu untuk melihat data hari ini, 7 hari, 30 hari, atau semua waktu.
       </PageNote>
 
       {/* ── Tab Switcher Pilihan Tampilan ── */}
-      <div
-        role="tablist"
-        aria-label="Tabel aktivitas"
-        className="grid grid-cols-3 gap-1.5 border-b border-gray-200 pb-2 sm:flex sm:items-center sm:gap-2"
-      >
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`flex min-h-11 min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 text-[11px] font-semibold transition sm:flex-row sm:gap-1.5 sm:px-3 sm:text-sm ${activeTab === tab.key
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-gray-600 hover:bg-gray-100'
-              }`}
-          >
-            <span className="text-center leading-tight sm:whitespace-nowrap">
-              <span className="sm:hidden">{tab.shortLabel}</span>
-              <span className="hidden sm:inline">{tab.label}</span>
-            </span>
-            <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${activeTab === tab.key ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-700'}`}>
-              {tab.count}
-            </span>
-          </button>
-        ))}
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-2 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap">
+        <button
+          type="button"
+          onClick={() => setActiveTab('all')}
+          className={`min-h-11 px-3 rounded-lg text-xs sm:text-sm font-semibold transition shrink-0 whitespace-nowrap ${activeTab === 'all'
+            ? 'bg-blue-600 text-white shadow-xs'
+            : 'text-gray-600 hover:bg-gray-100'
+            }`}
+        >
+          Semua Aktivitas
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('rfid')}
+          className={`min-h-11 px-3 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'rfid'
+            ? 'bg-blue-600 text-white shadow-xs'
+            : 'text-gray-600 hover:bg-gray-100'
+            }`}
+        >
+          Aktivitas Transaksi Kartu ({filteredData.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('sekali_pakai')}
+          className={`min-h-11 px-3 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${activeTab === 'sekali_pakai'
+            ? 'bg-blue-600 text-white shadow-xs'
+            : 'text-gray-600 hover:bg-gray-100'
+            }`}
+        >
+          Aktivitas Transaksi Sekali Pakai ({sekaliPakaiData.length})
+        </button>
       </div>
 
-      {/* ── TABEL 1: Semua Transaksi Kartu ── */}
-      {activeTab === 'kartu' && (
+      {/* ── FILTER WAKTU (berlaku untuk kedua tabel) ── */}
+      <TimeRangeFilter
+        value={timeFilter}
+        onChange={setTimeFilter}
+        options={ACTIVITY_RANGE_OPTIONS}
+        description="Hanya menampilkan aktivitas 24 jam terakhir. Data yang lebih lama tetap tersedia di Riwayat Transaksi."
+      />
+
+      {/* ── TABEL 1: Aktivitas Tap Kartu RFID (Reader ESP32) ── */}
+      {(activeTab === 'all' || activeTab === 'rfid') && (
         <div className="space-y-3 bg-white p-4 sm:p-5 rounded-2xl border border-main shadow-2xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
             <div>
-              <h2 className="text-base font-bold text-gray-800">Tabel Transaksi Kartu</h2>
-              <p className="text-xs text-muted">Semua tap kartu hari ini, termasuk yang ditolak, menunggu, dan berhasil.</p>
+              <h2 className="text-base font-bold text-gray-800">Tabel Aktivitas Transaksi Kartu  </h2>
+              <p className="text-xs text-muted">Khusus log kartu dan peminjaman/pengembalian alat.</p>
             </div>
             <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-blue-50 text-blue-800 border border-blue-200 self-start sm:self-auto">
               {filteredData.length} Tap Log
@@ -792,13 +683,12 @@ export default function AktivitasKartuPage() {
           </div>
 
           <DataTable
-            columns={columnsKartu}
+            columns={columns}
             data={filteredData}
             loading={loading}
             searchPlaceholder="Cari aktivitas tap..."
-            searchKeys={['kelas', 'uid_kartu', 'nama_alat', 'jenis_terdeteksi', 'jenis_tap', 'nama_pemegang', 'status_sekali_pakai', 'error_code', 'status']}
-            emptyMessage="Belum ada aktivitas Transaksi Kartu untuk hari ini"
-            emptyDescription="Tap kartu atau alat pada reader RFID akan muncul di sini."
+            searchKeys={['kelas', 'uid_kartu', 'nama_alat', 'jenis_terdeteksi', 'jenis_tap', 'nama_pemegang', 'status_sekali_pakai']}
+            emptyMessage="Belum ada aktivitas Transaksi Kartu pada rentang waktu ini"
             actionButton={
               <div className="flex w-full flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center md:w-auto">
                 <button
@@ -824,7 +714,7 @@ export default function AktivitasKartuPage() {
                     }}
                     className="w-full justify-center whitespace-nowrap min-[420px]:flex-1 md:w-auto md:flex-none"
                   >
-                    Hapus Log Kartu
+                    Hapus Log RFID
                   </Button>
                 )}
               </div>
@@ -833,63 +723,26 @@ export default function AktivitasKartuPage() {
         </div>
       )}
 
-      {/* ── TABEL 2: Peminjaman/Pengembalian Berhasil ── */}
-      {activeTab === 'peminjaman' && (
-        <div className="space-y-3 bg-white p-4 sm:p-5 rounded-2xl border border-main shadow-2xs">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
-            <div>
-              <h2 className="text-base font-bold text-gray-800">Tabel Transaksi Peminjaman &amp; Pengembalian</h2>
-              <p className="text-xs text-muted">Hanya tap yang berhasil meminjam atau mengembalikan alat.</p>
-            </div>
-            <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 self-start sm:self-auto">
-              {peminjamanData.length} Transaksi
-            </span>
-          </div>
-
-          <DataTable
-            columns={columnsPeminjaman}
-            data={peminjamanData}
-            loading={loading}
-            searchPlaceholder="Cari peminjaman/pengembalian..."
-            searchKeys={['kelas', 'uid_kartu', 'nama_alat', 'nama_pemegang', 'jenis_tap']}
-            emptyMessage="Belum ada peminjaman/pengembalian berhasil hari ini"
-            emptyDescription="Tap alat yang berhasil akan langsung masuk ke tabel ini."
-            actionButton={
-              <button
-                type="button"
-                onClick={() => reloadData(false)}
-                className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 min-[420px]:w-11 min-[420px]:border-0 min-[420px]:bg-transparent"
-                title="Refresh data"
-              >
-                <IconRefresh size={18} />
-                <span className="text-sm font-semibold min-[420px]:sr-only">Muat ulang</span>
-              </button>
-            }
-          />
-        </div>
-      )}
-
-      {/* ── TABEL 3: Transaksi Alat Sekali Pakai Berhasil ── */}
-      {activeTab === 'sekali_pakai' && (
+      {/* ── TABEL 2: Transaksi Alat Sekali Pakai ── */}
+      {(activeTab === 'all' || activeTab === 'sekali_pakai') && (
         <div className="space-y-3 bg-white p-4 sm:p-5 rounded-2xl border border-main shadow-2xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
             <div>
               <h2 className="text-base font-bold text-gray-800">Tabel Transaksi Alat Sekali Pakai</h2>
-              <p className="text-xs text-muted">Hanya pemberian alat sekali pakai yang sudah disetujui hari ini.</p>
+              <p className="text-xs text-muted">Khusus catatan pemberian alat sekali pakai pada rentang waktu terpilih.</p>
             </div>
             <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 self-start sm:self-auto">
-              {sekaliPakaiBerhasil.length} Transaksi
+              {sekaliPakaiData.length} Transaksi
             </span>
           </div>
 
           <DataTable
             columns={columnsSekaliPakai}
-            data={sekaliPakaiBerhasil}
+            data={sekaliPakaiData}
             loading={loading}
-            searchPlaceholder="Cari transaksi sekali pakai hari ini..."
+            searchPlaceholder="Cari transaksi sekali pakai..."
             searchKeys={['kelas', 'nama_alat', 'uid_kartu', 'pemegang', 'petugas', 'catatan']}
-            emptyMessage="Belum ada transaksi alat sekali pakai yang berhasil hari ini"
-            emptyDescription="Permintaan yang disetujui petugas akan langsung masuk ke tabel ini."
+            emptyMessage="Belum ada transaksi alat sekali pakai pada rentang waktu ini"
             actionButton={
               <div className="flex w-full flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center md:w-auto">
                 <button
@@ -906,7 +759,7 @@ export default function AktivitasKartuPage() {
                     variant="danger-soft"
                     icon={IconTrash}
                     onClick={() => {
-                      if (sekaliPakaiToday.length === 0) {
+                      if (sekaliPakaiData.length === 0) {
                         showFeedback({ type: 'warning', title: 'Tidak ada data log', message: 'Log transaksi sekali pakai masih kosong.' });
                         return;
                       }
@@ -931,11 +784,11 @@ export default function AktivitasKartuPage() {
           setShowClearModal(false);
           setClearInput('');
         }}
-        title={clearTarget === 'rfid' ? 'Hapus Semua Log Kartu' : 'Hapus Log Transaksi Sekali Pakai'}
+        title={clearTarget === 'rfid' ? 'Hapus Semua Log RFID' : 'Hapus Log Transaksi Sekali Pakai'}
         subtitle={
           clearTarget === 'rfid'
             ? 'Yakin ingin menghapus seluruh log aktivitas tap RFID?'
-            : 'Yakin ingin menghapus riwayat transaksi alat sekali pakai hari ini?'
+            : 'Yakin ingin menghapus seluruh riwayat transaksi alat sekali pakai?'
         }
         maxWidth="max-w-md"
       >
@@ -947,7 +800,7 @@ export default function AktivitasKartuPage() {
             <p className="text-xs text-red-700 leading-relaxed">
               {clearTarget === 'rfid'
                 ? `Semua data aktivitas Kartu (${taps.length} log) akan dihapus selamanya dan tidak bisa dikembalikan.`
-                : `Semua data transaksi alat sekali pakai (${sekaliPakaiToday.length} data) yang telah diproses akan dihapus selamanya.`}
+                : `Semua data transaksi alat sekali pakai (${sekaliPakaiData.length} data) yang telah diproses akan dihapus selamanya.`}
             </p>
           </div>
 
@@ -983,7 +836,7 @@ export default function AktivitasKartuPage() {
               onClick={handleClearAll}
               className="w-full sm:w-auto justify-center h-11"
             >
-              {clearTarget === 'rfid' ? 'Hapus Log Kartu' : 'Hapus Log Sekali Pakai'}
+              {clearTarget === 'rfid' ? 'Hapus Log RFID' : 'Hapus Log Sekali Pakai'}
             </Button>
           </div>
         </div>

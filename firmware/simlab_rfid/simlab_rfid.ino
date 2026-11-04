@@ -9,7 +9,9 @@
  *    1. Tap KARTU KELAS  -> sesi dimulai (mode PINJAM / KEMBALI)
  *    2. Tap TAG ALAT     -> alat dipinjam / dikembalikan
  *    3. Tap KARTU KELAS lagi -> sesi selesai
- *    Sesi otomatis habis 20 detik setelah tap terakhir.
+ *    Sesi otomatis habis 10 detik setelah tap terakhir.
+ *    Setiap tap alat yang berhasil memperpanjang sesi 10 detik.
+ *    Tap alat yang sama pada sesi aktif ditolak sebagai TAP DUPLIKAT.
  *
  *  Setiap tap dikirim ke:
  *    POST {SUPABASE_URL}/functions/v1/rfid-tap   body: {"uid":"A1B2C3D4"}
@@ -18,11 +20,11 @@
  *  WIRING (lihat juga firmware/README.md)
  *  ---------------------------------------------------------------
  *  MFRC522  -> ESP32        LCD I2C -> ESP32       Buzzer -> ESP32
- *  SDA(SS)  -> GPIO 5       SDA     -> GPIO 21     +  (I/O) -> GPIO 25
- *  SCK      -> GPIO 18      SCL     -> GPIO 22     -  (GND) -> GND
+ *  SDA(SS)  -> GPIO 5       SDA     -> GPIO 4      +  (I/O) -> GPIO 22
+ *  SCK      -> GPIO 18      SCL     -> GPIO 21     -  (GND) -> GND
  *  MOSI     -> GPIO 23      VCC     -> VIN (5V)
  *  MISO     -> GPIO 19      GND     -> GND
- *  RST      -> GPIO 4
+ *  RST      -> GPIO 27
  *  3.3V     -> 3V3   (JANGAN ke 5V!)
  *  GND      -> GND
  *
@@ -46,26 +48,25 @@
 // ================================================================
 //  KONFIGURASI — WAJIB DIISI SEBELUM UPLOAD
 // ================================================================
-const char* WIFI_SSID         = "";
-const char* WIFI_PASSWORD     = "";
+const char* WIFI_SSID         = "POCO M4 Pro";
+const char* WIFI_PASSWORD     = "adly1234";
 
 // Sama dengan VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY di web
-const char* SUPABASE_URL      = "";
-const char* SUPABASE_ANON_KEY = "";
+const char* SUPABASE_URL      = "https://uvbqbzizouiuafjwcezu.supabase.co";
+const char* SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2YnFieml6b3VpdWFmandjZXp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5OTQyMzAsImV4cCI6MjEwNjU3MDIzMH0.l1uEhR9I69OprxgF0T84DBkSn3O36rsz6sFpvGCaCys";
 
 // Identitas alat (dikirim di header x-device-id / x-device-key)
-const char* DEVICE_ID         = "";
-const char* DEVICE_KEY        = "";
-
+const char* DEVICE_ID         = "esp32-lab-01";
+const char* DEVICE_KEY        = "sim-key";
 
 // ================================================================
 //  PIN & PERANGKAT
 // ================================================================
 #define PIN_RFID_SS     5
-#define PIN_RFID_RST    4
-#define PIN_I2C_SDA     21
-#define PIN_I2C_SCL     22
-#define PIN_BUZZER      25
+#define PIN_RFID_RST    27
+#define PIN_I2C_SDA     4
+#define PIN_I2C_SCL     21
+#define PIN_BUZZER      22
 
 #define LCD_ADDRESS     0x27   // Jika LCD kosong, coba 0x3F
 #define LCD_COLS        16
@@ -75,12 +76,12 @@ const char* DEVICE_KEY        = "";
 // Buzzer pasif (perlu frekuensi)                    = true
 #define BUZZER_PASSIVE  false
 // Sebagian modul buzzer aktif-LOW. Jika buzzer bunyi terus, ganti ke LOW.
-#define BUZZER_ON_LEVEL HIGH
+#define BUZZER_ON_LEVEL LOW
 
 // ================================================================
 //  WAKTU
 // ================================================================
-const unsigned long SESSION_MS            = 20000; // = SESSION_DURATION_MS di edge function
+const unsigned long SESSION_MS            = 10000; // = SESSION_DURATION_MS di edge function
 const unsigned long SAME_TAG_COOLDOWN_MS  = 2500;  // abaikan tap kartu yg sama berulang
 const unsigned long MESSAGE_MS            = 3000;  // lama pesan tampil di LCD
 const unsigned long WIFI_RETRY_MS         = 10000;
@@ -96,7 +97,8 @@ String        lastUid;
 unsigned long lastUidAt     = 0;
 
 bool          sessionActive = false;
-String        sessionKelas;
+String        sessionNama;             // nama perwakilan / kelas
+String        sessionKelas;            // kelas/angkatan
 String        sessionJenis;            // "pinjam" / "kembali"
 unsigned long sessionUntil  = 0;
 
@@ -168,7 +170,7 @@ void drawIdle() {
     long remaining = (long)(sessionUntil - millis());
     if (remaining <= 0) {
       sessionActive = false;
-      showMessage("Sesi berakhir", sessionKelas, 2000);
+      showMessage("Sesi berakhir", sessionNama.length() ? sessionNama : sessionKelas, 2000);
       beepOk();
       return;
     }
@@ -177,10 +179,10 @@ void drawIdle() {
     snprintf(line2, sizeof(line2), "%-12s%3lds",
              sessionJenis == "kembali" ? "Mode KEMBALI" : "Mode PINJAM",
              (remaining + 999) / 1000);
-    lcdPrint(0, sessionKelas);
+    lcdPrint(0, sessionNama.length() ? sessionNama : sessionKelas);
     lcdPrint(1, line2);
   } else {
-    lcdPrint(0, "SIMLAB SMK");
+    lcdPrint(0, "SISPAS LAB");
     lcdPrint(1, "Tap kartu kelas");
   }
 }
@@ -328,16 +330,19 @@ void handleResponse(int code, JsonDocument& r, const String& uid) {
     if (type == "kartu") {
       String action = r["action"] | "";
       String kelas  = r["kelas"]  | "";
+      String nama   = r["nama_pemegang"] | "";
+      if (nama.length() == 0) nama = kelas;
 
       if (action == "mulai") {
         sessionActive = true;
+        sessionNama   = nama;
         sessionKelas  = kelas;
         sessionJenis  = r["jenis"] | "pinjam";
         sessionUntil  = millis() + SESSION_MS;
-        showMessage(kelas, sessionJenis == "kembali" ? "Mode: KEMBALI" : "Mode: PINJAM", 2000);
+        showMessage(nama, sessionJenis == "kembali" ? "Mode: KEMBALI" : "Mode: PINJAM", 2000);
       } else {  // "selesai"
         sessionActive = false;
-        showMessage("Sesi selesai", kelas);
+        showMessage("Sesi selesai", kelas.length() ? kelas : nama);
       }
       beepSession();
       return;
@@ -348,8 +353,8 @@ void handleResponse(int code, JsonDocument& r, const String& uid) {
       String alat  = r["alat"]  | "";
       String reqStatus = r["status"] | "";
       sessionActive = true;
-      sessionUntil  = millis() + SESSION_MS;  // server memperpanjang sesi
-      
+      sessionUntil  = millis() + SESSION_MS;  // server memperpanjang sesi 10 detik
+
       if (reqStatus == "menunggu_persetujuan") {
         showMessage("MENUNGGU ACC", alat);
       } else {
@@ -369,7 +374,8 @@ void handleResponse(int code, JsonDocument& r, const String& uid) {
   Serial.printf("[TAP] Ditolak: %s\n", err.c_str());
 
   if (err == "sesi_kartu_lain_aktif") {
-    String aktif = r["activeCard"]["kelas"] | "";
+    String aktif = r["activeCard"]["nama_pemegang"] | "";
+    if (aktif.length() == 0) aktif = r["activeCard"]["kelas"] | "";
     showMessage("Sesi lain aktif", aktif);
   } else if (err == "kartu_nonaktif") {
     showMessage("Kartu nonaktif", "Hubungi petugas");
@@ -380,6 +386,14 @@ void handleResponse(int code, JsonDocument& r, const String& uid) {
     showMessage("Tap kartu kelas", "sebelum tap alat");
   } else if (err == "stok_habis") {
     showMessage("Stok habis", "Semua dipinjam");
+  } else if (err == "alat_rusak") {
+    showMessage("Alat rusak", "Hubungi petugas");
+  } else if (err == "alat_sedang_dipinjam") {
+    String peminjam = r["peminjam_kelas"] | "";
+    if (peminjam.length() == 0) peminjam = "Kelas lain";
+    showMessage("SUDAH DIPINJAM", peminjam, 4000);
+  } else if (err == "tap_duplikat") {
+    showMessage("TAP DUPLIKAT", "Sesi masih aktif", 4000);
   } else if (err == "permintaan_sudah_ada") {
     showMessage("Sedang Menunggu", "Acc Petugas", 4000);
   } else if (err == "payload_tidak_lengkap") {

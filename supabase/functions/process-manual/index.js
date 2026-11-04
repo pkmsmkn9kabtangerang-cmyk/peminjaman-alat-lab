@@ -116,6 +116,7 @@ Deno.serve(async (req) => {
         }
 
         return json({
+          ok: true,
           success: true,
           jenis: "habis_pakai",
           jumlah: qty,
@@ -179,6 +180,7 @@ Deno.serve(async (req) => {
 
       // PENTING: Operasi manual tidak dicatat ke tap_log (khusus reader RFID)
       return json({
+        ok: true,
         success: true,
         jenis: "habis_pakai",
         jumlah: qty,
@@ -229,6 +231,7 @@ Deno.serve(async (req) => {
 
       // PENTING: Operasi manual tidak dicatat ke tap_log (khusus reader RFID)
       return json({
+        ok: true,
         success: true,
         jenis: "pinjam",
         jumlah: qty,
@@ -237,6 +240,8 @@ Deno.serve(async (req) => {
 
     } else {
       // ── B.2 Pengembalian Manual ──
+      // Satu baris alat = satu unit fisik. Kembalikan hanya satu transaksi
+      // aktif yang cocok dengan kartu + alat, meskipun klien mengirim qty > 1.
       const { data: activeTrx, error: trxErr } = await supabaseAdmin
         .from("transaksi")
         .select("id")
@@ -244,7 +249,7 @@ Deno.serve(async (req) => {
         .eq("alat_id", alat.id)
         .eq("status", "dipinjam")
         .order("waktu_pinjam", { ascending: true })
-        .limit(qty);
+        .limit(1);
 
       if (trxErr) throw trxErr;
 
@@ -272,6 +277,7 @@ Deno.serve(async (req) => {
 
       // PENTING: Operasi manual tidak dicatat ke tap_log (khusus reader RFID)
       return json({
+        ok: true,
         success: true,
         jenis: "kembali",
         jumlah: ids.length,

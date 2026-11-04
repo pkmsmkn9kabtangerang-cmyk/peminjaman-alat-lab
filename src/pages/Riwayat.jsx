@@ -8,14 +8,15 @@ import { callFunction } from '../lib/api';
 import Badge from '../components/Badge';
 import Button from '../components/Button';
 import DataTable from '../components/DataTable';
-import FilterDropdown from '../components/FilterDropdown';
 import PageHeader from '../components/PageHeader';
 import PageNote from '../components/PageNote';
 import { friendlyError, showFeedback } from '../lib/feedback';
+import { dateFilterValue, matchesTimeRange } from '../lib/timeRange';
+import TimeRangeFilter from '../components/TimeRangeFilter';
 import {
+  IconAlertTriangle,
+  IconCheck,
   IconTrash,
-  IconClock,
-  IconCalendar,
   IconRefresh,
   IconMail
 } from '@tabler/icons-react';
@@ -32,12 +33,6 @@ const FMT = (iso) => {
 const CONFIRM_TEXT = 'hapus semua riwayat';
 
 import { isOnline, isNetworkError, registerOnlineSync } from '../lib/networkStatus';
-
-const TIME_OPTIONS = [
-  { value: '24h', label: '24 Jam Terakhir' },
-  { value: 'all', label: 'Semua Waktu' },
-  { value: 'custom', label: 'Pilih Tanggal' },
-];
 
 async function fetchRiwayat() {
   if (isSupabaseConfigured) {
@@ -122,8 +117,8 @@ export default function RiwayatPage() {
   const [data, setData] = useState([]);
   const [sekaliPakaiData, setSekaliPakaiData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [timeFilter, setTimeFilter] = useState('24h');
-  const [customDate, setCustomDate] = useState('');
+  const [timeFilter, setTimeFilter] = useState('all');
+  const [specificDate, setSpecificDate] = useState('');
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'pinjam_kembali' | 'sekali_pakai'
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearTarget, setClearTarget] = useState('pinjam'); // 'pinjam' | 'sekali_pakai'
@@ -221,22 +216,37 @@ export default function RiwayatPage() {
     }
   }, [reloadData]);
 
-  const filteredData = useMemo(() => {
-    let filtered = data;
-    const now = new Date().getTime();
+  // Tanggal tertentu (jika dipilih) menggantikan pilihan rentang waktu.
+  const activeTimeFilter = specificDate ? dateFilterValue(specificDate) : timeFilter;
 
-    if (timeFilter === '24h') {
-      filtered = data.filter(d => (now - new Date(d.waktu_pinjam).getTime()) <= 86400000);
-    } else if (timeFilter === 'custom' && customDate) {
-      filtered = data.filter(d => d.waktu_pinjam?.startsWith(customDate));
-    }
-    // jika 'all', jangan filter waktu
+  const filteredData = useMemo(
+    () => data.filter((d) => matchesTimeRange(d.waktu_pinjam, activeTimeFilter)),
+    [data, activeTimeFilter]
+  );
 
-    return filtered;
-  }, [data, timeFilter, customDate]);
+  const filteredSekaliPakai = useMemo(
+    () => sekaliPakaiData.filter((d) =>
+      matchesTimeRange(d.waktu_proses || d.waktu_tap || d.created_at, activeTimeFilter)
+    ),
+    [sekaliPakaiData, activeTimeFilter]
+  );
+
+  const activePinjamCount = useMemo(
+    () => data.filter((d) => d.status === 'dipinjam').length,
+    [data]
+  );
+  const returnedPinjamCount = data.length - activePinjamCount;
+
+  const processedSekaliPakaiCount = useMemo(
+    () => sekaliPakaiData.filter((d) => d.status !== 'menunggu').length,
+    [sekaliPakaiData]
+  );
+  const pendingSekaliPakaiCount = sekaliPakaiData.length - processedSekaliPakaiCount;
+
+  const isClearConfirmed = clearInput.trim().toLowerCase() === CONFIRM_TEXT;
 
   const handleClearAll = async () => {
-    if (clearInput.toLowerCase() !== CONFIRM_TEXT) return;
+    if (!isClearConfirmed) return;
 
     if (clearTarget === 'pinjam') {
       if (isSupabaseConfigured) {
@@ -313,16 +323,26 @@ export default function RiwayatPage() {
 
   const columns = [
     {
-      key: 'waktu_pinjam',
-      label: 'Waktu Pinjam',
+      key: 'status',
+      label: 'Status Peminjaman',
       sortable: true,
-      render: (row) => <span className="font-medium text-[13px] lg:text-main">{FMT(row.waktu_pinjam)}</span>,
-    },
-    {
-      key: 'waktu_kembali',
-      label: 'Waktu Kembali',
-      sortable: true,
-      render: (row) => <span className="font-medium text-[13px] lg:text-main">{FMT(row.waktu_kembali)}</span>,
+      render: (row) => {
+        const sudahKembali = row.status === 'dikembalikan';
+        return (
+          <div className="flex min-w-[190px] flex-col gap-1.5">
+            <Badge status={row.status} />
+            <div className="space-y-0.5 text-[12px] leading-snug">
+              <p className="text-gray-700">
+                <span className="font-semibold">Dipinjam:</span> {FMT(row.waktu_pinjam)}
+              </p>
+              <p className={sudahKembali ? 'text-gray-700' : 'font-medium text-amber-700'}>
+                <span className="font-semibold">Dikembalikan:</span>{' '}
+                {sudahKembali ? FMT(row.waktu_kembali) : 'Belum dikembalikan'}
+              </p>
+            </div>
+          </div>
+        );
+      },
     },
     {
       key: 'pemegang',
@@ -331,27 +351,26 @@ export default function RiwayatPage() {
       render: (row) => <span className="font-semibold text-main">{row.pemegang || '—'}</span>,
     },
     {
+      key: 'uid_kartu',
+      label: 'ID Kartu',
+      sortable: true,
+      render: (row) => (
+        <span className="rounded bg-gray-100 px-2 py-0.5 text-[13px] font-medium text-gray-700 lg:text-main">
+          {row.uid_kartu || '—'}
+        </span>
+      ),
+    },
+    {
       key: 'kelas',
       label: 'Kelas',
       sortable: true,
-      render: (row) => (
-        <div>
-          <span className="text-[13px] lg:text-main font-medium block">{row.kelas}</span>
-          <span className="text-[11px] text-gray-500">{row.uid_kartu}</span>
-        </div>
-      ),
+      render: (row) => <span className="text-[13px] font-medium text-main lg:text-main">{row.kelas || '—'}</span>,
     },
     {
       key: 'nama_alat',
       label: 'Alat',
       sortable: true,
       render: (row) => <span className="font-semibold text-main">{row.nama_alat}</span>,
-    },
-    {
-      key: 'status',
-      label: 'Status',
-      sortable: true,
-      render: (row) => <Badge status={row.status} />,
     },
     {
       key: 'sumber',
@@ -456,7 +475,8 @@ export default function RiwayatPage() {
       />
 
       <PageNote title="Informasi Transaksi" icon={IconMail}>
-        Halaman ini menampilkan riwayat transaksi kartu dan alat sekali pakai untuk bisa memfilter berdasarkan tanggal yang ingin di cek
+        Pilih rentang waktu lewat menu dropdown di atas tabel. Filter berlaku untuk kedua tabel, dan setiap halaman
+        menampilkan 10 transaksi. Gunakan tombol panah di bawah tabel untuk pindah halaman.
       </PageNote>
 
       {/* ── Tab Switcher Pilihan Tampilan ── */}
@@ -489,9 +509,21 @@ export default function RiwayatPage() {
             : 'text-gray-600 hover:bg-gray-100'
             }`}
         >
-          Riwayat Alat Sekali Pakai ({sekaliPakaiData.length})
+          Riwayat Alat Sekali Pakai ({filteredSekaliPakai.length})
         </button>
       </div>
+
+      {/* ── FILTER WAKTU (berlaku untuk kedua tabel) ── */}
+      <TimeRangeFilter
+        value={timeFilter}
+        onChange={(nextFilter) => {
+          setTimeFilter(nextFilter);
+          setSpecificDate('');
+        }}
+        dateValue={specificDate}
+        onDateChange={setSpecificDate}
+        description="Berlaku untuk tabel peminjaman dan tabel alat sekali pakai. Pilih tanggal tertentu untuk mengecek data yang lebih lama."
+      />
 
       {/* ── TABEL 1: Peminjaman & Pengembalian ── */}
       {(activeTab === 'all' || activeTab === 'pinjam_kembali') && (
@@ -510,8 +542,10 @@ export default function RiwayatPage() {
             columns={columns}
             data={filteredData}
             loading={loading}
+            defaultPageSize={10}
+            showPageSize={false}
             searchPlaceholder="Cari riwayat pinjam/kembali..."
-            searchKeys={['kelas', 'nama_alat', 'uid_kartu', 'pemegang', 'sumber']}
+            searchKeys={['kelas', 'nama_alat', 'uid_kartu', 'pemegang', 'sumber', 'status']}
             emptyMessage="Belum ada riwayat Peminjaman Alat"
             actionButton={
               <div className="flex w-full flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center md:w-auto">
@@ -543,37 +577,6 @@ export default function RiwayatPage() {
                 )}
               </div>
             }
-            filters={
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-                <FilterDropdown
-                  icon={IconClock}
-                  value={timeFilter}
-                  onChange={(val) => {
-                    setTimeFilter(val);
-                    if (val !== 'custom') setCustomDate('');
-                  }}
-                  options={TIME_OPTIONS}
-                  className="w-full sm:w-auto"
-                />
-
-                {timeFilter === 'custom' && (
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
-                    <span className="text-sm font-medium text-gray-600 sm:ml-2">Pilih Tanggal:</span>
-                    <div className="relative w-full sm:w-auto">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                        <IconCalendar size={16} />
-                      </div>
-                      <input
-                        type="date"
-                        value={customDate}
-                        onChange={(e) => setCustomDate(e.target.value)}
-                        className="h-11 w-full rounded-lg border border-gray-300 bg-white pl-9 pr-3 text-xs font-medium text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-auto sm:text-sm"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            }
           />
         </div>
       )}
@@ -587,14 +590,16 @@ export default function RiwayatPage() {
               <p className="text-xs lg:text-main text-muted">Khusus mencatat pemberian dan pengeluaran bahan praktikum consumable ke kelas.</p>
             </div>
             <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 self-start sm:self-auto">
-              {sekaliPakaiData.length} Pemberian
+              {filteredSekaliPakai.length} Pemberian
             </span>
           </div>
 
           <DataTable
             columns={columnsSekaliPakai}
-            data={sekaliPakaiData}
+            data={filteredSekaliPakai}
             loading={loading}
+            defaultPageSize={10}
+            showPageSize={false}
             searchPlaceholder="Cari transaksi sekali pakai..."
             searchKeys={['kelas', 'nama_alat', 'petugas', 'catatan', 'pemegang', 'satuan']}
             emptyMessage="Belum ada riwayat transaksi alat sekali pakai."
@@ -614,8 +619,8 @@ export default function RiwayatPage() {
                     variant="danger-soft"
                     icon={IconTrash}
                     onClick={() => {
-                      if (sekaliPakaiData.length === 0) {
-                        showFeedback({ type: 'warning', title: 'Data kosong', message: 'Tidak ada data riwayat sekali pakai untuk dihapus.' });
+                      if (processedSekaliPakaiCount === 0) {
+                        showFeedback({ type: 'warning', title: 'Belum ada riwayat', message: 'Belum ada riwayat sekali pakai yang sudah diproses untuk dihapus.' });
                         return;
                       }
                       setClearTarget('sekali_pakai');
@@ -638,45 +643,144 @@ export default function RiwayatPage() {
           setShowClearModal(false);
           setClearInput('');
         }}
-        title={clearTarget === 'pinjam' ? 'Hapus Semua Riwayat Pinjam' : 'Hapus Riwayat Sekali Pakai'}
+        title={clearTarget === 'pinjam' ? 'Hapus Riwayat Peminjaman' : 'Hapus Riwayat Sekali Pakai'}
         subtitle={
           clearTarget === 'pinjam'
-            ? 'Yakin ingin menghapus seluruh riwayat peminjaman & pengembalian?'
-            : 'Yakin ingin menghapus riwayat transaksi alat sekali pakai?'
+            ? 'Semua catatan peminjaman dan pengembalian akan dihapus permanen.'
+            : 'Riwayat pemberian alat sekali pakai yang sudah diproses akan dihapus permanen.'
         }
-        maxWidth="max-w-md"
+        icon={IconAlertTriangle}
+        iconVariant="danger"
+        maxWidth="max-w-lg"
       >
         <div className="space-y-4">
-          <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
-            <h4 className="text-sm font-bold text-red-900 mb-1">Peringatan Penting</h4>
-            <p className="text-xs text-red-700 leading-relaxed">
-              {clearTarget === 'pinjam'
-                ? `Semua data riwayat peminjaman dan pengembalian (${data.length} data) akan dihapus selamanya dan tidak bisa dikembalikan.`
-                : `Semua data transaksi alat sekali pakai (${sekaliPakaiData.length} data) yang telah diproses akan dihapus selamanya.`}
-            </p>
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-700">
+                <IconTrash size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-red-900">Tindakan ini tidak bisa dibatalkan</p>
+                <p className="mt-1 text-sm leading-relaxed text-red-800">
+                  {clearTarget === 'pinjam'
+                    ? 'Seluruh data transaksi peminjaman dan pengembalian akan dihapus dari sistem.'
+                    : 'Hanya riwayat yang sudah disetujui, ditolak, atau dibatalkan yang akan dihapus.'}
+                </p>
+              </div>
+            </div>
+
+            <dl className="mt-3 grid grid-cols-3 gap-2">
+              {clearTarget === 'pinjam' ? (
+                <>
+                  <div className="rounded-lg border border-red-200 bg-white/80 p-2.5 text-center">
+                    <dt className="text-[11px] font-medium text-red-700">Total data</dt>
+                    <dd className="mt-0.5 text-xl font-bold text-red-900">{data.length}</dd>
+                  </div>
+                  <div className="rounded-lg border border-red-200 bg-white/80 p-2.5 text-center">
+                    <dt className="text-[11px] font-medium text-red-700">Masih aktif</dt>
+                    <dd className="mt-0.5 text-xl font-bold text-red-900">{activePinjamCount}</dd>
+                  </div>
+                  <div className="rounded-lg border border-red-200 bg-white/80 p-2.5 text-center">
+                    <dt className="text-[11px] font-medium text-red-700">Sudah kembali</dt>
+                    <dd className="mt-0.5 text-xl font-bold text-red-900">{returnedPinjamCount}</dd>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-lg border border-red-200 bg-white/80 p-2.5 text-center">
+                    <dt className="text-[11px] font-medium text-red-700">Akan dihapus</dt>
+                    <dd className="mt-0.5 text-xl font-bold text-red-900">{processedSekaliPakaiCount}</dd>
+                  </div>
+                  <div className="rounded-lg border border-red-200 bg-white/80 p-2.5 text-center">
+                    <dt className="text-[11px] font-medium text-red-700">Masih menunggu</dt>
+                    <dd className="mt-0.5 text-xl font-bold text-red-900">{pendingSekaliPakaiCount}</dd>
+                  </div>
+                  <div className="rounded-lg border border-red-200 bg-white/80 p-2.5 text-center">
+                    <dt className="text-[11px] font-medium text-red-700">Total data</dt>
+                    <dd className="mt-0.5 text-xl font-bold text-red-900">{sekaliPakaiData.length}</dd>
+                  </div>
+                </>
+              )}
+            </dl>
           </div>
 
-          <div className="space-y-2 mt-4">
-            <label className="text-sm font-semibold text-gray-700 block">
-              Untuk melanjutkan, ketik tulisan ini: <span className="font-bold text-red-600 bg-gray-100 px-2 py-1 rounded select-all">{CONFIRM_TEXT}</span>
-            </label>
+          {clearTarget === 'pinjam' && activePinjamCount > 0 && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-sm text-amber-900">
+              <p className="font-bold">Perhatian: masih ada peminjaman aktif</p>
+              <p className="mt-1 leading-relaxed">
+                {activePinjamCount} peminjaman yang belum dikembalikan juga akan ikut terhapus.
+                Sebaiknya proses pengembalian alat terlebih dahulu.
+              </p>
+            </div>
+          )}
 
-            <input
-              type="text"
-              value={clearInput}
-              onChange={(e) => setClearInput(e.target.value)}
-              placeholder={`Ketik: ${CONFIRM_TEXT}`}
-              className="w-full px-4 h-12 rounded-xl border border-gray-300 text-base focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 bg-white text-gray-900"
-              autoComplete="off"
-            />
+          {clearTarget === 'sekali_pakai' && pendingSekaliPakaiCount > 0 && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-sm text-amber-900">
+              <p className="font-bold">Permintaan yang masih menunggu tetap disimpan</p>
+              <p className="mt-1 leading-relaxed">
+                {pendingSekaliPakaiCount} permintaan yang belum diproses tidak akan dihapus.
+              </p>
+            </div>
+          )}
+
+          <div className="rounded-xl border border-gray-200 p-4">
+            <p className="text-sm font-bold text-gray-800">Konfirmasi penghapusan</p>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm leading-relaxed text-gray-600">
+              <li>Periksa kembali jumlah data pada kotak merah di atas.</li>
+              <li>Ketik frasa konfirmasi di bawah ini dengan huruf kecil.</li>
+              <li>Tombol hapus akan aktif setelah tulisan sama persis.</li>
+            </ol>
+
+            <div className="mt-3 space-y-2">
+              <label htmlFor="konfirmasi-hapus" className="block text-sm font-semibold text-gray-800">
+                Ketik:{' '}
+                <span className="select-all rounded bg-gray-100 px-2 py-1 font-bold text-red-700">
+                  {CONFIRM_TEXT}
+                </span>
+              </label>
+              <input
+                id="konfirmasi-hapus"
+                type="text"
+                value={clearInput}
+                onChange={(e) => setClearInput(e.target.value)}
+                placeholder={`Ketik: ${CONFIRM_TEXT}`}
+                className="h-12 w-full rounded-xl border border-gray-300 bg-white px-4 text-base text-gray-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+                autoComplete="off"
+                aria-describedby="konfirmasi-status"
+              />
+              <p
+                id="konfirmasi-status"
+                aria-live="polite"
+                className={`flex items-start gap-1.5 text-xs leading-relaxed ${isClearConfirmed ? 'font-semibold text-emerald-700' : 'text-gray-500'}`}
+              >
+                {isClearConfirmed ? (
+                  <>
+                    <IconCheck size={14} className="mt-0.5 shrink-0" />
+                    Tulisan sudah cocok. Tombol hapus sudah aktif.
+                  </>
+                ) : (
+                  'Tulisan harus sama persis, termasuk spasinya.'
+                )}
+              </p>
+            </div>
           </div>
 
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-5 border-t border-gray-100 mt-5">
-            <Button variant="secondary" onClick={() => { setShowClearModal(false); setClearInput(''); }} className="w-full sm:w-auto justify-center h-11">
+          <div className="mt-5 flex flex-col-reverse gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
+            <Button
+              variant="secondary"
+              onClick={() => { setShowClearModal(false); setClearInput(''); }}
+              className="h-11 w-full justify-center sm:w-auto"
+            >
               Batal
             </Button>
-            <Button variant="danger" disabled={clearInput.toLowerCase() !== CONFIRM_TEXT} onClick={handleClearAll} className="w-full sm:w-auto justify-center h-11">
-              {clearTarget === 'pinjam' ? 'Hapus Riwayat Pinjam' : 'Hapus Riwayat Sekali Pakai'}
+            <Button
+              variant="danger"
+              icon={IconTrash}
+              disabled={!isClearConfirmed || (clearTarget === 'pinjam' ? data.length === 0 : processedSekaliPakaiCount === 0)}
+              onClick={handleClearAll}
+              className="h-11 w-full justify-center sm:w-auto"
+            >
+              {clearTarget === 'pinjam' ? 'Hapus Semua Riwayat' : 'Hapus Riwayat Sekali Pakai'}
             </Button>
           </div>
         </div>

@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { dbService } from '../services/store';
 import { showFeedback, friendlyError } from '../lib/feedback';
+import { isManualSuccess, showManualSuccess } from '../lib/manual';
 import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
 import PageNote from '../components/PageNote';
@@ -130,7 +131,7 @@ export default function PemberianSekaliPakai({ user }) {
           const p = await error.context?.json?.().catch(() => null);
           throw p ?? error;
         }
-        if (!data?.ok && !data?.success) {
+        if (!isManualSuccess(data)) {
           const errMsg =
             data?.error === 'stok_habis' ? 'Stok alat tidak mencukupi.' :
               data?.error === 'uid_tidak_dikenal' ? 'Kartu atau alat tidak ditemukan.' :
@@ -148,7 +149,7 @@ export default function PemberianSekaliPakai({ user }) {
           catatan: catatan.trim() || 'Diproses manual oleh petugas',
           petugas: petugasNama,
         });
-        if (!res.ok) {
+        if (!isManualSuccess(res)) {
           const errMsg =
             res.error === 'stok_habis' ? 'Stok alat tidak mencukupi.' :
               res.error === 'uid_tidak_dikenal' ? 'Kartu atau alat tidak ditemukan.' :
@@ -158,11 +159,9 @@ export default function PemberianSekaliPakai({ user }) {
         }
       }
 
-      showFeedback({
-        type: 'success',
-        title: 'Pemberian berhasil dicatat.',
-        message: `${jumlah} ${selectedAlat?.satuan || 'unit'} ${selectedAlat?.nama} diberikan ke kelas ${selectedKartu.kelas}.`,
-      });
+      showManualSuccess(
+        `Pemberian ${jumlah} ${selectedAlat?.satuan || 'unit'} ${selectedAlat?.nama} ke kelas ${selectedKartu.kelas} berhasil dicatat.`
+      );
       resetForm();
       loadData();
     } catch (err) {

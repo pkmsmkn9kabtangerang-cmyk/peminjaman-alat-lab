@@ -75,21 +75,54 @@ async function updateAlat(id, payload) {
 
 async function deleteAlat(id) {
   if (isSupabaseConfigured) {
-    // Cek dulu apakah ada transaksi aktif
-    const { data: activeTrx } = await supabase
+    // Hanya pinjaman aktif yang boleh menahan penghapusan alat.
+    const { data: activeTrx, error: activeError } = await supabase
       .from('transaksi')
       .select('id')
       .eq('alat_id', id)
       .eq('status', 'dipinjam')
       .limit(1);
 
+    if (activeError) throw activeError;
+
     if (activeTrx && activeTrx.length > 0) {
-      throw new Error('Alat tidak dapat dihapus karena masih dipinjam.');
+      throw new Error('Alat tidak dapat dihapus karena masih dipinjam. Proses pengembalian terlebih dahulu.');
     }
 
-    const { error } = await supabase.from('alat').delete().eq('id', id);
+    // Setelah migration 010, foreign key memakai ON DELETE SET NULL sehingga
+    // riwayat tetap tersimpan dan alat bisa langsung dihapus.
+    let { error } = await supabase.from('alat').delete().eq('id', id);
+
+    // Sebelum migration 010 diterapkan, FK transaksi masih menahan delete.
+    // Lepaskan relasi alat_id saja; baris riwayat dan nama_alat tetap utuh.
+    if (error?.code === '23503') {
+      const { error: detachError } = await supabase
+        .from('transaksi')
+        .update({ alat_id: null })
+        .eq('alat_id', id);
+
+      if (detachError) throw detachError;
+
+      // Log consumable dipertahankan bila policy mengizinkan. Migration 010
+      // juga menangani ini lewat ON DELETE SET NULL.
+      await Promise.allSettled([
+        supabase.from('permintaan_habis_pakai').update({ alat_id: null }).eq('alat_id', id),
+        supabase.from('stok_mutasi').update({ alat_id: null }).eq('alat_id', id),
+      ]);
+
+      ({ error } = await supabase.from('alat').delete().eq('id', id));
+    }
+
     if (error) throw error;
   } else {
+    const sedangDipinjam = dbService
+      .getTransaksi()
+      .some((t) => t.alat_id === id && t.status === 'dipinjam');
+
+    if (sedangDipinjam) {
+      throw new Error('Alat tidak dapat dihapus karena masih dipinjam. Proses pengembalian terlebih dahulu.');
+    }
+
     dbService.saveAlat(dbService.getAlat().filter((a) => a.id !== id));
   }
 }
@@ -163,6 +196,7 @@ export default function KelolaAlat() {
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -285,26 +319,44 @@ export default function KelolaAlat() {
   };
 
   const openEdit = (item) => {
+    const habisPakai = item.tipe === 'habis_pakai';
     setEditItem(item);
     setErrors({});
     setForm({
       ...item,
+      // Satu baris alat pinjam = satu unit fisik. Nilai lama yang masih > 1
+      // akan dinormalisasi saat disimpan.
+      jumlah_total: habisPakai ? item.jumlah_total : 1,
+      jumlah_rusak: habisPakai ? 0 : Math.min(Number(item.jumlah_rusak) || 0, 1),
       satuan: satuanAlat(item),
       tipe: item.tipe || 'pinjam',
     });
     setModal(true);
   };
 
+  const isHabisPakai = form.tipe === 'habis_pakai';
+  const legacyMultiUnit =
+    !!editItem &&
+    !isHabisPakai &&
+    editItem.tipe !== 'habis_pakai' &&
+    Number(editItem.jumlah_total) > 1;
+
   const validate = async () => {
     const next = {};
     if (!form.nama?.trim()) next.nama = 'Nama alat wajib diisi.';
     if (!form.kategori?.trim()) next.kategori = 'Kategori wajib diisi.';
-    if (!String(form.jumlah_total).trim() || Number(form.jumlah_total) < 1) {
-      next.jumlah_total = 'Jumlah unit minimal 1.';
+
+    if (isHabisPakai) {
+      if (!String(form.jumlah_total).trim() || Number(form.jumlah_total) < 1) {
+        next.jumlah_total = 'Jumlah minimal 1.';
+      }
+    } else if (Number(form.jumlah_total) !== 1) {
+      next.jumlah_total = 'Alat pinjam selalu 1 unit per baris.';
     }
-    const rusak = Number(form.jumlah_rusak) || 0;
-    const total = Number(form.jumlah_total) || 0;
-    if (rusak > total) next.jumlah_rusak = 'Jumlah rusak tidak boleh melebihi jumlah total.';
+
+    const rusak = isHabisPakai ? 0 : (Number(form.jumlah_rusak) || 0);
+    const total = isHabisPakai ? (Number(form.jumlah_total) || 0) : 1;
+    if (rusak > total) next.jumlah_rusak = 'Jumlah rusak tidak boleh melebihi total unit.';
 
     if (form.kode?.trim()) {
       const check = await checkUidAvailability(form.kode, editItem?.id);
@@ -317,6 +369,7 @@ export default function KelolaAlat() {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
     setErrors({});
 
@@ -332,21 +385,22 @@ export default function KelolaAlat() {
         kode: form.kode?.trim() || null,
         nama: form.nama.trim(),
         kategori: form.kategori.trim(),
-        jumlah_total: Number(form.jumlah_total),
-        jumlah_rusak: form.tipe === 'habis_pakai' ? 0 : (Number(form.jumlah_rusak) || 0),
-        tipe: form.tipe,
-        satuan: form.tipe === 'habis_pakai' ? (form.satuan || 'unit') : 'unit',
+        jumlah_total: isHabisPakai ? Number(form.jumlah_total) : 1,
+        jumlah_rusak: isHabisPakai ? 0 : Math.min(Number(form.jumlah_rusak) || 0, 1),
+        tipe: isHabisPakai ? 'habis_pakai' : 'pinjam',
+        satuan: isHabisPakai ? (form.satuan || 'unit') : 'unit',
       };
 
       if (editItem) {
         await updateAlat(editItem.id, payload);
+        setModal(false);
         showFeedback({ type: 'success', title: 'Perubahan berhasil disimpan.' });
       } else {
         payload.id = form.id;
         await insertAlat(payload);
+        setModal(false);
         showFeedback({ type: 'success', title: 'Alat berhasil ditambahkan.' });
       }
-      setModal(false);
       reload();
     } catch (err) {
       console.error('[KelolaAlat] save error:', err);
@@ -361,15 +415,29 @@ export default function KelolaAlat() {
   };
 
   const handleExecuteDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || deleting) return;
+    const target = deleteTarget;
+    setDeleting(true);
     try {
-      await deleteAlat(deleteTarget.id);
-      showFeedback({ type: 'success', title: 'Alat berhasil dihapus.' });
+      await deleteAlat(target.id);
+      // Tutup dialog lebih dulu agar pengguna langsung melihat hasilnya.
       setDeleteTarget(null);
+      setAlat((prev) => prev.filter((a) => a.id !== target.id));
+      showFeedback({
+        type: 'success',
+        title: 'Alat berhasil dihapus.',
+        message: `"${target.nama}" sudah dihapus. Riwayat transaksi dan log tetap tersimpan.`,
+      });
       reload();
     } catch (err) {
       console.error('[KelolaAlat] delete error:', err);
-      showFeedback({ type: 'error', title: 'Alat gagal dihapus.', message: friendlyError(err) });
+      showFeedback({
+        type: 'error',
+        title: 'Alat gagal dihapus.',
+        message: friendlyError(err, 'Silakan coba lagi.'),
+      });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -394,9 +462,13 @@ export default function KelolaAlat() {
     },
     {
       key: 'jumlah_total',
-      label: 'Total Stok',
+      label: 'Total Unit',
       sortable: true,
-      render: (row) => <span className="font-medium">{row.jumlah_total} {satuanAlat(row)}</span>,
+      render: (row) => (
+        <span className="font-medium">
+          {row.tipe === 'habis_pakai' ? `${row.jumlah_total} ${satuanAlat(row)}` : '1 unit'}
+        </span>
+      ),
     },
     {
       key: 'satuan',
@@ -492,7 +564,7 @@ export default function KelolaAlat() {
               value={form.nama}
               onChange={(e) => setForm({ ...form, nama: e.target.value })}
               className={inputClass}
-              placeholder="Contoh: Multimeter Digital"
+              placeholder="Contoh: Crimping Tool"
             />
           </FormField>
 
@@ -516,11 +588,10 @@ export default function KelolaAlat() {
                   placeholder={editItem ? 'Kode Tag Alat' : 'Tempelkan tag alat ke reader RFID...'}
                 />
                 {form.kode ? (
-                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-xs ${
-                    errors.kode 
-                      ? 'text-rose-700 bg-rose-50 border border-rose-200' 
+                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-xs ${errors.kode
+                      ? 'text-rose-700 bg-rose-50 border border-rose-200'
                       : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
-                  }`}>
+                    }`}>
                     <span className={`w-2 h-2 rounded-full ${errors.kode ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
                     {errors.kode ? 'Duplikat' : 'Terbaca'}
                   </span>
@@ -568,30 +639,64 @@ export default function KelolaAlat() {
                 placeholder="Pilih atau ketik kategori"
               />
             </FormField>
-            <FormField label={form.tipe === 'habis_pakai' ? 'Total (Sesuai satuan)' : 'Total unit'} required error={errors.jumlah_total}>
-              <input
-                type="text"
-                inputMode="numeric"
-                required
-                value={form.jumlah_total}
-                onChange={(e) => setForm({ ...form, jumlah_total: e.target.value.replace(/\D/g, '') })}
-                className={inputClass}
-                placeholder="Contoh: 5"
-              />
+            <FormField
+              label={isHabisPakai ? 'Total (Sesuai satuan)' : 'Total unit'}
+              required
+              error={errors.jumlah_total}
+              hint={
+                isHabisPakai
+                  ? 'Stok alat sekali pakai bisa diubah kapan saja saat restock.'
+                  : 'Terkunci 1 unit. Satu baris = satu unit fisik dengan tag RFID masing-masing.'
+              }
+            >
+              {isHabisPakai ? (
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  required
+                  value={form.jumlah_total}
+                  onChange={(e) => setForm({ ...form, jumlah_total: e.target.value.replace(/\D/g, '') })}
+                  className={inputClass}
+                  placeholder="Contoh: 100"
+                />
+              ) : (
+                <div className="relative">
+                  <input
+                    type="text"
+                    readOnly
+                    value="1"
+                    aria-readonly="true"
+                    className={`${inputClass} cursor-not-allowed bg-gray-50 pr-24 font-semibold`}
+                  />
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                    Terkunci
+                  </span>
+                </div>
+              )}
             </FormField>
           </div>
 
-          <div className={`grid grid-cols-1 gap-3 ${form.tipe === 'habis_pakai' ? 'sm:grid-cols-2' : ''}`}>
+          {legacyMultiUnit && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs leading-relaxed text-amber-800">
+              Data lama alat ini tercatat <b>{editItem.jumlah_total} unit</b>. Setelah disimpan, baris ini menjadi
+              <b> 1 unit</b>. Daftarkan unit fisik lainnya sebagai baris baru dengan tag RFID masing-masing.
+            </div>
+          )}
+
+          <div className={`grid grid-cols-1 gap-3 ${isHabisPakai ? 'sm:grid-cols-2' : ''}`}>
             <FormField label="Tipe Alat" required error={errors.tipe}>
               <select
                 value={form.tipe}
                 onChange={(e) => {
                   const tipe = e.target.value;
-                  setForm({
-                    ...form,
+                  setForm((prev) => ({
+                    ...prev,
                     tipe,
-                    satuan: tipe === 'pinjam' ? 'unit' : (form.satuan || 'unit'),
-                  });
+                    jumlah_total: 1,
+                    jumlah_rusak: tipe === 'habis_pakai' ? 0 : Math.min(Number(prev.jumlah_rusak) || 0, 1),
+                    satuan: tipe === 'pinjam' ? 'unit' : (prev.satuan || 'unit'),
+                  }));
+                  setErrors((prev) => ({ ...prev, jumlah_total: null, jumlah_rusak: null }));
                 }}
                 className={inputClass}
               >
@@ -600,7 +705,7 @@ export default function KelolaAlat() {
               </select>
             </FormField>
 
-            {form.tipe === 'habis_pakai' && (
+            {isHabisPakai && (
               <FormField label="Satuan" required error={errors.satuan} hint="Contoh: unit, pcs, cm, meter, pack">
                 <select
                   value={form.satuan || 'unit'}
@@ -620,25 +725,26 @@ export default function KelolaAlat() {
             )}
           </div>
 
-          {form.tipe !== 'habis_pakai' && (
+          {!isHabisPakai && (
             <p className="-mt-1 text-xs text-muted">
               Alat tipe pinjam otomatis menggunakan satuan <b className="text-main">unit</b>.
             </p>
           )}
 
-          {form.tipe !== 'habis_pakai' && editItem && (
+          {!isHabisPakai && (
             <FormField
-              label="Unit rusak"
-              hint="Jika alat sudah diperbaiki, isi 0 agar unit bisa dipinjam lagi."
+              label="Kondisi unit"
+              hint="Pilih rusak jika unit ini tidak bisa dipinjam. Jika sudah diperbaiki, pilih baik."
               error={errors.jumlah_rusak}
             >
-              <input
-                type="text"
-                inputMode="numeric"
-                value={form.jumlah_rusak}
-                onChange={(e) => setForm({ ...form, jumlah_rusak: e.target.value.replace(/\D/g, '') })}
+              <select
+                value={Number(form.jumlah_rusak) > 0 ? '1' : '0'}
+                onChange={(e) => setForm({ ...form, jumlah_rusak: Number(e.target.value) })}
                 className={inputClass}
-              />
+              >
+                <option value="0">Baik / bisa dipinjam</option>
+                <option value="1">Rusak / tidak bisa dipinjam</option>
+              </select>
             </FormField>
           )}
 
@@ -655,12 +761,17 @@ export default function KelolaAlat() {
 
       <ConfirmDialog
         isOpen={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
+        onClose={() => !deleting && setDeleteTarget(null)}
         onConfirm={handleExecuteDelete}
+        loading={deleting}
         title="Hapus alat?"
-        message={`Apakah Anda yakin ingin menghapus "${deleteTarget?.nama}"?\n\nTindakan ini tidak dapat dibatalkan. Alat yang sedang dipinjam tidak bisa dihapus.`}
+        message={`Apakah Anda yakin ingin menghapus "${deleteTarget?.nama}"?\n\nRiwayat transaksi dan log tetap disimpan. Alat hanya tidak bisa dihapus jika masih dipinjam.`}
         confirmLabel="Hapus alat"
-      />
+      >
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-3 text-xs leading-relaxed text-blue-800">
+          Data alat akan hilang dari daftar, tetapi riwayat peminjaman yang sudah ada tidak ikut terhapus.
+        </div>
+      </ConfirmDialog>
     </div>
   );
 }

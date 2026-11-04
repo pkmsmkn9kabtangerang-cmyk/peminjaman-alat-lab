@@ -99,16 +99,9 @@ export default function PersetujuanSekaliPakai({ user, isActive = true, refreshK
           };
         };
 
-        const now = Date.now();
-        const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-
         const waiting = allReq.filter((p) => p.status === 'menunggu').map(enrich);
         const history = allReq
-          .filter((p) => {
-            if (p.status === 'menunggu') return false;
-            const t = new Date(p.waktu_proses || p.waktu_tap || p.created_at || 0).getTime();
-            return (now - t) <= TWENTY_FOUR_HOURS_MS;
-          })
+          .filter((p) => p.status !== 'menunggu')
           .sort(
             (a, b) =>
               new Date(b.waktu_proses || b.waktu_tap || 0) -
@@ -140,16 +133,9 @@ export default function PersetujuanSekaliPakai({ user, isActive = true, refreshK
 
         if (seq !== fetchSeqRef.current) return;
 
-        const now = Date.now();
-        const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-
         if (resWaiting?.data) setMenungguList(resWaiting.data);
         if (resHistory?.data) {
-          const nonWaiting = resHistory.data.filter((p) => {
-            if (p.status === 'menunggu') return false;
-            const t = new Date(p.waktu_proses || p.waktu_tap || p.created_at || 0).getTime();
-            return (now - t) <= TWENTY_FOUR_HOURS_MS;
-          });
+          const nonWaiting = resHistory.data.filter((p) => p.status !== 'menunggu');
           setRiwayatList(nonWaiting);
         }
       }
@@ -550,7 +536,7 @@ export default function PersetujuanSekaliPakai({ user, isActive = true, refreshK
               }`}
           >
             <IconHistory size={16} />
-            Riwayat 24 jam
+            Riwayat
             <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${activeTab === 'riwayat' ? 'bg-white text-amber-700' : 'bg-amber-100 text-amber-800'
               }`}>
               {riwayatList.length}
@@ -702,7 +688,7 @@ export default function PersetujuanSekaliPakai({ user, isActive = true, refreshK
         <div>
           {riwayatList.length === 0 ? (
             <div className="p-8 text-center bg-white">
-              <p className="text-muted text-sm">Belum ada riwayat persetujuan Alat sekali pakai dalam 24 jam terakhir.</p>
+              <p className="text-muted text-sm">Belum ada riwayat persetujuan alat sekali pakai.</p>
             </div>
           ) : (
             <>

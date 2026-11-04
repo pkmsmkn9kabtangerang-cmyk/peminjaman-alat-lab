@@ -15,6 +15,16 @@ const FORMAT_DATE = new Intl.DateTimeFormat('id-ID', {
   weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
 });
 
+const TAP_LOG_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function filterTapLog24Jam(rows) {
+  const cutoff = Date.now() - TAP_LOG_WINDOW_MS;
+  return (rows || []).filter((t) => {
+    const waktu = new Date(t.waktu_tap).getTime();
+    return !Number.isNaN(waktu) && waktu >= cutoff;
+  });
+}
+
 function formatDuration(waktu_pinjam) {
   if (!waktu_pinjam) return '—';
   const diffMs = Date.now() - new Date(waktu_pinjam).getTime();
@@ -49,6 +59,10 @@ function groupPinjamanByKartu(rows) {
     }
 
     const group = map.get(uid);
+    // Lengkapi data kartu dari baris berikutnya jika baris pertama belum memuatnya.
+    if (!group.nama_pemegang && r.nama_pemegang) group.nama_pemegang = r.nama_pemegang;
+    if ((!group.kelas || group.kelas === '—') && r.kelas) group.kelas = r.kelas;
+
     const trxId = r.transaksi_id || r.id;
     const exists = group.items.some((it) => (it.transaksi_id || it.id) === trxId);
 
@@ -72,7 +86,7 @@ let activeCardsCache = null;
 export default function DashboardPage({ setCurrentTab, user, isActive = true }) {
   const [alat, setAlat] = useState(() => dbService.getAlatWithStok());
   const [transaksi, setTransaksi] = useState(() => dbService.getTransaksi());
-  const [tapLog, setTapLog] = useState(() => dbService.getTapLog());
+  const [tapLog, setTapLog] = useState(() => filterTapLog24Jam(dbService.getTapLog()));
 
   const [activeCards, setActiveCards] = useState(() => {
     if (activeCardsCache !== null) return activeCardsCache;
@@ -93,7 +107,7 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
     if (!isSupabaseConfigured) {
       setAlat(dbService.getAlatWithStok());
       setTransaksi(dbService.getTransaksi());
-      setTapLog(dbService.getTapLog());
+      setTapLog(filterTapLog24Jam(dbService.getTapLog()));
 
       const localGrouped = groupPinjamanByKartu(dbService.getPinjamanAktif());
       setActiveCards(localGrouped);
@@ -106,7 +120,10 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
       const fetchPromise = Promise.all([
         supabase.from('v_list_barang').select('*'),
         supabase.from('transaksi').select('*, kartu_rfid(nama_pemegang)').order('waktu_pinjam', { ascending: false }).limit(200),
-        supabase.from('tap_log').select('*').or('jenis_terdeteksi.neq.manual,jenis_terdeteksi.is.null').order('waktu_tap', { ascending: false }).limit(10),
+        supabase.from('tap_log').select('*')
+          .gte('waktu_tap', new Date(Date.now() - TAP_LOG_WINDOW_MS).toISOString())
+          .or('jenis_terdeteksi.neq.manual,jenis_terdeteksi.is.null')
+          .order('waktu_tap', { ascending: false }).limit(10),
         supabase.from('v_pinjaman_aktif').select('*'),
       ]);
 
@@ -291,7 +308,10 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
 
   const totalActiveItems = useMemo(() => activeCards.reduce((acc, c) => acc + c.items.length, 0), [activeCards]);
   const recentLoans = useMemo(() => transaksi.slice(0, 6), [transaksi]);
-  const recentTaps = useMemo(() => tapLog.filter((t) => t.jenis_terdeteksi !== 'manual' && t.sumber !== 'manual').slice(0, 6), [tapLog]);
+  const recentTaps = useMemo(
+    () => tapLog.filter((t) => t.jenis_terdeteksi !== 'manual' && t.sumber !== 'manual').slice(0, 6),
+    [tapLog]
+  );
 
   const FMT = (iso) => iso ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso)) : '—';
 
@@ -358,10 +378,14 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
               <div key={card.uid_kartu} className="px-4 py-4 sm:px-5">
                 <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-[15px] font-semibold text-main">Kelas {card.kelas}</p>
-                    {card.nama_pemegang && (
-                      <p className="text-sm text-muted">Pemegang: {card.nama_pemegang}</p>
-                    )}
+                    <p className="text-[15px] text-main">
+                      <span className="text-xs font-medium uppercase tracking-[0.04em] text-muted">Nama/Perwakilan: </span>
+                      <span className="font-semibold">{card.nama_pemegang || '—'}</span>
+                    </p>
+                    <p className="mt-0.5 text-sm text-muted">
+                      <span className="text-xs font-medium uppercase tracking-[0.04em]">Kelas/Angkatan: </span>
+                      <span className="font-medium text-main">{card.kelas || '—'}</span>
+                    </p>
                   </div>
                   <span className="inline-flex shrink-0 items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-[#1E5AAB]">
                     {card.items.length} alat
@@ -411,14 +435,28 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
           ) : (
             <ul className="divide-y divide-gray-200">
               {recentLoans.map((row) => (
-                <li key={row.id} className="flex items-start justify-between gap-3 px-4 py-3 sm:px-5">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-main">{row.nama_alat}</p>
-                    <p className="mt-0.5 text-xs text-muted sm:text-sm">{row.kelas} · {FMT(row.waktu_pinjam)}</p>
+                <li key={row.id} className="px-4 py-3 sm:px-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-main">{row.nama_alat}</p>
+                      <p className="mt-0.5 text-xs text-muted sm:text-sm">
+                        {row.kelas}
+                        {(row.pemegang || row.nama_pemegang) ? ` · ${row.pemegang || row.nama_pemegang}` : ''}
+                      </p>
+                    </div>
+                    <span className="shrink-0">
+                      <Badge status={row.status} />
+                    </span>
                   </div>
-                  <span className="shrink-0">
-                    <Badge status={row.status} />
-                  </span>
+                  <div className="mt-2 space-y-0.5 text-xs sm:text-sm">
+                    <p className="text-gray-700">
+                      <span className="font-semibold">Dipinjam:</span> {FMT(row.waktu_pinjam)}
+                    </p>
+                    <p className={row.status === 'dikembalikan' ? 'text-gray-700' : 'font-medium text-amber-700'}>
+                      <span className="font-semibold">Dikembalikan:</span>{' '}
+                      {row.status === 'dikembalikan' ? FMT(row.waktu_kembali) : 'Belum dikembalikan'}
+                    </p>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -427,7 +465,10 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
 
         <section className="overflow-hidden rounded-xl border border-main bg-surface shadow-sm">
           <div className="flex items-center justify-between gap-3 border-b border-main px-4 py-4 sm:px-5">
-            <h2 className="text-base font-semibold text-main sm:text-lg">Aktivitas Transaksi</h2>
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-main sm:text-lg">Aktivitas Transaksi</h2>
+              <p className="mt-0.5 text-xs text-muted">24 jam terakhir</p>
+            </div>
             <button
               type="button"
               onClick={() => setCurrentTab('realtime_card')}
@@ -439,7 +480,7 @@ export default function DashboardPage({ setCurrentTab, user, isActive = true }) 
           {recentTaps.length === 0 ? (
             <div className="px-5 py-8">
               <p className="font-semibold text-main">Belum ada aktivitas kartu</p>
-              <p className="mt-1 text-sm text-muted">Aktivitas kartu yang masuk akan muncul di sini.</p>
+              <p className="mt-1 text-sm text-muted">Aktivitas 24 jam terakhir akan muncul di sini.</p>
             </div>
           ) : (
             <ul className="divide-y divide-gray-200">

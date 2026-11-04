@@ -6,9 +6,11 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { dbService } from '../services/store';
 import { callTransaksiManual } from '../lib/api';
 import { showFeedback, friendlyError } from '../lib/feedback';
+import { isManualSuccess, showManualSuccess, openRiwayat } from '../lib/manual';
 import Button from '../components/Button';
 import Badge from '../components/Badge';
 import FilterDropdown from '../components/FilterDropdown';
+import ManualSuccessPanel from '../components/ManualSuccessPanel';
 import { IconCheck, IconUsers, IconRefresh, IconMail, IconAlertCircle } from '@tabler/icons-react';
 import PageHeader from '../components/PageHeader';
 import PageNote from '../components/PageNote';
@@ -77,6 +79,7 @@ export default function PengembalianPage({ user }) {
   const [loadingPinjaman, setLoadingPinjaman] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [successInfo, setSuccessInfo] = useState(null);
 
   const loadKartu = useCallback(async () => {
     setLoadingKartu(true);
@@ -125,6 +128,7 @@ export default function PengembalianPage({ user }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccessInfo(null);
 
     if (!selectedKartuId) {
       setError('Pilih kartu kelas yang akan mengembalikan alat.');
@@ -154,7 +158,7 @@ export default function PengembalianPage({ user }) {
           petugas_nama: petugasNama,
         });
 
-        if (!res?.ok) {
+        if (!isManualSuccess(res)) {
           const errMsg =
             res?.error === 'uid_tidak_dikenal' ? 'Kartu atau alat tidak ditemukan di database.' :
               res?.message ?? 'Pengembalian gagal dicatat. Silakan coba lagi.';
@@ -171,17 +175,17 @@ export default function PengembalianPage({ user }) {
           catatan: catatan.trim() || null,
           petugas: petugasNama,
         });
-        if (!res.ok) {
+        if (!isManualSuccess(res)) {
           setError('Tidak ada pinjaman aktif yang sesuai untuk dikembalikan.');
           return;
         }
       }
 
-      showFeedback({
-        type: 'success',
-        title: 'Pengembalian berhasil dicatat.',
-        message: `"${selectedTrx?.nama_alat}" untuk kelas ${selectedKartuObj?.kelas} berhasil dikembalikan.`,
-      });
+      const successMessage =
+        `"${selectedTrx?.nama_alat}" untuk kelas ${selectedKartuObj?.kelas} berhasil dikembalikan.`;
+
+      showManualSuccess(successMessage);
+      setSuccessInfo(successMessage);
 
       // Reset form & refresh pinjaman aktif
       setSelectedAlatId('');
@@ -210,6 +214,12 @@ export default function PengembalianPage({ user }) {
       <PageNote title="Informasi Penting" icon={IconMail}>
         Fitur pengembalian manual ini di gunakan jika kartu atau alat stiker sedang bermasalah, rusak, atau hilang. anda bisa menggunakan fitur pengembalian ini secara manual.
       </PageNote>
+
+      <ManualSuccessPanel
+        message={successInfo}
+        onViewHistory={openRiwayat}
+        onDismiss={() => setSuccessInfo(null)}
+      />
 
       <form onSubmit={handleSubmit} className="overflow-hidden rounded-xl border border-main bg-white shadow-sm">
         <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 sm:px-5">

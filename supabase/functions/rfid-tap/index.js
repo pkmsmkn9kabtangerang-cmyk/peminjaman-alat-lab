@@ -8,7 +8,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-device-id, x-device-key",
 };
 
-const SESSION_DURATION_MS = 20 * 1000;
+const SESSION_DURATION_MS = 10 * 1000;
 
 // Device credentials dari Supabase Secrets (fallback default ke device standar & sim-key)
 const RFID_DEVICE_ID = Deno.env.get("RFID_DEVICE_ID") || "esp32-lab-01";
@@ -53,24 +53,37 @@ async function setSession(supabase, deviceId, uid_kartu, jenis, kelas = "") {
   const expires_at = new Date(Date.now() + SESSION_DURATION_MS).toISOString();
   const updated_at = new Date().toISOString();
 
+  const payload = {
+    device_id: deviceId,
+    uid_kartu,
+    kelas,
+    jenis,
+    // Sesi baru selalu mulai tanpa riwayat tap alat.
+    processed_alat: [],
+    expires_at,
+    updated_at,
+  };
+
   const { error } = await supabase
     .from("rfid_session")
-    .upsert(
-      {
-        device_id: deviceId,
-        uid_kartu,
-        kelas,
-        jenis,
-        expires_at,
-        updated_at,
-      },
-      { onConflict: "device_id" }
-    );
+    .upsert(payload, { onConflict: "device_id" });
 
-  if (error) {
-    console.error("setSession error:", error);
-    throw error;
+  if (!error) return;
+
+  // Migration 009 belum dijalankan: sesi tetap harus bisa dimulai.
+  if (error.code === "42703" || /processed_alat/i.test(error.message || "")) {
+    console.warn("processed_alat belum tersedia, jalankan migration 009:", error.message);
+    delete payload.processed_alat;
+    const { error: retryError } = await supabase
+      .from("rfid_session")
+      .upsert(payload, { onConflict: "device_id" });
+    if (!retryError) return;
+    console.error("setSession retry error:", retryError);
+    throw retryError;
   }
+
+  console.error("setSession error:", error);
+  throw error;
 }
 
 async function extendSession(supabase, deviceId) {
@@ -89,6 +102,41 @@ async function extendSession(supabase, deviceId) {
     console.error("extendSession error:", error);
     throw error;
   }
+}
+
+// Catat UID alat yang sudah diproses pada sesi aktif + perpanjang 10 detik.
+// UID yang sama tidak boleh diproses dua kali sampai sesi baru dimulai.
+async function markToolProcessed(supabase, deviceId, uidAlat, processed) {
+  const list = Array.isArray(processed)
+    ? processed.filter((item) => typeof item === "string" && item.length > 0)
+    : [];
+
+  if (!list.includes(uidAlat)) list.push(uidAlat);
+
+  const expires_at = new Date(Date.now() + SESSION_DURATION_MS).toISOString();
+  const updated_at = new Date().toISOString();
+
+  const { error } = await supabase
+    .from("rfid_session")
+    .update({
+      processed_alat: list,
+      expires_at,
+      updated_at,
+    })
+    .eq("device_id", deviceId);
+
+  if (!error) return;
+
+  // Migration 009 belum dijalankan: jangan gagalkan tap yang sudah tercatat.
+  // Sesi tetap diperpanjang, anti-duplikat aktif setelah migration diterapkan.
+  if (error.code === "42703" || /processed_alat/i.test(error.message || "")) {
+    console.warn("processed_alat belum tersedia, jalankan migration 009:", error.message);
+    await extendSession(supabase, deviceId);
+    return;
+  }
+
+  console.error("markToolProcessed error:", error);
+  throw error;
 }
 
 async function clearSession(supabase, deviceId) {
@@ -221,7 +269,7 @@ Deno.serve(async (req) => {
             supabase,
             uid,
             null,
-            "kartu",
+            "selesai",
             "otomatis",
             "berhasil",
             null,
@@ -235,7 +283,8 @@ Deno.serve(async (req) => {
             action: "selesai",
             jenis: "selesai",
             kelas: kartu.kelas,
-            message: `Sesi ${kartu.kelas} selesai.`,
+            nama_pemegang: kartu.nama_pemegang ?? "",
+            message: `Sesi ${kartu.nama_pemegang || kartu.kelas} selesai.`,
           });
         }
 
@@ -255,13 +304,26 @@ Deno.serve(async (req) => {
           null
         );
 
+        const { data: activeCard } = await supabase
+          .from("kartu_rfid")
+          .select("nama_pemegang")
+          .eq("uid_kartu", currentSession.uid_kartu)
+          .maybeSingle();
+
+        const activeName =
+          activeCard?.nama_pemegang ||
+          currentSession.kelas ||
+          currentSession.uid_kartu;
+
         return json({
           ok: false,
           error: "sesi_kartu_lain_aktif",
           type: "kartu",
-          activeCard: currentSession,
-          message:
-            `Sesi ${currentSession.kelas || currentSession.uid_kartu} sedang aktif!`,
+          activeCard: {
+            ...currentSession,
+            nama_pemegang: activeCard?.nama_pemegang ?? "",
+          },
+          message: `Sesi ${activeName} sedang aktif!`,
         });
       }
 
@@ -308,6 +370,7 @@ Deno.serve(async (req) => {
         action: "mulai",
         jenis,
         kelas: kartu.kelas,
+        nama_pemegang: kartu.nama_pemegang ?? "",
       });
     }
 
@@ -521,29 +584,100 @@ Deno.serve(async (req) => {
     }
 
     /* =====================================================
-       11. CEK TRANSAKSI ALAT + KARTU (UNTUK PINJAMAN BIASA)
+       11. CEGAH TAP GANDA PADA SESI AKTIF
+
+       UID alat yang sudah berhasil diproses di sesi ini tidak boleh
+       langsung dianggap sebagai pengembalian.
+    ===================================================== */
+
+    const processedAlat = Array.isArray(sess.processed_alat)
+      ? sess.processed_alat
+      : [];
+
+    if (processedAlat.includes(uid)) {
+      await addTapLog(
+        supabase,
+        sess.uid_kartu,
+        uid,
+        "alat",
+        "otomatis",
+        "ditolak",
+        "tap_duplikat",
+        kelas,
+        alat.nama
+      );
+
+      return json({
+        ok: false,
+        error: "tap_duplikat",
+        type: "alat",
+        alat: alat.nama,
+        message:
+          `${alat.nama} sudah diproses pada sesi ini. ` +
+          "Akhiri sesi lalu mulai sesi baru untuk memproses ulang.",
+      });
+    }
+
+    /* =====================================================
+       12. CEK SELURUH TRANSAKSI AKTIF UNIT INI
+
+       Satu baris alat = satu unit fisik. Jangan memakai maybeSingle()
+       karena satu alat_id dapat memiliki lebih dari satu baris aktif
+       pada data lama.
     ===================================================== */
 
     const {
-      data: activeTrx,
+      data: activeRows,
       error: activeTrxError,
     } = await supabase
       .from("transaksi")
-      .select("id")
-      .eq("uid_kartu", sess.uid_kartu)
+      .select("id, uid_kartu, kelas, waktu_pinjam")
       .eq("alat_id", alat.id)
       .eq("status", "dipinjam")
-      .maybeSingle();
+      .order("waktu_pinjam", { ascending: true });
 
     if (activeTrxError) {
       throw activeTrxError;
     }
 
+    const activeList = activeRows ?? [];
+    const ownTrx =
+      activeList.find((trx) => trx.uid_kartu === sess.uid_kartu) ?? null;
+
     /* =====================================================
-       12. JIKA SUDAH DIPINJAM → KEMBALIKAN
+       13. DIPINJAM KELAS LAIN → TOLAK
     ===================================================== */
 
-    if (activeTrx) {
+    if (activeList.length > 0 && !ownTrx) {
+      const peminjamKelas = activeList[0]?.kelas || "kelas lain";
+
+      await addTapLog(
+        supabase,
+        sess.uid_kartu,
+        uid,
+        "alat",
+        "otomatis",
+        "ditolak",
+        "alat_sedang_dipinjam",
+        kelas,
+        alat.nama
+      );
+
+      return json({
+        ok: false,
+        error: "alat_sedang_dipinjam",
+        type: "alat",
+        alat: alat.nama,
+        peminjam_kelas: peminjamKelas,
+        message: `${alat.nama} sedang dipinjam oleh ${peminjamKelas}.`,
+      });
+    }
+
+    /* =====================================================
+       14. SUDAH DIPINJAM KARTU INI → KEMBALIKAN
+    ===================================================== */
+
+    if (ownTrx) {
       const {
         error: updateError,
       } = await supabase
@@ -552,13 +686,13 @@ Deno.serve(async (req) => {
           status: "dikembalikan",
           waktu_kembali: new Date().toISOString(),
         })
-        .eq("id", activeTrx.id);
+        .eq("id", ownTrx.id);
 
       if (updateError) {
         throw updateError;
       }
 
-      await extendSession(supabase, deviceId);
+      await markToolProcessed(supabase, deviceId, uid, processedAlat);
 
       await addTapLog(
         supabase,
@@ -582,7 +716,7 @@ Deno.serve(async (req) => {
     }
 
     /* =====================================================
-       13. BELUM DIPINJAM → CEK STOK
+       15. BELUM DIPINJAM → CEK STOK
     ===================================================== */
 
     if (alat.stok_tersedia <= 0) {
@@ -606,7 +740,7 @@ Deno.serve(async (req) => {
     }
 
     /* =====================================================
-       14. BUAT TRANSAKSI PEMINJAMAN
+       16. BUAT TRANSAKSI PEMINJAMAN
     ===================================================== */
 
     const trxId =
@@ -636,13 +770,13 @@ Deno.serve(async (req) => {
     }
 
     /* =====================================================
-       15. PERPANJANG SESSION
+       17. TANDAI UNIT + PERPANJANG SESSION
     ===================================================== */
 
-    await extendSession(supabase, deviceId);
+    await markToolProcessed(supabase, deviceId, uid, processedAlat);
 
     /* =====================================================
-       16. LOG BERHASIL
+       18. LOG BERHASIL
     ===================================================== */
 
     await addTapLog(
@@ -658,7 +792,7 @@ Deno.serve(async (req) => {
     );
 
     /* =====================================================
-       17. RESPONSE KE ESP32
+       19. RESPONSE KE ESP32
     ===================================================== */
 
     return json({

@@ -3,7 +3,9 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { dbService } from '../services/store';
 import { callTransaksiManual } from '../lib/api';
 import { showFeedback, friendlyError } from '../lib/feedback';
+import { isManualSuccess, showManualSuccess, openRiwayat } from '../lib/manual';
 import Button from '../components/Button';
+import ManualSuccessPanel from '../components/ManualSuccessPanel';
 import PageHeader from '../components/PageHeader';
 import PageNote from '../components/PageNote';
 import FilterDropdown from '../components/FilterDropdown';
@@ -50,6 +52,7 @@ export default function PeminjamanPage({ user }) {
   const [catatan, setCatatan] = useState('');
   const [fieldError, setFieldError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [successInfo, setSuccessInfo] = useState(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -93,6 +96,7 @@ export default function PeminjamanPage({ user }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFieldError('');
+    setSuccessInfo(null);
 
     // Validasi
     if (!selectedKartu) {
@@ -127,7 +131,7 @@ export default function PeminjamanPage({ user }) {
           petugas_nama: petugasNama,
         });
 
-        if (!res?.ok) {
+        if (!isManualSuccess(res)) {
           const errMsg =
             res?.error === 'stok_habis' ? 'Stok alat tidak mencukupi.' :
               res?.error === 'uid_tidak_dikenal' ? 'Kartu atau alat tidak ditemukan.' :
@@ -146,7 +150,7 @@ export default function PeminjamanPage({ user }) {
           petugas: petugasNama,
         });
 
-        if (!res.ok) {
+        if (!isManualSuccess(res)) {
           const errMsg =
             res.error === 'stok_habis' ? 'Stok alat tidak mencukupi.' :
               res.error === 'uid_tidak_dikenal' ? 'Kartu atau alat tidak ditemukan.' :
@@ -156,11 +160,15 @@ export default function PeminjamanPage({ user }) {
         }
       }
 
-      showFeedback({
-        type: 'success',
-        title: selectedAlat?.tipe === 'habis_pakai' ? 'Pemberian alat berhasil dicatat.' : 'Peminjaman berhasil dicatat.',
-        message: `${jumlah} ${selectedAlat?.satuan || 'unit'} ${selectedAlat?.nama} untuk kelas ${selectedKartu.kelas}.`,
-      });
+      const successMessage =
+        selectedAlat?.tipe === 'habis_pakai'
+          ? `Pemberian ${jumlah} ${selectedAlat?.satuan || 'unit'} ${selectedAlat?.nama} ` +
+            `untuk kelas ${selectedKartu.kelas} berhasil dicatat.`
+          : `Peminjaman ${jumlah} ${selectedAlat?.satuan || 'unit'} ${selectedAlat?.nama} ` +
+            `untuk kelas ${selectedKartu.kelas} berhasil dicatat.`;
+
+      showManualSuccess(successMessage);
+      setSuccessInfo(successMessage);
       resetForm();
       loadData(); // refresh stok
     } catch (err) {
@@ -181,6 +189,12 @@ export default function PeminjamanPage({ user }) {
       <PageNote title="Informasi Penting" icon={IconMail}>
         Fitur peminjaman manual ini di gunakan jika kartu atau alat stiker sedang bermasalah, rusak, atau hilang. anda bisa menggunakan fitur peminjaman secara manual ini. dan minjam secara manual
       </PageNote>
+
+      <ManualSuccessPanel
+        message={successInfo}
+        onViewHistory={openRiwayat}
+        onDismiss={() => setSuccessInfo(null)}
+      />
 
       <form onSubmit={handleSubmit} className="max-w-4xl overflow-hidden rounded-xl border border-main bg-white shadow-sm lg:max-w-full">
         <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 sm:px-5">
