@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
     // ── 2. Cek alat ──
     const { data: alat, error: alatErr } = await supabaseAdmin
       .from("v_list_barang")
-      .select("id, nama, kode, kategori, stok_tersedia, tipe, satuan")
+      .select("*")
       .eq("id", alat_id.trim())
       .maybeSingle();
 
@@ -134,16 +134,23 @@ Deno.serve(async (req) => {
       }
 
       const permintaanId = `REQ-MANUAL-${Date.now()}`;
-      const newStok = alat.stok_tersedia - qty;
+      const newStok = Math.max(0, alat.stok_tersedia - qty);
 
-      // 1. Kurangi stok alat
-      const { error: updateStokErr } = await supabaseAdmin
-        .from("alat")
-        .update({ jumlah_total: newStok })
-        .eq("id", alat.id);
-      if (updateStokErr) throw updateStokErr;
+      // Sebelum migration 011, jumlah_total masih berfungsi sebagai stok
+      // berjalan sehingga fallback perlu menguranginya. Setelah migration 011,
+      // view memiliki kolom `terpakai` dan stok dihitung otomatis.
+      const stokModelBaru = Object.prototype.hasOwnProperty.call(alat, "terpakai");
+      if (!stokModelBaru) {
+        const { error: updateStokErr } = await supabaseAdmin
+          .from("alat")
+          .update({ jumlah_total: newStok })
+          .eq("id", alat.id);
+        if (updateStokErr) throw updateStokErr;
+      }
 
-      // 2. Catat ke permintaan_habis_pakai (status 'disetujui' karena manual)
+      // 1. Catat ke permintaan_habis_pakai (status 'disetujui' karena manual).
+      //    Pada model stok baru, stok tersedia dihitung oleh view dari total
+      //    unit dikurangi permintaan yang disetujui.
       const { error: insertReqErr } = await supabaseAdmin
         .from("permintaan_habis_pakai")
         .insert({
@@ -163,7 +170,7 @@ Deno.serve(async (req) => {
         });
       if (insertReqErr) throw insertReqErr;
 
-      // 3. Catat mutasi stok
+      // 2. Catat mutasi stok
       const { error: insertMutasiErr } = await supabaseAdmin
         .from("stok_mutasi")
         .insert({

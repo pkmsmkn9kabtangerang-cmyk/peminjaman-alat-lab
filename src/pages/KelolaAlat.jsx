@@ -645,7 +645,7 @@ export default function KelolaAlat() {
               error={errors.jumlah_total}
               hint={
                 isHabisPakai
-                  ? 'Stok alat sekali pakai bisa diubah kapan saja saat restock.'
+                  ? 'Total unit tetap. Stok tersisa berkurang otomatis setiap kali ada pemberian yang disetujui.'
                   : 'Terkunci 1 unit. Satu baris = satu unit fisik dengan tag RFID masing-masing.'
               }
             >

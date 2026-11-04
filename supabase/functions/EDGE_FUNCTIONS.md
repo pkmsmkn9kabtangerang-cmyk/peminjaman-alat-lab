@@ -31,26 +31,26 @@ supabase/
 
 ## 📋 Referensi Endpoint
 
-| Function | Method | Path | Akses |
-|---|---|---|---|
-| `rfid-tap` | POST | `/rfid-tap` | ESP32 / service-role |
-| `create-petugas` | POST | `/create-petugas` | Admin |
-| `process-manual` | POST | `/process-manual` | Admin, Petugas |
-| `manage-alat` | GET | `/manage-alat` | Semua (authenticated) |
-| `manage-alat` | POST/PUT/DELETE | `/manage-alat` | Admin |
-| `manage-kartu` | GET | `/manage-kartu` | Semua (authenticated) |
-| `manage-kartu` | POST/PUT/DELETE | `/manage-kartu` | Admin |
-| `manage-transaksi` | GET | `/manage-transaksi` | Semua (authenticated) |
-| `manage-transaksi` | PUT | `/manage-transaksi?id=:id` | Admin, Petugas |
-| `manage-transaksi` | DELETE | `/manage-transaksi?id=:id` | Admin |
-| `manage-transaksi` | DELETE | `/manage-transaksi?clear=riwayat` | Admin |
-| `manage-transaksi` | DELETE | `/manage-transaksi?clear=taplog` | Admin |
-| `manage-permintaan` | GET | `/manage-permintaan?status=menunggu` | Admin, Petugas |
-| `manage-permintaan` | PUT | `/manage-permintaan?id=:id` | Admin, Petugas |
-| `manage-pengguna` | GET | `/manage-pengguna` | Admin |
-| `manage-pengguna` | PUT/DELETE | `/manage-pengguna?id=:uid` | Admin |
-| `manage-pengguna` | POST | `/manage-pengguna?id=:uid&aksi=reset-password` | Admin |
-| `dashboard-stats` | GET | `/dashboard-stats?days=7` | Semua (authenticated) |
+| Function            | Method          | Path                                           | Akses                 |
+| ------------------- | --------------- | ---------------------------------------------- | --------------------- |
+| `rfid-tap`          | POST            | `/rfid-tap`                                    | ESP32 / service-role  |
+| `create-petugas`    | POST            | `/create-petugas`                              | Admin                 |
+| `process-manual`    | POST            | `/process-manual`                              | Admin, Petugas        |
+| `manage-alat`       | GET             | `/manage-alat`                                 | Semua (authenticated) |
+| `manage-alat`       | POST/PUT/DELETE | `/manage-alat`                                 | Admin                 |
+| `manage-kartu`      | GET             | `/manage-kartu`                                | Semua (authenticated) |
+| `manage-kartu`      | POST/PUT/DELETE | `/manage-kartu`                                | Admin                 |
+| `manage-transaksi`  | GET             | `/manage-transaksi`                            | Semua (authenticated) |
+| `manage-transaksi`  | PUT             | `/manage-transaksi?id=:id`                     | Admin, Petugas        |
+| `manage-transaksi`  | DELETE          | `/manage-transaksi?id=:id`                     | Admin                 |
+| `manage-transaksi`  | DELETE          | `/manage-transaksi?clear=riwayat`              | Admin                 |
+| `manage-transaksi`  | DELETE          | `/manage-transaksi?clear=taplog`               | Admin                 |
+| `manage-permintaan` | GET             | `/manage-permintaan?status=menunggu`           | Admin, Petugas        |
+| `manage-permintaan` | PUT             | `/manage-permintaan?id=:id`                    | Admin, Petugas        |
+| `manage-pengguna`   | GET             | `/manage-pengguna`                             | Admin                 |
+| `manage-pengguna`   | PUT/DELETE      | `/manage-pengguna?id=:uid`                     | Admin                 |
+| `manage-pengguna`   | POST            | `/manage-pengguna?id=:uid&aksi=reset-password` | Admin                 |
+| `dashboard-stats`   | GET             | `/dashboard-stats?days=7`                      | Semua (authenticated) |
 
 ---
 
@@ -65,12 +65,12 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
 
 Di Supabase Dashboard → Edge Functions → Secrets, tambahkan:
 
-| Secret | Keterangan |
-|---|---|
-| `SUPABASE_URL` | URL project (otomatis tersedia) |
-| `SUPABASE_ANON_KEY` | Anon key (otomatis tersedia) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (otomatis tersedia) |
-| `SITE_URL` | URL frontend (untuk redirect email invite) |
+| Secret                      | Keterangan                                 |
+| --------------------------- | ------------------------------------------ |
+| `SUPABASE_URL`              | URL project (otomatis tersedia)            |
+| `SUPABASE_ANON_KEY`         | Anon key (otomatis tersedia)               |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (otomatis tersedia)       |
+| `SITE_URL`                  | URL frontend (untuk redirect email invite) |
 
 ---
 
@@ -98,15 +98,15 @@ supabase db push
 ### 4. Deploy semua Edge Functions sekaligus
 
 ```bash
-supabase functions deploy rfid-tap
-supabase functions deploy create-petugas
-supabase functions deploy process-manual
-supabase functions deploy manage-alat
-supabase functions deploy manage-kartu
-supabase functions deploy manage-transaksi
-supabase functions deploy manage-permintaan
-supabase functions deploy manage-pengguna
-supabase functions deploy dashboard-stats
+supabase functions deploy rfid-tap --use-api
+supabase functions deploy create-petugas --use-api
+supabase functions deploy process-manual --use-api
+supabase functions deploy manage-alat --use-api
+supabase functions deploy manage-kartu --use-api
+supabase functions deploy manage-transaksi --use-api
+supabase functions deploy manage-permintaan --use-api
+supabase functions deploy manage-pengguna --use-api
+supabase functions deploy dashboard-stats --use-api
 ```
 
 ### 5. Set SITE_URL secret

@@ -229,16 +229,26 @@ export const dbService = {
   },
   saveAlat: (a) => setStore('alat', a),
 
-  // Hitung stok_tersedia dari jumlah_total & jumlah_dipinjam aktif
+  // Hitung stok_tersedia dari jumlah_total & jumlah_dipinjam aktif.
+  // Untuk alat sekali pakai, jumlah_total adalah total unit yang dimiliki
+  // dan tidak berkurang; stok dihitung dari permintaan yang disetujui.
   getAlatWithStok: () => {
     const alat      = dbService.getAlat();
     const transaksi = getStore('transaksi', INITIAL_TRANSAKSI);
+    const permintaan = getStore('permintaan', []);
     return alat.map((a) => {
       const dipinjam = transaksi.filter(
         (t) => t.alat_id === a.id && t.status === 'dipinjam'
       ).length;
-      const stok_tersedia = Math.max(0, a.jumlah_total - (a.jumlah_rusak || 0) - dipinjam);
-      return { ...a, stok_tersedia, dipinjam_aktif: dipinjam };
+      const terpakai = a.tipe === 'habis_pakai'
+        ? permintaan
+          .filter((p) => p.alat_id === a.id && p.status === 'disetujui' && p.jumlah != null)
+          .reduce((total, p) => total + (Number(p.jumlah) || 0), 0)
+        : 0;
+      const stok_tersedia = a.tipe === 'habis_pakai'
+        ? Math.max(0, Number(a.jumlah_total) - terpakai)
+        : Math.max(0, a.jumlah_total - (a.jumlah_rusak || 0) - dipinjam);
+      return { ...a, stok_tersedia, dipinjam_aktif: dipinjam, terpakai };
     });
   },
 
@@ -289,17 +299,13 @@ export const dbService = {
     const qty = parseInt(jumlah, 10);
     if (isNaN(qty) || qty <= 0) return { ok: false, error: 'jumlah_tidak_valid' };
 
-    const alatList = dbService.getAlat();
-    const aIdx = alatList.findIndex((x) => x.id === req.alat_id);
-    if (aIdx === -1) return { ok: false, error: 'alat_tidak_ditemukan' };
+    const alatDenganStok = dbService.getAlatWithStok().find((x) => x.id === req.alat_id);
+    if (!alatDenganStok) return { ok: false, error: 'alat_tidak_ditemukan' };
 
-    if (alatList[aIdx].stok_tersedia < qty && alatList[aIdx].jumlah_total < qty) {
+    // jumlah_total tetap; stok berkurang dari permintaan yang disetujui.
+    if (alatDenganStok.stok_tersedia < qty) {
       return { ok: false, error: 'stok_habis' };
     }
-
-    alatList[aIdx].jumlah_total = Math.max(0, alatList[aIdx].jumlah_total - qty);
-    alatList[aIdx].stok_tersedia = alatList[aIdx].jumlah_total;
-    dbService.saveAlat(alatList);
 
     const now = new Date().toISOString();
     all[pIdx] = {
@@ -336,17 +342,9 @@ export const dbService = {
     if (pIdx === -1) return { ok: false, error: 'permintaan_tidak_ditemukan' };
 
     const req = all[pIdx];
-    if (req.status === 'disetujui') {
-      const qty = req.jumlah || 1;
-      const alatList = dbService.getAlat();
-      const aIdx = alatList.findIndex((x) => x.id === req.alat_id);
-      if (aIdx > -1) {
-        alatList[aIdx].jumlah_total += qty;
-        alatList[aIdx].stok_tersedia = alatList[aIdx].jumlah_total;
-        dbService.saveAlat(alatList);
-      }
-    }
 
+    // Stok otomatis kembali karena permintaan ini tidak lagi berstatus
+    // 'disetujui'. jumlah_total (total unit) tidak perlu diubah.
     all[pIdx] = {
       ...req,
       status: 'dibatalkan',
@@ -591,14 +589,8 @@ export const dbService = {
       }
 
       const now = new Date().toISOString();
-      const allAlat = dbService.getAlat();
-      const aIdx = allAlat.findIndex((a) => a.id === alat_id);
-      if (aIdx > -1) {
-        allAlat[aIdx].jumlah_total -= qty;
-        allAlat[aIdx].stok_tersedia = allAlat[aIdx].jumlah_total;
-        dbService.saveAlat(allAlat);
-      }
-
+      // jumlah_total adalah total unit dan tidak dikurangi. Stok tersisa
+      // dihitung dari permintaan berstatus 'disetujui' di getAlatWithStok.
       const permintaanId = `REQ-MANUAL-${Date.now()}`;
       const allReq = dbService.getPermintaan();
       allReq.unshift({
@@ -624,7 +616,7 @@ export const dbService = {
         id: `MUT-${Date.now()}`,
         alat_id: alat.id,
         delta: -qty,
-        stok_setelah: aIdx > -1 ? allAlat[aIdx].jumlah_total : 0,
+        stok_setelah: Math.max(0, alat.stok_tersedia - qty),
         alasan: 'persetujuan',
         permintaan_id: permintaanId,
         catatan: catatan ?? 'Pemberian manual petugas',
