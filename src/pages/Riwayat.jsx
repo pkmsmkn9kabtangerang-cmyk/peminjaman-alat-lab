@@ -396,7 +396,7 @@ export default function RiwayatPage() {
       sortable: true,
       render: (row) => {
         const isManual = row.sumber === 'manual' || row.jenis_terdeteksi === 'manual';
-        return <Badge status={isManual ? 'manual' : 'realtime'} label={isManual ? 'Manual' : 'RFID'} />;
+        return <Badge status={isManual ? 'manual' : 'realtime'} label={isManual ? 'Manual' : 'kartu RFID'} />;
       },
     },
     {
@@ -427,14 +427,21 @@ export default function RiwayatPage() {
       ),
     },
     {
-      key: 'kelas',
-      label: 'Kelas',
+      key: 'pemegang',
+      label: 'Nama/Perwakilan',
       sortable: true,
       render: (row) => (
-        <div>
-          <span className="text-[13px] lg:text-main font-bold block">{row.kelas || '—'}</span>
-          <span className="text-[11px] text-gray-500">{row.pemegang || row.uid_kartu}</span>
-        </div>
+        <span className="text-[13px] lg:text-main font-semibold">
+          {row.pemegang || row.uid_kartu || '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'kelas',
+      label: 'Kelas/Angkatan',
+      sortable: true,
+      render: (row) => (
+        <span className="text-[13px] lg:text-main font-medium">{row.kelas || '—'}</span>
       ),
     },
     {
