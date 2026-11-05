@@ -104,13 +104,19 @@ export function friendlyError(error, fallback = 'Terjadi kendala saat memproses 
 export const ERROR_MESSAGES = {
   kartu_nonaktif: 'Kartu ini sedang dinonaktifkan, sehingga belum bisa digunakan.',
   uid_tidak_dikenal: 'Kartu belum terdaftar. Silakan daftarkan kartu terlebih dahulu di menu Kelola Kartu.',
-  sesi_tidak_ada: 'Belum ada kartu yang terdeteksi, atau waktu 10 detik telah habis. Tempelkan kartu kelas terlebih dahulu.',
+  tag_tidak_dikenal: 'Tag alat belum terdaftar. Daftarkan UID-nya di menu Kelola Alat.',
+  sesi_tidak_ada: 'Belum ada kartu yang terdeteksi, atau waktu sesi telah habis. Tempelkan kartu kelas terlebih dahulu.',
+  sesi_tidak_aktif: 'Sesi sudah berakhir. Tap kartu kelas terlebih dahulu.',
   sesi_kartu_lain_aktif: 'Kartu kelas lain sedang aktif. Tunggu sesi tersebut selesai, lalu coba lagi.',
   stok_habis: 'Stok alat habis, tidak ada unit yang dapat dipinjam saat ini.',
   alat_sedang_dipinjam: 'Alat ini sedang dipinjam oleh kelas lain. Tunggu sampai alat dikembalikan.',
+  sedang_dipinjam: 'Alat ini sedang dipinjam oleh kelas lain. Tunggu sampai alat dikembalikan.',
   tap_duplikat: 'Stiker alat ini sudah diproses pada sesi yang sama. Akhiri sesi lalu mulai sesi baru untuk memproses ulang.',
+  permintaan_sudah_ada: 'Permintaan alat ini sudah tercatat dan sedang menunggu persetujuan petugas.',
   alat_rusak: 'Alat dalam kondisi rusak dan tidak dapat dipinjam.',
   payload_tidak_lengkap: 'Data yang dikirim belum lengkap. Silakan coba lagi.',
+  migration_belum_diterapkan: 'Server belum siap. Migration database RFID belum diterapkan.',
+  server_error: 'Server sedang bermasalah. Silakan coba lagi.',
 };
 
 export function getErrorMessage(code) {

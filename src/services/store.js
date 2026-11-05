@@ -117,11 +117,12 @@ function setStore(key, data) {
   window.dispatchEvent(new Event('simlab_storage_updated'));
 }
 
-// ── Sesi kartu 10 detik (in-memory, reset saat refresh) ───────
-export const SESSION_DURATION_SECONDS = 10;
+// ── Sesi kartu 20 detik (in-memory, reset saat refresh) ───────
+export const SESSION_DURATION_SECONDS = 20;
 export const SESSION_DURATION_MS = SESSION_DURATION_SECONDS * 1000;
 
-// { uid_kartu: { expires: Date, jenis, uid_kartu, kelas, processed: string[] } }
+// { uid_kartu: { expires: Date, uid_kartu, kelas, processed: string[] } }
+// Tidak ada mode global PINJAM/KEMBALI. Aksi ditentukan per UID alat.
 const kartuSessions = {};
 
 function getSession(uid_kartu) {
@@ -134,10 +135,10 @@ function getSession(uid_kartu) {
   return s;
 }
 
-function setSession(uid_kartu, jenis, kelas = '') {
+function setSession(uid_kartu, kelas = '') {
   const expires = new Date(Date.now() + SESSION_DURATION_MS);
   // Sesi baru selalu mulai dengan daftar tap alat yang kosong.
-  kartuSessions[uid_kartu] = { uid_kartu, jenis, kelas, expires, processed: [] };
+  kartuSessions[uid_kartu] = { uid_kartu, kelas, expires, processed: [] };
   window.dispatchEvent(new Event('simlab_storage_updated'));
   return kartuSessions[uid_kartu];
 }
@@ -150,7 +151,7 @@ function extendSession(uid_kartu) {
   }
 }
 
-// Catat UID alat yang sudah diproses pada sesi aktif + perpanjang 10 detik.
+// Catat UID alat yang sudah diproses pada sesi aktif + perpanjang 20 detik.
 // UID yang sama tidak boleh diproses dua kali sampai sesi baru dimulai.
 function markToolProcessed(uid_kartu, uid_alat) {
   const s = kartuSessions[uid_kartu];
@@ -249,18 +250,6 @@ export const dbService = {
         ? Math.max(0, Number(a.jumlah_total) - terpakai)
         : Math.max(0, a.jumlah_total - (a.jumlah_rusak || 0) - dipinjam);
       return { ...a, stok_tersedia, dipinjam_aktif: dipinjam, terpakai };
-    });
-  },
-
-  getListBarang: () => {
-    return dbService.getAlatWithStok().map((a) => {
-      let status = 'tersedia';
-      if (a.stok_tersedia === 0) status = 'habis';
-      else if (a.dipinjam_aktif > 0) status = 'dipinjam';
-      return {
-        ...a,
-        status,
-      };
     });
   },
 
@@ -371,197 +360,317 @@ export const dbService = {
     return Object.values(kartuSessions).filter((s) => new Date(s.expires) > now);
   },
 
-  // ── processTap: meniru logika edge function process_tap ──────
+  // ── processTap: simulasi lokal dari RPC process_rfid_tap ─────
   /**
-   * Meniru proses tap RFID dari ESP32.
-   * Tap tunggal UID → deteksi otomatis kartu atau alat.
+   * Meniru proses tap RFID dari ESP32 untuk mode demo/localStorage.
+   * Kontrak respons sama dengan backend:
+   *   { success, code, action, message, alat, kelas, session }
    *
-   * Respons mengikuti kontrak PLAN.md §4:
-   *   { ok:true,  type:'kartu', jenis, kelas }
-   *   { ok:true,  type:'alat',  jenis, alat  }
-   *   { ok:false, error:'kartu_nonaktif' | 'uid_tidak_dikenal' | 'sesi_tidak_ada' | 'stok_habis' }
+   * Tidak ada mode global PINJAM/KEMBALI. Setiap UID alat diputuskan
+   * berdasarkan kondisi transaksi alat tersebut.
    */
-  processTap: (uid, deviceId = 'web-sim') => {
+  processTap: (uid) => {
+    const uidNorm = String(uid || '').trim().toUpperCase();
     const kartuList = dbService.getKartu();
-    const kartu = kartuList.find((k) => k.uid_kartu === uid);
+    const kartu = kartuList.find(
+      (k) => String(k.uid_kartu || '').toUpperCase() === uidNorm
+    );
 
+    const sessionInfo = (s) => (s
+      ? {
+          uid_kartu: s.uid_kartu,
+          kelas: s.kelas,
+          nama_pemegang:
+            kartuList.find((k) => k.uid_kartu === s.uid_kartu)?.nama_pemegang ?? null,
+          expires_at: new Date(s.expires).toISOString(),
+        }
+      : null);
+
+    // ---------- UID KARTU KELAS ----------
     if (kartu) {
-      // --- UID adalah kartu ---
       if (!kartu.aktif) {
-        dbService._addTapLog(uid, null, 'kartu', 'otomatis', 'ditolak', 'kartu_nonaktif', kartu.kelas, null);
-        return { ok: false, error: 'kartu_nonaktif', type: 'kartu' };
+        clearSession(kartu.uid_kartu);
+        dbService._addTapLog(kartu.uid_kartu, null, 'kartu', 'otomatis', 'ditolak', 'kartu_nonaktif', kartu.kelas, null);
+        return {
+          success: false,
+          code: 'kartu_nonaktif',
+          action: 'tolak',
+          message: 'Kartu RFID tidak aktif.',
+          alat: null,
+          kelas: kartu.kelas,
+          session: null,
+        };
       }
 
-      // Periksa apakah ada sesi kartu aktif saat ini
       const activeSessions = dbService.getActiveSessions();
-      const currentActiveSession = activeSessions.length > 0 ? activeSessions[0] : null;
+      const current = activeSessions.length > 0 ? activeSessions[0] : null;
 
-      if (currentActiveSession) {
-        // Jika sesi aktif adalah milik kartu yang sama -> Pengguna men-tap kartu lagi untuk mengakhiri sesi
-        if (currentActiveSession.uid_kartu === uid) {
-          clearSession(uid);
-          dbService._addTapLog(uid, null, 'selesai', 'otomatis', 'berhasil', null, kartu.kelas, null);
+      if (current) {
+        if (current.uid_kartu === kartu.uid_kartu) {
+          clearSession(kartu.uid_kartu);
+          dbService._addTapLog(kartu.uid_kartu, null, 'selesai', 'otomatis', 'berhasil', null, kartu.kelas, null);
           return {
-            ok: true,
-            type: 'kartu',
+            success: true,
+            code: 'sesi_selesai',
             action: 'selesai',
-            jenis: 'selesai',
+            message: `Sesi ${kartu.kelas} selesai.`,
+            alat: null,
             kelas: kartu.kelas,
-            nama_pemegang: kartu.nama_pemegang || '',
-            message: `Sesi ${kartu.nama_pemegang || kartu.kelas} selesai diakhiri.`,
-          };
-        } else {
-          // Kartu lain (User 2) men-tap saat sesi User 1 masih aktif -> Tolak!
-          const activeCard = kartuList.find((k) => k.uid_kartu === currentActiveSession.uid_kartu);
-          const activeName = activeCard?.nama_pemegang || currentActiveSession.kelas || currentActiveSession.uid_kartu;
-          dbService._addTapLog(uid, null, 'kartu', 'otomatis', 'ditolak', 'sesi_kartu_lain_aktif', kartu.kelas, null);
-          return {
-            ok: false,
-            error: 'sesi_kartu_lain_aktif',
-            type: 'kartu',
-            activeCard: { ...currentActiveSession, nama_pemegang: activeCard?.nama_pemegang || '' },
-            message: `Sesi ${activeName} sedang aktif! Harap tunggu hingga sesi selesai atau diakhiri.`,
+            session: null,
           };
         }
+
+        const activeCard = kartuList.find((k) => k.uid_kartu === current.uid_kartu);
+        const activeName = activeCard?.nama_pemegang || activeCard?.kelas || current.kelas || current.uid_kartu;
+        dbService._addTapLog(kartu.uid_kartu, null, 'kartu', 'otomatis', 'ditolak', 'sesi_kartu_lain_aktif', kartu.kelas, null);
+        return {
+          success: false,
+          code: 'sesi_kartu_lain_aktif',
+          action: 'tolak',
+          message: `Sesi ${activeName} sedang aktif.`,
+          alat: null,
+          kelas: kartu.kelas,
+          session: sessionInfo(current),
+        };
       }
 
-      // Belum ada sesi aktif -> mulai sesi baru (10 detik)
-      const transaksi = dbService.getTransaksi();
-      const hasAktif  = transaksi.some((t) => t.uid_kartu === uid && t.status === 'dipinjam');
-      const jenis     = hasAktif ? 'kembali' : 'pinjam';
-      setSession(uid, jenis, kartu.kelas);
-      dbService._addTapLog(uid, null, 'kartu', 'otomatis', 'berhasil', null, kartu.kelas, null);
-      return { ok: true, type: 'kartu', action: 'mulai', jenis, kelas: kartu.kelas, nama_pemegang: kartu.nama_pemegang || '' };
+      // Sesi baru: tidak membaca status pinjaman kelas untuk menentukan mode.
+      const sess = setSession(kartu.uid_kartu, kartu.kelas);
+      dbService._addTapLog(kartu.uid_kartu, null, 'kartu', 'otomatis', 'berhasil', null, kartu.kelas, null);
+      return {
+        success: true,
+        code: 'sesi_dimulai',
+        action: 'mulai',
+        message: `Sesi ${kartu.kelas} aktif.`,
+        alat: null,
+        kelas: kartu.kelas,
+        session: sessionInfo(sess),
+      };
     }
 
-    // --- UID adalah alat ---
-    const alatList  = dbService.getAlatWithStok();
-    // Satu baris alat = satu unit fisik. `kode` adalah UID stiker RFID asli.
-    const alat      = alatList.find((a) => a.kode === uid || a.uid_rfid === uid);
+    // ---------- UID TAG ALAT ----------
+    const alatList = dbService.getAlatWithStok();
+    // Satu baris alat = satu unit fisik. `kode` adalah UID stiker RFID.
+    const alat = alatList.find(
+      (a) => String(a.kode || a.uid_rfid || '').toUpperCase() === uidNorm
+    );
 
     if (!alat) {
-      dbService._addTapLog(null, uid, 'alat', 'otomatis', 'ditolak', 'uid_tidak_dikenal', null, null);
-      return { ok: false, error: 'uid_tidak_dikenal', type: 'alat' };
+      dbService._addTapLog(null, uidNorm, 'alat', 'otomatis', 'ditolak', 'tag_tidak_dikenal', null, null);
+      return {
+        success: false,
+        code: 'tag_tidak_dikenal',
+        action: 'tolak',
+        message: 'Tag alat tidak dikenal.',
+        alat: { id: null, nama: null, kode: uidNorm },
+        kelas: null,
+        session: null,
+      };
     }
 
-    // Cari sesi kartu aktif (cek semua sesi — simulasi 1 device)
+    const alatInfo = { id: alat.id, nama: alat.nama, kode: alat.kode };
     const activeSessions = dbService.getActiveSessions();
-    if (activeSessions.length === 0) {
-      dbService._addTapLog(null, uid, 'alat', 'otomatis', 'ditolak', 'sesi_tidak_ada', null, alat.nama);
-      return { ok: false, error: 'sesi_tidak_ada', type: 'alat' };
+    const sess = activeSessions.length > 0 ? activeSessions[0] : null;
+
+    if (!sess) {
+      dbService._addTapLog(null, alat.kode, 'alat', 'otomatis', 'ditolak', 'sesi_tidak_aktif', null, alat.nama);
+      return {
+        success: false,
+        code: 'sesi_tidak_aktif',
+        action: 'tolak',
+        message: 'Sesi tidak aktif. Tap kartu kelas terlebih dahulu.',
+        alat: alatInfo,
+        kelas: null,
+        session: null,
+      };
     }
 
-    const sess = activeSessions[0];
     const kartuData = kartuList.find((k) => k.uid_kartu === sess.uid_kartu);
+    if (!kartuData || !kartuData.aktif) {
+      clearSession(sess.uid_kartu);
+      dbService._addTapLog(sess.uid_kartu, alat.kode, 'alat', 'otomatis', 'ditolak', 'kartu_nonaktif', kartuData?.kelas ?? sess.kelas, alat.nama);
+      return {
+        success: false,
+        code: 'kartu_nonaktif',
+        action: 'tolak',
+        message: 'Kartu RFID sudah tidak aktif.',
+        alat: alatInfo,
+        kelas: kartuData?.kelas ?? sess.kelas,
+        session: null,
+      };
+    }
 
-    const transaksi = dbService.getTransaksi();
+    const kelas = kartuData.kelas || sess.kelas || '';
+    const processed = Array.isArray(sess.processed) ? sess.processed : [];
 
-    // Barang sekali pakai tetap memakai alur lama (tanpa pelacakan tap ganda).
-    if (alat.tipe === "habis_pakai") {
+    // Anti-duplikat per sesi diperiksa sebelum transaksi apa pun diubah.
+    if (processed.includes(uidNorm)) {
+      dbService._addTapLog(sess.uid_kartu, alat.kode, 'alat', 'otomatis', 'ditolak', 'tap_duplikat', kelas, alat.nama);
+      return {
+        success: false,
+        code: 'tap_duplikat',
+        action: 'duplikat',
+        message: `${alat.nama} sudah diproses pada sesi ini.`,
+        alat: alatInfo,
+        kelas,
+        session: sessionInfo(sess),
+      };
+    }
+
+    // ---------- ALAT HABIS PAKAI ----------
+    if (alat.tipe === 'habis_pakai') {
       if (alat.stok_tersedia <= 0) {
-        dbService._addTapLog(sess.uid_kartu, uid, 'alat', 'otomatis', 'ditolak', 'stok_habis', kartuData?.kelas, alat.nama);
-        return { ok: false, error: 'stok_habis', type: 'alat' };
+        dbService._addTapLog(sess.uid_kartu, alat.kode, 'alat', 'otomatis', 'ditolak', 'stok_habis', kelas, alat.nama);
+        return {
+          success: false,
+          code: 'stok_habis',
+          action: 'tolak',
+          message: `Stok ${alat.nama} habis.`,
+          alat: alatInfo,
+          kelas,
+          session: sessionInfo(sess),
+        };
       }
+
       const permintaan = dbService.getPermintaan();
-      const existingReq = permintaan.find(p => p.uid_kartu === sess.uid_kartu && p.alat_id === alat.id && p.status === 'menunggu');
+      const existingReq = permintaan.find(
+        (p) => p.uid_kartu === sess.uid_kartu && p.alat_id === alat.id && p.status === 'menunggu'
+      );
+
       if (existingReq) {
-        dbService._addTapLog(sess.uid_kartu, uid, 'alat', 'otomatis', 'ditolak', 'permintaan_sudah_ada', kartuData?.kelas, alat.nama);
-        return { ok: false, error: 'permintaan_sudah_ada', type: 'alat' };
+        dbService._addTapLog(sess.uid_kartu, alat.kode, 'alat', 'otomatis', 'ditolak', 'permintaan_sudah_ada', kelas, alat.nama);
+        return {
+          success: false,
+          code: 'permintaan_sudah_ada',
+          action: 'tolak',
+          message: `${alat.nama} sudah menunggu persetujuan petugas.`,
+          alat: alatInfo,
+          kelas,
+          session: sessionInfo(sess),
+        };
       }
+
       const newReq = {
-        id: 'REQ-' + Date.now(),
+        id: 'REQ-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
         uid_kartu: sess.uid_kartu,
-        kelas: kartuData?.kelas ?? '',
+        kelas,
         alat_id: alat.id,
         nama_alat: alat.nama,
         satuan: alat.satuan || 'unit',
         status: 'menunggu',
-        waktu_tap: new Date().toISOString()
+        jumlah: null,
+        waktu_tap: new Date().toISOString(),
+        created_at: new Date().toISOString(),
       };
       permintaan.unshift(newReq);
       setStore('permintaan', permintaan);
-      extendSession(sess.uid_kartu);
-      dbService._addTapLog(sess.uid_kartu, uid, 'alat', 'otomatis', 'menunggu', null, kartuData?.kelas, alat.nama);
-      return { ok: true, type: 'alat', jenis: 'pinjam', alat: alat.nama, kelas: kartuData?.kelas, status: 'menunggu_persetujuan' };
-    }
 
-    // Cegah tap ganda: UID alat yang sudah diproses pada sesi ini tidak boleh
-    // langsung dianggap sebagai pengembalian.
-    const processed = Array.isArray(sess.processed) ? sess.processed : [];
-    if (processed.includes(uid)) {
-      dbService._addTapLog(sess.uid_kartu, uid, 'alat', 'otomatis', 'ditolak', 'tap_duplikat', kartuData?.kelas, alat.nama);
+      markToolProcessed(sess.uid_kartu, uidNorm);
+      dbService._addTapLog(sess.uid_kartu, alat.kode, 'alat', 'otomatis', 'menunggu', null, kelas, alat.nama);
       return {
-        ok: false,
-        error: 'tap_duplikat',
-        type: 'alat',
-        alat: alat.nama,
-        message: `${alat.nama} sudah diproses pada sesi ini.`,
+        success: true,
+        code: 'menunggu_persetujuan',
+        action: 'menunggu',
+        message: `${alat.nama} menunggu persetujuan petugas.`,
+        alat: alatInfo,
+        kelas,
+        session: sessionInfo(sess),
       };
     }
 
-    // Satu baris alat = satu unit fisik. Cek seluruh transaksi aktif unit ini,
-    // bukan hanya milik kartu yang sedang memegang sesi.
+    // ---------- ALAT PINJAM ----------
+    const transaksi = dbService.getTransaksi();
     const activeRows = transaksi.filter(
       (t) => t.alat_id === alat.id && t.status === 'dipinjam'
     );
-    const ownTrx = activeRows.find((t) => t.uid_kartu === sess.uid_kartu);
+    const ownTrx = activeRows.find(
+      (t) => t.uid_kartu === sess.uid_kartu || (kelas && t.kelas === kelas)
+    );
 
     if (activeRows.length > 0 && !ownTrx) {
       const peminjamKelas = activeRows[0]?.kelas || 'kelas lain';
-      dbService._addTapLog(sess.uid_kartu, uid, 'alat', 'otomatis', 'ditolak', 'alat_sedang_dipinjam', kartuData?.kelas, alat.nama);
+      dbService._addTapLog(sess.uid_kartu, alat.kode, 'alat', 'otomatis', 'ditolak', 'sedang_dipinjam', kelas, alat.nama);
       return {
-        ok: false,
-        error: 'alat_sedang_dipinjam',
-        type: 'alat',
-        alat: alat.nama,
-        peminjam_kelas: peminjamKelas,
+        success: false,
+        code: 'sedang_dipinjam',
+        action: 'tolak',
         message: `${alat.nama} sedang dipinjam oleh ${peminjamKelas}.`,
+        alat: alatInfo,
+        kelas,
+        peminjam_kelas: peminjamKelas,
+        session: sessionInfo(sess),
       };
     }
 
-    let jenis;
     if (ownTrx) {
-      // Kembalikan hanya baris transaksi aktif milik kartu ini.
-      // Bandingkan referensi objek agar tepat satu baris berubah.
-      const updated = transaksi.map((t) =>
-        t === ownTrx
-          ? { ...t, status: 'dikembalikan', waktu_kembali: new Date().toISOString() }
+      // Kembalikan hanya transaksi aktif milik kelas ini.
+      const now = new Date().toISOString();
+      const updated = transaksi.map((t) => (
+        t.alat_id === alat.id &&
+        t.status === 'dipinjam' &&
+        (t.uid_kartu === sess.uid_kartu || (kelas && t.kelas === kelas))
+          ? { ...t, status: 'dikembalikan', waktu_kembali: now }
           : t
-      );
+      ));
       setStore('transaksi', updated);
-      jenis = 'kembali';
-    } else {
-      // Pinjam — cek stok unit
-      if (alat.stok_tersedia <= 0) {
-        dbService._addTapLog(sess.uid_kartu, uid, 'alat', 'otomatis', 'ditolak', 'stok_habis', kartuData?.kelas, alat.nama);
-        return { ok: false, error: 'stok_habis', type: 'alat' };
-      }
-      const newTrx = {
-        id: 'TRX-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-        uid_kartu: sess.uid_kartu,
-        kelas: kartuData?.kelas ?? '',
-        alat_id: alat.id,
-        nama_alat: alat.nama,
-        status: 'dipinjam',
-        sumber: 'otomatis',
-        kondisi_pinjam: 'baik',
-        kondisi_kembali: null,
-        waktu_pinjam: new Date().toISOString(),
-        waktu_kembali: null,
-        petugas: null,
-        catatan: null,
+
+      markToolProcessed(sess.uid_kartu, uidNorm);
+      dbService._addTapLog(sess.uid_kartu, alat.kode, 'kembali', 'otomatis', 'berhasil', null, kelas, alat.nama);
+      return {
+        success: true,
+        code: 'dikembalikan',
+        action: 'kembali',
+        message: `${alat.nama} berhasil dikembalikan.`,
+        alat: alatInfo,
+        kelas,
+        session: sessionInfo(sess),
       };
-      const all = dbService.getTransaksi();
-      all.unshift(newTrx);
-      setStore('transaksi', all);
-      jenis = 'pinjam';
     }
 
-    // Tap berhasil: catat UID agar tap berikutnya di sesi yang sama ditolak,
-    // sekaligus perpanjang sesi 10 detik.
-    markToolProcessed(sess.uid_kartu, uid);
-    dbService._addTapLog(sess.uid_kartu, uid, jenis, 'otomatis', 'berhasil', null, kartuData?.kelas, alat.nama);
-    return { ok: true, type: 'alat', jenis, alat: alat.nama, kelas: kartuData?.kelas };
+    if (alat.stok_tersedia <= 0) {
+      dbService._addTapLog(sess.uid_kartu, alat.kode, 'alat', 'otomatis', 'ditolak', 'stok_habis', kelas, alat.nama);
+      return {
+        success: false,
+        code: 'stok_habis',
+        action: 'tolak',
+        message: `${alat.nama} tidak tersedia.`,
+        alat: alatInfo,
+        kelas,
+        session: sessionInfo(sess),
+      };
+    }
+
+    const now = new Date().toISOString();
+    const newTrx = {
+      id: 'TRX-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      uid_kartu: sess.uid_kartu,
+      kelas,
+      alat_id: alat.id,
+      nama_alat: alat.nama,
+      status: 'dipinjam',
+      sumber: 'otomatis',
+      kondisi_pinjam: 'baik',
+      kondisi_kembali: null,
+      waktu_pinjam: now,
+      waktu_kembali: null,
+      petugas: null,
+      catatan: null,
+      created_at: now,
+    };
+    transaksi.unshift(newTrx);
+    setStore('transaksi', transaksi);
+
+    markToolProcessed(sess.uid_kartu, uidNorm);
+    dbService._addTapLog(sess.uid_kartu, alat.kode, 'pinjam', 'otomatis', 'berhasil', null, kelas, alat.nama);
+    return {
+      success: true,
+      code: 'dipinjam',
+      action: 'pinjam',
+      message: `${alat.nama} berhasil dipinjam.`,
+      alat: alatInfo,
+      kelas,
+      session: sessionInfo(sess),
+    };
   },
 
   // ── processManual: transaksi manual petugas ──────────────────

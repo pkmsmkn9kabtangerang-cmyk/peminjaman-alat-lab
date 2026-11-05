@@ -33,7 +33,7 @@ supabase/
 
 | Function            | Method          | Path                                           | Akses                 |
 | ------------------- | --------------- | ---------------------------------------------- | --------------------- |
-| `rfid-tap`          | POST            | `/rfid-tap`                                    | ESP32 / service-role  |
+| `rfid-tap`          | POST            | `/rfid-tap`                                    | ESP32 / simulator (device headers) |
 | `create-petugas`    | POST            | `/create-petugas`                              | Admin                 |
 | `process-manual`    | POST            | `/process-manual`                              | Admin, Petugas        |
 | `manage-alat`       | GET             | `/manage-alat`                                 | Semua (authenticated) |
@@ -71,6 +71,8 @@ Di Supabase Dashboard → Edge Functions → Secrets, tambahkan:
 | `SUPABASE_ANON_KEY`         | Anon key (otomatis tersedia)               |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key (otomatis tersedia)       |
 | `SITE_URL`                  | URL frontend (untuk redirect email invite) |
+| `RFID_DEVICE_ID`            | Device ID yang diizinkan (default `esp32-lab-01`) |
+| `RFID_DEVICE_KEY`           | Device key yang diizinkan (default `sim-key`, ganti di produksi) |
 
 ---
 
@@ -123,10 +125,22 @@ supabase secrets set SITE_URL=https://your-frontend-domain.com
 # Jalankan Supabase lokal
 supabase start
 
-# Test rfid-tap
+# Terapkan migration (termasuk 012_rfid_atomic_tap.sql)
+supabase db reset
+
+# Test rfid-tap (wajib menyertakan header device)
 curl -X POST http://localhost:54321/functions/v1/rfid-tap \
   -H "Content-Type: application/json" \
+  -H "apikey: <anon-key>" \
+  -H "Authorization: Bearer <anon-key>" \
+  -H "x-device-id: esp32-lab-01" \
+  -H "x-device-key: sim-key" \
   -d '{"uid":"ABC123"}'
+
+# Respons bisnis selalu HTTP 200 dengan kontrak:
+# { "success": bool, "code": string, "action": string, "message": string,
+#   "alat": object|null, "kelas": string|null, "session": object|null }
+# Periksa `success`, bukan hanya status HTTP.
 
 # Test dashboard-stats
 curl http://localhost:54321/functions/v1/dashboard-stats?days=7 \
@@ -138,6 +152,6 @@ curl http://localhost:54321/functions/v1/dashboard-stats?days=7 \
 ## 🔐 Catatan Keamanan
 
 - **Service Role Key** tidak pernah dikirim ke frontend. Hanya digunakan di dalam Edge Functions.
-- Semua fungsi yang mengubah data memverifikasi JWT dan role dari database (bukan dari body request).
-- `rfid-tap` menggunakan service role untuk bisa menulis ke `tap_log` tanpa JWT (untuk ESP32).
+- Semua fungsi web yang mengubah data memverifikasi JWT dan role dari database (bukan dari body request).
+- `rfid-tap` memverifikasi header `x-device-id` / `x-device-key`, lalu memakai service role **hanya di server** untuk memanggil RPC `process_rfid_tap`. Service role tidak pernah dikirim ke ESP32.
 - Hapus massal (`clear=riwayat/taplog`) hanya dapat dilakukan oleh `admin`.

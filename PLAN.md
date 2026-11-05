@@ -151,7 +151,7 @@ Semua backend serverless berlokasi di direktori `supabase/functions/` (Deno runt
 
 | Function | Method | Otorisasi | Deskripsi & Logic |
 |---|---|---|---|
-| **`rfid-tap`** | `POST` | Anon / Service Role (`--no-verify-jwt`) | Endpoint untuk ESP32 & Simulator. Mengidentifikasi UID kartu vs stiker alat, mengelola sesi aktif 10 detik, mencatat peminjaman/pengembalian otomatis, dan mencatat log audit ke `tap_log`. |
+| **`rfid-tap`** | `POST` | Device headers (`x-device-id`, `x-device-key`) | Endpoint untuk ESP32 & Simulator. Memvalidasi device, lalu memanggil RPC PostgreSQL `process_rfid_tap` yang menentukan sesi, peminjaman, pengembalian, penolakan, atau duplikat secara atomik. Sesi aktif 20 detik dan log audit ditulis ke `tap_log`. |
 | **`create-petugas`** | `POST` | Admin (JWT Auth) | Menggunakan Supabase Service Role untuk memanggil `auth.admin.inviteUserByEmail`. Mengirim email aktivasi resmi, menetapkan role `petugas`, dan membuat entri di tabel `profiles`. |
 | **`process-manual`** | `POST` | Admin, Petugas (JWT) | Memproses peminjaman dan pengembalian yang dilakukan manual oleh staf via web (memvalidasi stok, update status transaksi, isi catatan & kondisi). |
 | **`manage-alat`** | `GET, POST, PUT, DELETE`| Read: Authenticated<br>Write: Admin | CRUD inventaris alat lab, kode alat, kategori, jumlah total, dan pelaporan unit rusak. |
@@ -168,17 +168,21 @@ Semua backend serverless berlokasi di direktori `supabase/functions/` (Deno runt
 1. **Tap 1 (Kartu Kelas)**:
    - ESP32 membaca UID kartu kelas.
    - Server mengecek apakah kartu terdaftar dan aktif.
-   - Sesi dibuka selama 10 detik.
-   - Sistem menentukan mode: jika kelas masih memiliki alat yang belum dikembalikan, mode otomatis siap **kembali / pinjam**.
-   - Buzzer berbunyi 2× beep, LCD menampilkan nama kelas & status standby.
+   - Sesi dibuka selama 20 detik.
+   - Tidak ada mode global PINJAM/KEMBALI. Setiap tap alat diputuskan
+     sendiri berdasarkan kondisi unit alat tersebut.
+   - Buzzer berbunyi 2× beep, LCD menampilkan kelas & status sesi aktif.
 2. **Tap 2..n (Stiker Alat)**:
    - Siswa menempelkan stiker alat yang dipinjam/dikembalikan.
-   - Jika alat tersebut sedang dipinjam oleh kelas tersebut -> **STATUS: DIKEMBALIKAN** (stok bertambah 1).
-   - Jika alat belum dipinjam dan stok > 0 -> **STATUS: DIPINJAM** (stok berkurang 1).
-   - Setiap tap alat memperpanjang durasi sesi sebanyak 10 detik.
+   - Jika alat tersebut sedang dipinjam oleh kelas yang sama -> `DIKEMBALIKAN`.
+   - Jika alat sedang dipinjam kelas lain -> `SEDANG DIPINJAM`.
+   - Jika alat belum dipinjam dan tersedia -> `DIPINJAM`.
+   - Jika UID alat yang sama ditap lagi pada sesi yang sama -> `TAP DUPLIKAT`.
+   - Setiap tap alat yang berhasil memperpanjang durasi sesi 20 detik.
    - Buzzer berbunyi 1× beep (sukses) atau 3× beep (gagal/stok habis/tag tidak dikenal).
 3. **Penutupan Sesi**:
-   - Siswa tap kartu kelas sekali lagi, ATAU durasi 10 detik habis tanpa ada tap baru.
+   - Siswa tap kartu kelas sekali lagi, ATAU durasi 20 detik habis tanpa ada tap baru.
+   - Tap alat saat tidak ada sesi -> `SESI TIDAK AKTIF`.
 
 ---
 

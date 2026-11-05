@@ -3,8 +3,8 @@
 // Mode Supabase: tap → callRfidTap() ke edge function rfid-tap
 // Mode local: tap → dbService.processTap() (localStorage)
 
-import { useState, useEffect, useRef } from 'react';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { callRfidTap } from '../lib/api';
 import { dbService, SESSION_DURATION_SECONDS } from '../services/store';
 import { getErrorMessage } from '../lib/handleError';
@@ -29,14 +29,67 @@ export default function SimulasiIotPage() {
 
   const prevSessionUidRef = useRef(null);
 
-  const loadData = () => {
+  const applySession = useCallback((session) => {
+    if (!session?.uid_kartu || !session?.expires_at) {
+      setActiveSession(null);
+      return null;
+    }
+    const expires = new Date(session.expires_at);
+    if (Number.isNaN(expires.getTime()) || expires.getTime() <= Date.now()) {
+      setActiveSession(null);
+      return null;
+    }
+    const next = {
+      uid_kartu: session.uid_kartu,
+      kelas: session.kelas || '',
+      nama_pemegang: session.nama_pemegang || null,
+      expires,
+    };
+    setActiveSession(next);
+    return next;
+  }, []);
+
+  // Sesi backend adalah sumber kebenaran. `session: null` dari respons
+  // penolakan belum tentu berarti sesi berakhir (mis. tag tidak dikenal),
+  // jadi hanya kode tertentu yang boleh membersihkan tampilan sesi.
+  const syncSessionFromResponse = useCallback((res) => {
+    if (res?.session?.uid_kartu) {
+      applySession(res.session);
+      return;
+    }
+    if (['sesi_selesai', 'sesi_tidak_aktif'].includes(res?.code)) {
+      setActiveSession(null);
+    }
+  }, [applySession]);
+
+  const loadData = useCallback(async () => {
+    if (isSupabaseConfigured) {
+      // Simulator web membaca katalog nyata dari database. Status sesi
+      // diperbarui dari respons backend pada setiap tap.
+      const [kartuRes, alatRes] = await Promise.all([
+        supabase
+          .from('kartu_rfid')
+          .select('uid_kartu, kelas, nama_pemegang, aktif')
+          .order('kelas'),
+        supabase
+          .from('v_list_barang')
+          .select('id, kode, nama, tipe, jumlah_total, stok_tersedia, satuan')
+          .order('nama'),
+      ]);
+      if (kartuRes.error) throw kartuRes.error;
+      if (alatRes.error) throw alatRes.error;
+      setKartuList(kartuRes.data ?? []);
+      setAlatList(alatRes.data ?? []);
+      return null;
+    }
+
     setKartuList(dbService.getKartu());
     setAlatList(dbService.getAlatWithStok());
     const sessions = dbService.getActiveSessions();
     const current = sessions.length > 0 ? sessions[0] : null;
     setActiveSession(current);
     return current;
-  };
+  }, []);
 
   const addLog = (msg, type = 'info') => {
     setLogs((prev) => [
@@ -46,21 +99,43 @@ export default function SimulasiIotPage() {
   };
 
   useEffect(() => {
-    loadData();
-    window.addEventListener('simlab_storage_updated', loadData);
-    const t = setInterval(loadData, 1000);
-    return () => {
-      window.removeEventListener('simlab_storage_updated', loadData);
-      clearInterval(t);
-    };
-  }, []);
+    let cancelled = false;
 
-  // Countdown timer untuk sesi aktif (10 detik)
+    const run = async () => {
+      try {
+        await loadData();
+      } catch (err) {
+        if (!cancelled) {
+          console.warn('[SimulasiKartu] gagal memuat data:', err?.message || err);
+        }
+      }
+    };
+
+    run();
+
+    // Polling hanya untuk mode lokal (localStorage). Mode Supabase
+    // memakai data dari database dan diperbarui setelah setiap tap.
+    if (!isSupabaseConfigured) {
+      window.addEventListener('simlab_storage_updated', run);
+      const t = setInterval(run, 1000);
+      return () => {
+        cancelled = true;
+        window.removeEventListener('simlab_storage_updated', run);
+        clearInterval(t);
+      };
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadData]);
+
+  // Countdown timer untuk sesi aktif (20 detik)
   useEffect(() => {
     const updateCountdown = () => {
       if (!activeSession) {
         if (prevSessionUidRef.current) {
-          addLog('[SYS] Waktu sesi habis (timeout 10s). Slot kartu kini bebas untuk kelas berikutnya.', 'system');
+          addLog('[SYS] Waktu sesi habis (timeout 20s). Slot kartu kini bebas untuk kelas berikutnya.', 'system');
           prevSessionUidRef.current = null;
         }
         setTimeLeft(0);
@@ -74,12 +149,10 @@ export default function SimulasiIotPage() {
       setTimeLeft(diff);
 
       if (diff === 0) {
-        // Otomatis bersihkan sesi ketika waktu habis
-        const current = loadData();
-        if (!current) {
-          addLog('[SYS] Waktu sesi 10s telah berakhir. Slot kartu kembali bebas.', 'system');
-          prevSessionUidRef.current = null;
-        }
+        // Sesi backend sudah kedaluwarsa; jangan tampilkan sesi lama.
+        setActiveSession(null);
+        addLog('[SYS] Waktu sesi 20s telah berakhir. Slot kartu kembali bebas.', 'system');
+        prevSessionUidRef.current = null;
       }
     };
 
@@ -100,87 +173,96 @@ export default function SimulasiIotPage() {
       if (isSupabaseConfigured) {
         // ── Mode Supabase: kirim ke edge function rfid-tap ──
         // x-device-key di sini adalah sim-key, hanya untuk testing.
-        // Di prod nyata, kunci ada di firmware ESP32 dan di tabel devices.
+        // Di prod nyata, kunci ada di firmware ESP32 dan di secrets server.
         res = await callRfidTap(uid, 'web-simulator', import.meta.env.VITE_SIM_DEVICE_KEY ?? 'sim-key');
       } else {
         // ── Mode local: proses via localStorage store ──
         await new Promise((r) => setTimeout(r, 450)); // simulasi latency
-        res = dbService.processTap(uid, 'simulator-01');
+        res = dbService.processTap(uid);
       }
 
-      if (res.ok) {
-        if (res.action === 'selesai') {
+      // Kontrak backend: { success, code, action, message, alat, kelas, session }.
+      // HTTP 200 tidak berarti berhasil; `success` yang menentukan.
+      syncSessionFromResponse(res);
+
+      // Kartu nonaktif: hapus tampilan sesi hanya jika kartu itu pemilik
+      // sesi, atau jika penolakan berasal dari tap alat (backend sudah
+      // menghapus sesi milik kartu tersebut).
+      if (res.code === 'kartu_nonaktif' && (res.alat || activeSession?.uid_kartu === uid)) {
+        setActiveSession(null);
+      }
+
+      const alatName = res.alat?.nama || label;
+
+      if (res.success) {
+        if (res.code === 'sesi_dimulai') {
+          addLog(`[RX] OK Sesi ${res.kelas} aktif - Durasi ${SESSION_DURATION_SECONDS} detik`, 'success');
+        } else if (res.code === 'sesi_selesai') {
           addLog(`[RX] OK Sesi Selesai: ${res.kelas} mengakhiri sesi. Slot kartu kini bebas!`, 'success');
-        } else if (res.action === 'mulai') {
-          addLog(`[RX] OK Sesi ${res.kelas} aktif (${res.jenis === 'pinjam' ? 'Mode Pinjam' : 'Mode Kembali'}) - Durasi 10 detik`, 'success');
-        } else if (res.type === 'alat') {
-          if (res.status === 'menunggu_persetujuan') {
-            addLog(
-              `[RX] ⏳ Consumable "${res.alat}" (${res.kelas}) dicatat! Menunggu persetujuan petugas di Dashboard.`,
-              'success'
-            );
-          } else {
-            addLog(
-              `[RX] OK ${res.jenis === 'pinjam' ? 'Pinjam' : 'Kembali'} "${res.alat}" (${res.kelas}) - Sesi di-reset ke 10s`,
-              'success'
-            );
-          }
+        } else if (res.code === 'dipinjam') {
+          addLog(`[RX] OK Pinjam "${alatName}" (${res.kelas}) - Sesi di-reset ke ${SESSION_DURATION_SECONDS}s`, 'success');
+        } else if (res.code === 'dikembalikan') {
+          addLog(`[RX] OK Kembali "${alatName}" (${res.kelas}) - Sesi di-reset ke ${SESSION_DURATION_SECONDS}s`, 'success');
+        } else if (res.code === 'menunggu_persetujuan') {
+          addLog(
+            `[RX] Consumable "${alatName}" (${res.kelas}) dicatat! Menunggu persetujuan petugas di Dashboard.`,
+            'success'
+          );
         } else {
-          addLog(`[RX] OK ${res.jenis ?? ''} ${res.alat || res.kelas || ''}`, 'success');
+          addLog(`[RX] OK ${res.message || alatName}`, 'success');
         }
       } else {
-        if (res.error === 'permintaan_sudah_ada') {
+        if (res.code === 'permintaan_sudah_ada') {
           addLog(
-            `[RX] PERINGATAN: Permintaan alat consumable "${label}" sudah tercatat dan sedang menunggu persetujuan di Dashboard.`,
+            `[RX] PERINGATAN: Permintaan alat consumable "${alatName}" sudah tercatat dan sedang menunggu persetujuan di Dashboard.`,
             'error'
           );
-        } else if (res.error === 'sesi_kartu_lain_aktif') {
-          const activeName = res.activeCard?.kelas || res.activeCard?.uid_kartu || 'lain';
+        } else if (res.code === 'sesi_kartu_lain_aktif') {
+          const activeName = res.session?.kelas || res.session?.nama_pemegang || res.session?.uid_kartu || 'lain';
           addLog(
-            `[RX] TOLAK: Kartu ${label} tidak bisa tap! Sesi ${activeName} sedang aktif. Tunggu selesai atau habis (10s).`,
+            `[RX] TOLAK: Kartu ${label} tidak bisa tap! Sesi ${activeName} sedang aktif. Tunggu selesai atau habis (${SESSION_DURATION_SECONDS}s).`,
             'error'
           );
-        } else if (res.error === 'kartu_nonaktif') {
+        } else if (res.code === 'kartu_nonaktif') {
           addLog(`[RX] TOLAK: Kartu ${label} tidak aktif / diblokir.`, 'error');
-        } else if (res.error === 'sesi_tidak_ada') {
-          addLog(`[RX] TOLAK: Belum ada kartu yang di-tap atau sesi sudah habis (10 detik).`, 'error');
-        } else if (res.error === 'stok_habis') {
-          addLog(`[RX] TOLAK: Stok alat "${label}" habis.`, 'error');
-        } else if (res.error === 'alat_sedang_dipinjam') {
+        } else if (res.code === 'sesi_tidak_aktif') {
+          addLog(`[RX] TOLAK: Belum ada kartu yang di-tap atau sesi sudah habis (${SESSION_DURATION_SECONDS} detik).`, 'error');
+        } else if (res.code === 'stok_habis') {
+          addLog(`[RX] TOLAK: Stok alat "${alatName}" habis.`, 'error');
+        } else if (res.code === 'sedang_dipinjam') {
           const peminjam = res.peminjam_kelas ? ` oleh ${res.peminjam_kelas}` : '';
-          addLog(`[RX] TOLAK: Alat "${label}" sedang dipinjam${peminjam}.`, 'error');
-        } else if (res.error === 'tap_duplikat') {
+          addLog(`[RX] TOLAK: Alat "${alatName}" sedang dipinjam${peminjam}.`, 'error');
+        } else if (res.code === 'tap_duplikat') {
           addLog(
-            `[RX] TOLAK: "${label}" sudah diproses pada sesi ini. Akhiri sesi lalu mulai sesi baru.`,
+            `[RX] TOLAK: "${alatName}" sudah diproses pada sesi ini. Akhiri sesi lalu mulai sesi baru.`,
             'error'
           );
-        } else if (res.error === 'uid_tidak_dikenal') {
+        } else if (res.code === 'tag_tidak_dikenal') {
           addLog(`[RX] TOLAK: UID "${uid}" belum terdaftar di sistem.`, 'error');
+        } else if (res.code === 'migration_belum_diterapkan') {
+          addLog('[RX] ERROR: RPC process_rfid_tap belum ada. Terapkan migration 012.', 'error');
         } else {
-          addLog(`[RX] TOLAK: ${res.message || getErrorMessage(res.error)}`, 'error');
+          addLog(`[RX] TOLAK: ${res.message || getErrorMessage(res.code)}`, 'error');
         }
       }
     } catch (err) {
       console.error('[SimulasiKartu] handleTap error:', err);
-      if (err?.error === 'sesi_tidak_ada') {
-        addLog(`[RX] TOLAK: Belum ada sesi kartu aktif.`, 'error');
-      } else if (err?.error === 'stok_habis') {
-        addLog(`[RX] TOLAK: Stok alat habis.`, 'error');
-      } else if (err?.error === 'kartu_nonaktif') {
-        addLog(`[RX] TOLAK: Kartu diblokir.`, 'error');
-      } else if (err?.error === 'alat_sedang_dipinjam') {
-        const peminjam = err.peminjam_kelas ? ` oleh ${err.peminjam_kelas}` : '';
-        addLog(`[RX] TOLAK: Alat "${label}" sedang dipinjam${peminjam}.`, 'error');
-      } else if (err?.error === 'tap_duplikat') {
-        addLog(
-          `[RX] TOLAK: "${label}" sudah diproses pada sesi ini. Akhiri sesi lalu mulai sesi baru.`,
-          'error'
-        );
+      const code = err?.code;
+      if (code === 'respons_invalid') {
+        addLog(`[RX] ERROR: Respons server tidak valid. ${err?.message || ''}`.trim(), 'error');
+      } else if (code === 'koneksi_gagal') {
+        addLog(`[RX] ERROR: Koneksi ke server gagal. Periksa jaringan lalu coba lagi.`, 'error');
+      } else if (code === 'migration_belum_diterapkan') {
+        addLog('[RX] ERROR: RPC process_rfid_tap belum ada. Terapkan migration 012.', 'error');
       } else {
-        addLog(`[RX] ERROR: ${err?.message || String(err)}`, 'error');
+        addLog(`[RX] ERROR: ${err?.message || getErrorMessage(code)}`, 'error');
       }
     } finally {
-      loadData();
+      try {
+        await loadData();
+      } catch (err) {
+        console.warn('[SimulasiKartu] gagal memuat katalog:', err?.message || err);
+      }
       setLoading(false);
     }
   };
@@ -190,7 +272,7 @@ export default function SimulasiIotPage() {
     handleTap(activeSession.uid_kartu, activeSession.kelas || activeSession.uid_kartu);
   };
 
-  const maxDuration = SESSION_DURATION_SECONDS || 10;
+  const maxDuration = SESSION_DURATION_SECONDS || 20;
   const progressPercent = Math.min(100, Math.max(0, (timeLeft / maxDuration) * 100));
 
   return (
@@ -203,7 +285,7 @@ export default function SimulasiIotPage() {
             Simulator Perangkat IoT (ESP32 RFID)
           </h2>
           <p className="text-xs text-muted">
-            Uji coba alur tap kartu RFID dan stiker alat. Sesi dibatasi 10 detik dan mengunci akses untuk kelas lain selama sesi aktif.
+            Uji coba alur tap kartu RFID dan stiker alat. Sesi dibatasi {SESSION_DURATION_SECONDS} detik dan mengunci akses untuk kelas lain selama sesi aktif.
           </p>
         </div>
         <div className={`inline-flex items-center gap-2 self-stretch rounded-full border px-3 py-1.5 text-xs font-semibold shadow-sm sm:self-auto ${
@@ -227,11 +309,15 @@ export default function SimulasiIotPage() {
                 1. Tap Kartu Kelas
               </h3>
               <span className="text-[11px] text-muted font-mono">
-                {activeSession ? 'Status: 1 Sesi Aktif' : 'Status: Siap / Bebas'}
+                {activeSession
+                  ? 'Status: 1 Sesi Aktif'
+                  : isSupabaseConfigured
+                  ? 'Status: Menunggu Tap'
+                  : 'Status: Siap / Bebas'}
               </span>
             </div>
             <p className="text-xs text-muted mb-4">
-              Tap kartu kelas untuk membuka sesi (10 detik). Jika User 1 sedang aktif, User 2 yang men-tap akan ditolak sampai User 1 selesai men-tap kembali atau waktu habis.
+              Tap kartu kelas untuk membuka sesi ({SESSION_DURATION_SECONDS} detik). Jika User 1 sedang aktif, User 2 yang men-tap akan ditolak sampai User 1 selesai men-tap kembali atau waktu habis.
             </p>
 
             <div className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
@@ -287,7 +373,7 @@ export default function SimulasiIotPage() {
                         </span>
                       ) : (
                         <span className="text-muted group-hover:text-blue-600">
-                          Tap untuk mulai (10s)
+                          Tap untuk mulai ({SESSION_DURATION_SECONDS}s)
                         </span>
                       )}
                     </div>
@@ -314,7 +400,7 @@ export default function SimulasiIotPage() {
             </div>
             <p className="text-xs text-muted mb-4">
               {activeSession
-                ? `Alat yang di-tap otomatis dipinjam/dikembalikan atas nama ${activeSession.kelas}. Setiap tap alat akan mereset waktu sesi kembali ke 10 detik.`
+                ? `Alat yang di-tap otomatis dipinjam/dikembalikan atas nama ${activeSession.kelas}. Setiap tap alat akan mereset waktu sesi kembali ke ${SESSION_DURATION_SECONDS} detik.`
                 : 'Tap alat saat sesi belum aktif akan ditolak sistem (membutuhkan otentikasi kartu terlebih dahulu).'}
             </p>
 
@@ -387,14 +473,14 @@ export default function SimulasiIotPage() {
                     <p className="text-base font-extrabold text-blue-900 leading-tight">
                       {activeSession.kelas || activeSession.uid_kartu}
                     </p>
-                    <Badge status={activeSession.jenis} />
+                    <Badge status="aktif" />
                   </div>
                   <p className="text-[11px] font-mono text-blue-700/80 mt-0.5">
                     UID: {activeSession.uid_kartu}
                   </p>
                 </div>
 
-                {/* Progress bar countdown 10s */}
+                {/* Progress bar countdown sesi */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-blue-800 font-semibold flex items-center gap-1">
@@ -417,7 +503,7 @@ export default function SimulasiIotPage() {
                   <p className="font-semibold text-blue-950 flex items-center gap-1 mb-1">
                     <IconLock size={12} className="text-blue-600" /> Akses Terkunci:
                   </p>
-                  User lain tidak dapat men-tap kartu sampai sesi ini diakhiri atau waktu 10s habis.
+                  User lain tidak dapat men-tap kartu sampai sesi ini diakhiri atau waktu {SESSION_DURATION_SECONDS}s habis.
                 </div>
 
                 <button
@@ -434,9 +520,13 @@ export default function SimulasiIotPage() {
                 <div className="inline-flex p-2 rounded-full bg-gray-100 text-gray-400 mb-2">
                   <IconIdBadge2 size={24} />
                 </div>
-                <p className="text-xs font-medium text-gray-700">Slot Kartu Bebas</p>
+                <p className="text-xs font-medium text-gray-700">
+                  {isSupabaseConfigured ? 'Belum Ada Tap / Sesi Tidak Aktif' : 'Slot Kartu Bebas'}
+                </p>
                 <p className="text-[11px] text-muted mt-1 leading-relaxed">
-                  Silakan tap salah satu kartu kelas di sebelah kiri untuk membuka sesi baru (durasi 10 detik).
+                  {isSupabaseConfigured
+                    ? 'Status sesi diperbarui dari respons backend setiap kali tap. Tap kartu kelas untuk membuka sesi baru.'
+                    : `Silakan tap salah satu kartu kelas di sebelah kiri untuk membuka sesi baru (durasi ${SESSION_DURATION_SECONDS} detik).`}
                 </p>
               </div>
             )}

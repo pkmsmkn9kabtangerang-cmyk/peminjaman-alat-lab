@@ -59,6 +59,9 @@ export async function callFunction(name, body, options = {}) {
 /**
  * Shortcut untuk POST ke edge function rfid-tap (dipakai oleh Simulasi IoT).
  * Di production, ini dilakukan oleh firmware ESP32 (bukan frontend).
+ *
+ * Respons bisnis (termasuk penolakan) tetap HTTP 200 dan dikembalikan
+ * apa adanya. Pemanggil wajib memeriksa `json.success`, bukan status HTTP.
  */
 export async function callRfidTap(uid, deviceId = 'web-simulator', deviceKey = 'sim-key') {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -68,30 +71,49 @@ export async function callRfidTap(uid, deviceId = 'web-simulator', deviceKey = '
     throw new Error('Supabase belum dikonfigurasi. Isi VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY di file .env');
   }
 
-  const res = await fetch(`${supabaseUrl}/functions/v1/rfid-tap`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': supabaseAnon,
-      'x-device-id': deviceId,
-      'x-device-key': deviceKey,
-    },
-    body: JSON.stringify({ uid }),
-  });
-
-  let json;
+  let res;
   try {
-    json = await res.json();
+    res = await fetch(`${supabaseUrl}/functions/v1/rfid-tap`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseAnon,
+        'Authorization': `Bearer ${supabaseAnon}`,
+        'x-device-id': deviceId,
+        'x-device-key': deviceKey,
+      },
+      body: JSON.stringify({ uid }),
+    });
   } catch {
-    throw new Error(`HTTP ${res.status}: respons bukan JSON. Periksa URL edge function.`);
-  }
-
-  if (!res.ok || json?.ok === false) {
-    const err = new Error(json?.message || `HTTP ${res.status}`);
-    err.error = json?.error;
-    err.type = json?.type;
+    const err = new Error('Koneksi ke server gagal. Periksa jaringan lalu coba lagi.');
+    err.code = 'koneksi_gagal';
     throw err;
   }
+
+  const raw = await res.text();
+  let json;
+  try {
+    json = raw ? JSON.parse(raw) : null;
+  } catch {
+    const err = new Error(`HTTP ${res.status}: respons bukan JSON. Periksa URL edge function.`);
+    err.code = 'respons_invalid';
+    throw err;
+  }
+
+  if (!json || typeof json !== 'object') {
+    const err = new Error(`HTTP ${res.status}: respons server kosong.`);
+    err.code = 'respons_invalid';
+    throw err;
+  }
+
+  if (!res.ok) {
+    const err = new Error(json.message || `HTTP ${res.status}`);
+    err.code = json.code || 'server_error';
+    err.success = false;
+    err.payload = json;
+    throw err;
+  }
+
   return json;
 }
 

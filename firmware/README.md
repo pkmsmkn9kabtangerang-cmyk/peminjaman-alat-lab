@@ -60,11 +60,17 @@ Sketch: [`simlab_rfid/simlab_rfid.ino`](simlab_rfid/simlab_rfid.ino)
    (juga tercetak di Serial Monitor).
 2. Daftarkan UID tersebut di web: **Kartu RFID** (untuk kartu kelas) atau **Kelola Alat** (kolom *Kode stiker / Tag RFID alat*).
 3. Alur peminjaman:
-   - Tap **kartu kelas** → sesi mulai, LCD menampilkan **nama perwakilan** (`Mode PINJAM` / `Mode KEMBALI`, hitung mundur 10 detik)
-   - Tap **stiker alat** → `DIPINJAM` / `DIKEMBALIKAN`; setiap tap berhasil memperpanjang sesi 10 detik
+   - Tap **kartu kelas** → sesi mulai, LCD menampilkan **kelas** dan hitung mundur 20 detik
+   - Tap **stiker alat** → backend menentukan sendiri: `DIPINJAM`, `DIKEMBALIKAN`, atau penolakan
+   - Setiap tap alat yang berhasil memperpanjang sesi 20 detik
    - Tap **stiker alat yang sama** pada sesi yang sama → `TAP DUPLIKAT` (bukan pengembalian)
-   - Tap **stiker alat milik kelas lain yang sedang dipinjam** → `SUDAH DIPINJAM`
-   - Tap **kartu kelas** lagi → `Sesi selesai` dan LCD menampilkan nama perwakilan
+   - Tap **stiker alat milik kelas lain yang sedang dipinjam** → `SEDANG DIPINJAM`
+   - Tap **kartu kelas** lagi → `SESI SELESAI`
+   - Tap alat saat tidak ada sesi → `SESI TIDAK AKTIF`
+
+   Firmware tidak menentukan mode PINJAM/KEMBALI. LCD hanya menampilkan
+   hasil dari respons backend (`success`, `code`, `action`, `message`,
+   `alat`, dan `kelas`). HTTP 200 belum tentu berarti transaksi berhasil.
 
    Satu baris data alat mewakili **satu unit fisik** dengan `jumlah_total = 1`.
    UID stiker disimpan di kolom `alat.kode` (bukan `uid_rfid`).
