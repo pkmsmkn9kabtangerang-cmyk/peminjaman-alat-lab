@@ -20,9 +20,25 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-device-id, x-device-key",
 };
 
-// Device credentials dari Supabase Secrets (fallback default ke device standar).
-const RFID_DEVICE_ID = Deno.env.get("RFID_DEVICE_ID") || "esp32-lab-01";
-const RFID_DEVICE_KEY = Deno.env.get("RFID_DEVICE_KEY") || "sim-key";
+// Device credentials dari Supabase Secrets. Tidak ada fallback default:
+// fungsi menolak berjalan jika kredensial belum dikonfigurasi.
+const RFID_DEVICE_ID = (Deno.env.get("RFID_DEVICE_ID") || "").trim();
+const RFID_DEVICE_KEY = (Deno.env.get("RFID_DEVICE_KEY") || "").trim();
+
+// Kredensial terpisah untuk simulator web (opsional). Hardware dan
+// simulator tidak berbagi key agar kebocoran key frontend tidak
+// membuka akses device fisik.
+const RFID_SIMULATOR_ID = (Deno.env.get("RFID_SIMULATOR_ID") || "").trim();
+const RFID_SIMULATOR_KEY = (Deno.env.get("RFID_SIMULATOR_KEY") || "").trim();
+
+function safeEqual(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -51,16 +67,34 @@ Deno.serve(async (req) => {
   const deviceId = String(req.headers.get("x-device-id") || "").trim();
   const deviceKey = String(req.headers.get("x-device-key") || "").trim();
 
-  const isMatchConfig =
-    deviceId === RFID_DEVICE_ID && deviceKey === RFID_DEVICE_KEY;
-  const isEsp32Default =
-    deviceId === "esp32-lab-01" &&
-    (deviceKey === RFID_DEVICE_KEY || deviceKey === "sim-key");
-  const isWebSimulator =
-    deviceId === "web-simulator" &&
-    (deviceKey === RFID_DEVICE_KEY || deviceKey === "sim-key");
+  // Konfigurasi hardware wajib ada. Jangan pernah menganggap device
+  // default/sim-key sebagai kredensial yang sah.
+  if (!RFID_DEVICE_ID || !RFID_DEVICE_KEY) {
+    console.error("RFID_DEVICE_ID / RFID_DEVICE_KEY belum diset");
+    return json(
+      {
+        success: false,
+        code: "server_error",
+        action: "error",
+        message: "Konfigurasi device server belum lengkap.",
+        alat: null,
+        kelas: null,
+        session: null,
+      },
+      500
+    );
+  }
 
-  if (!isMatchConfig && !isEsp32Default && !isWebSimulator) {
+  const isHardwareDevice =
+    safeEqual(deviceId, RFID_DEVICE_ID) &&
+    safeEqual(deviceKey, RFID_DEVICE_KEY);
+  const isWebSimulator =
+    RFID_SIMULATOR_ID.length > 0 &&
+    RFID_SIMULATOR_KEY.length > 0 &&
+    safeEqual(deviceId, RFID_SIMULATOR_ID) &&
+    safeEqual(deviceKey, RFID_SIMULATOR_KEY);
+
+  if (!isHardwareDevice && !isWebSimulator) {
     console.warn("RFID device tidak diizinkan:", deviceId);
 
     return json(

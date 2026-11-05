@@ -50,8 +50,10 @@ Sketch: [`simlab_rfid/simlab_rfid.ino`](simlab_rfid/simlab_rfid.ino)
    - `LiquidCrystal I2C` by Frank de Brabander
    - `ArduinoJson` by Benoit Blanchon (v7)
 4. Buka `simlab_rfid.ino`, isi bagian **KONFIGURASI**:
-   `WIFI_SSID`, `WIFI_PASSWORD`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`
-   (sama dengan `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` di web).
+   `WIFI_SSID`, `WIFI_PASSWORD`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
+   `DEVICE_ID`, dan `DEVICE_KEY`.
+   `DEVICE_ID`/`DEVICE_KEY` harus sama dengan secrets `RFID_DEVICE_ID` /
+   `RFID_DEVICE_KEY` di Supabase. Jangan memakai key simulator web.
 5. Upload, buka Serial Monitor **115200 baud**.
 
 ## Cara pakai
@@ -60,9 +62,11 @@ Sketch: [`simlab_rfid/simlab_rfid.ino`](simlab_rfid/simlab_rfid.ino)
    (juga tercetak di Serial Monitor).
 2. Daftarkan UID tersebut di web: **Kartu RFID** (untuk kartu kelas) atau **Kelola Alat** (kolom *Kode stiker / Tag RFID alat*).
 3. Alur peminjaman:
-   - Tap **kartu kelas** → sesi mulai, LCD menampilkan **kelas** dan hitung mundur 20 detik
+   - Tap **kartu kelas** → sesi mulai, LCD menampilkan **kelas** dan hitung mundur 10 detik
    - Tap **stiker alat** → backend menentukan sendiri: `DIPINJAM`, `DIKEMBALIKAN`, atau penolakan
-   - Setiap tap alat yang berhasil memperpanjang sesi 20 detik
+   - Setiap tap alat yang berhasil memperpanjang sesi 10 detik
+   - Timer LCD mengikuti `session.expires_in_seconds` dari database; timer lokal
+     hanya untuk menggambar hitung mundur, bukan sumber keputusan sesi
    - Tap **stiker alat yang sama** pada sesi yang sama → `TAP DUPLIKAT` (bukan pengembalian)
    - Tap **stiker alat milik kelas lain yang sedang dipinjam** → `SEDANG DIPINJAM`
    - Tap **kartu kelas** lagi → `SESI SELESAI`
@@ -72,7 +76,9 @@ Sketch: [`simlab_rfid/simlab_rfid.ino`](simlab_rfid/simlab_rfid.ino)
    hasil dari respons backend (`success`, `code`, `action`, `message`,
    `alat`, dan `kelas`). HTTP 200 belum tentu berarti transaksi berhasil.
 
-   Satu baris data alat mewakili **satu unit fisik** dengan `jumlah_total = 1`.
+   Untuk alat pinjam, satu baris idealnya mewakili **satu unit fisik** dengan
+   `jumlah_total = 1`. Bila data lama memiliki `jumlah_total > 1`, stok dihitung
+   dari total unit dikurangi unit rusak dan transaksi yang masih aktif.
    UID stiker disimpan di kolom `alat.kode` (bukan `uid_rfid`).
 
 ## Bunyi buzzer

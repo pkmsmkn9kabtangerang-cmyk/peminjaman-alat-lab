@@ -10,7 +10,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import FormField, { inputClass } from '../components/FormField';
 import { showFeedback, friendlyError } from '../lib/feedback';
 import PageNote from '../components/PageNote';
-import { IconPlus, IconShieldCheck, IconChevronDown, IconRefresh, IconMail, IconKey, IconCircleCheck, IconClockHour4, IconSend } from '@tabler/icons-react';
+import { IconPlus, IconShieldCheck, IconChevronDown, IconRefresh, IconMail, IconKey, IconCircleCheck, IconClockHour4, IconSend, IconPencil, IconTrash } from '@tabler/icons-react';
 
 // Validasi email format
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -355,7 +355,15 @@ export default function PenggunaPage({ currentUser }) {
         }
         return (
           <div className="flex items-center gap-1 justify-end">
-            <button type="button" onClick={() => openEdit(row)} className="table-action table-action-edit">Edit</button>
+            <button
+              type="button"
+              onClick={() => openEdit(row)}
+              className="table-action table-action-edit"
+              title="Ubah pengguna"
+              aria-label={`Ubah pengguna ${row.nama_lengkap || row.username}`}
+            >
+              <IconPencil size={17} />
+            </button>
             {row.is_verified === false && (
               <button
                 type="button"
@@ -367,7 +375,15 @@ export default function PenggunaPage({ currentUser }) {
                 Kirim ulang
               </button>
             )}
-            <button type="button" onClick={() => requestDelete(row)} className="table-action table-action-danger">Hapus</button>
+            <button
+              type="button"
+              onClick={() => requestDelete(row)}
+              className="table-action table-action-danger"
+              title="Hapus pengguna"
+              aria-label={`Hapus pengguna ${row.nama_lengkap || row.username}`}
+            >
+              <IconTrash size={17} />
+            </button>
           </div>
         );
       },

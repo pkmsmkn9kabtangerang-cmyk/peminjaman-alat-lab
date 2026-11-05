@@ -11,7 +11,7 @@ import FormField, { inputClass } from '../components/FormField';
 import { showFeedback, friendlyError } from '../lib/feedback';
 import { beginTapCapture } from '../lib/tapCapture';
 import PageNote from '../components/PageNote';
-import { IconPlus, IconRefresh, IconMail } from '@tabler/icons-react';
+import { IconPlus, IconRefresh, IconMail, IconPencil, IconTrash } from '@tabler/icons-react';
 
 const EMPTY_FORM = { uid_kartu: '', kelas: '', nama_pemegang: '', aktif: true };
 
@@ -442,16 +442,23 @@ export default function KartuRfidPage() {
             >
               {row.aktif ? 'Blokir' : 'Aktifkan'}
             </button>
-            <button type="button" onClick={() => openEdit(row)} className="table-action table-action-edit">
-              Edit
+            <button
+              type="button"
+              onClick={() => openEdit(row)}
+              className="table-action table-action-edit"
+              title="Ubah kartu"
+              aria-label={`Ubah kartu ${row.kelas}`}
+            >
+              <IconPencil size={17} />
             </button>
             <button
               type="button"
               onClick={() => handleAttemptDelete(row)}
               className="table-action table-action-danger"
               title={isBorrowing ? 'Kartu tidak dapat dihapus karena masih meminjam alat' : 'Hapus kartu'}
+              aria-label={`Hapus kartu ${row.kelas}`}
             >
-              Hapus
+              <IconTrash size={17} />
             </button>
           </div>
         );

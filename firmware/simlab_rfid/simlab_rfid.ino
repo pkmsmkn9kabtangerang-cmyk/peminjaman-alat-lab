@@ -9,8 +9,8 @@
  *    1. Tap KARTU KELAS  -> sesi kelas dimulai (tanpa mode PINJAM/KEMBALI)
  *    2. Tap TAG ALAT     -> backend menentukan pinjam / kembali / tolak
  *    3. Tap KARTU KELAS lagi -> sesi selesai
- *    Sesi otomatis habis 20 detik setelah tap terakhir.
- *    Setiap tap alat yang berhasil memperpanjang sesi 20 detik.
+ *    Sesi otomatis habis 10 detik setelah tap terakhir.
+ *    Setiap tap alat yang berhasil memperpanjang sesi 10 detik.
  *    Tap alat yang sama pada sesi aktif ditolak sebagai TAP DUPLIKAT.
  *
  *  Firmware TIDAK menentukan sendiri tindakan pinjam atau kembali.
@@ -86,7 +86,7 @@ const char* DEVICE_KEY        = "";
 // ================================================================
 //  WAKTU
 // ================================================================
-const unsigned long SESSION_MS            = 20000; // = durasi sesi di RPC process_rfid_tap
+const unsigned long SESSION_MS            = 10000; // fallback; nilai utama dari session.expires_in_seconds
 const unsigned long SAME_TAG_COOLDOWN_MS  = 2500;  // abaikan tap kartu yg sama berulang
 const unsigned long MESSAGE_MS            = 3000;  // lama pesan tampil di LCD
 const unsigned long WIFI_RETRY_MS         = 10000;
@@ -320,8 +320,38 @@ int sendTap(const String& uid, JsonDocument& response, bool& parsed) {
 }
 
 // ================================================================
-//  TAMPILKAN HASIL KE LCD + BUZZER
+//  SINKRONISASI SESI DARI RESPONS BACKEND
 // ================================================================
+// Timer LCD hanya untuk tampilan. Nilai awal/akhir setiap periode
+// selalu diambil dari `session.expires_in_seconds` yang dihitung
+// database pada saat respons dibuat.
+void applySessionFromResponse(JsonVariantConst session) {
+  if (session.isNull()) return;
+
+  String uidSesi = String(session["uid_kartu"] | "");
+  if (uidSesi.length() == 0) return;
+
+  sessionActive = true;
+  sessionUid    = uidSesi;
+
+  String kelasSesi = String(session["kelas"] | "");
+  if (kelasSesi.length() > 0) sessionKelas = kelasSesi;
+
+  String namaSesi = String(session["nama_pemegang"] | "");
+  if (namaSesi.length() > 0) {
+    sessionNama = namaSesi;
+  } else if (sessionKelas.length() > 0) {
+    sessionNama = sessionKelas;
+  }
+
+  int remaining = session["expires_in_seconds"] | -1;
+  if (remaining < 0) {
+    // Kompatibilitas mundur saja; backend terbaru selalu mengirim field ini.
+    remaining = (int)(SESSION_MS / 1000UL);
+  }
+  sessionUntil = millis() + (unsigned long)remaining * 1000UL;
+}
+
 void handleResponse(int code, JsonDocument& r, bool parsed, const String& uid) {
   // ---------- GAGAL KONEKSI / RESPONS TIDAK VALID ----------
   if (code <= 0) {
@@ -343,15 +373,17 @@ void handleResponse(int code, JsonDocument& r, bool parsed, const String& uid) {
 
   Serial.printf("[TAP] success=%d code=%s\n", success ? 1 : 0, result.c_str());
 
+  // Setiap respons yang membawa sesi menyinkronkan LCD dengan sisa waktu
+  // dari database. Ini juga berlaku untuk sesi_kartu_lain_aktif dan
+  // penolakan lain yang masih memiliki sesi aktif.
+  JsonVariantConst sessionObj = r["session"];
+  applySessionFromResponse(sessionObj);
+
   // ---------- BERHASIL (dikonfirmasi backend) ----------
   if (success) {
     if (result == "sesi_dimulai") {
-      sessionActive = true;
-      sessionUid    = uid;
-      sessionKelas  = kelas;
-      sessionNama   = String(r["session"]["nama_pemegang"] | "");
-      if (sessionNama.length() == 0) sessionNama = kelas;
-      sessionUntil  = millis() + SESSION_MS;
+      if (sessionKelas.length() == 0) sessionKelas = kelas;
+      if (sessionNama.length() == 0) sessionNama = sessionKelas;
       showMessage(sessionKelas.length() ? sessionKelas : sessionNama, "Sesi aktif", 2000);
       beepSession();
       return;
@@ -360,22 +392,13 @@ void handleResponse(int code, JsonDocument& r, bool parsed, const String& uid) {
     if (result == "sesi_selesai") {
       sessionActive = false;
       sessionUid    = "";
+      sessionUntil  = 0;
       showMessage("SESI SELESAI", kelas.length() ? kelas : sessionNama);
       beepSession();
       return;
     }
 
     if (result == "dipinjam" || result == "dikembalikan" || result == "menunggu_persetujuan") {
-      // Backend memperpanjang sesi 20 detik pada transaksi yang berhasil.
-      sessionActive = true;
-      sessionUntil  = millis() + SESSION_MS;
-
-      // Sinkronkan identitas sesi dari respons backend (mis. setelah reboot).
-      String sessUid = String(r["session"]["uid_kartu"] | "");
-      if (sessUid.length() > 0) sessionUid = sessUid;
-      String sessKelas = String(r["session"]["kelas"] | "");
-      if (sessKelas.length() > 0) sessionKelas = sessKelas;
-
       if (result == "dipinjam") {
         showMessage("DIPINJAM", alat);
       } else if (result == "dikembalikan") {
@@ -398,6 +421,7 @@ void handleResponse(int code, JsonDocument& r, bool parsed, const String& uid) {
   if (result == "sesi_tidak_aktif") {
     sessionActive = false;
     sessionUid    = "";
+    sessionUntil  = 0;
     showMessage("SESI TIDAK AKTIF", "Tap kartu kelas");
   } else if (result == "tap_duplikat") {
     showMessage("TAP DUPLIKAT", "Sudah diproses");
@@ -412,12 +436,16 @@ void handleResponse(int code, JsonDocument& r, bool parsed, const String& uid) {
     if (alat.length() > 0 || uid == sessionUid) {
       sessionActive = false;
       sessionUid    = "";
+      sessionUntil  = 0;
     }
     showMessage("KARTU NONAKTIF", "Hubungi petugas");
   } else if (result == "stok_habis") {
     showMessage("STOK HABIS", "Tidak tersedia");
   } else if (result == "sesi_kartu_lain_aktif") {
-    String aktif = String(r["session"]["kelas"] | "");
+    // applySessionFromResponse() sudah menyinkronkan kelas, nama, UID,
+    // dan sisa waktu sesi milik kartu lain dari database.
+    String aktif = sessionKelas.length() ? sessionKelas : sessionNama;
+    if (aktif.length() == 0) aktif = String(r["session"]["kelas"] | "");
     if (aktif.length() == 0) aktif = String(r["session"]["nama_pemegang"] | "");
     if (aktif.length() == 0) aktif = "Kelas lain";
     showMessage("SESI LAIN AKTIF", aktif, 4000);

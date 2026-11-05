@@ -61,6 +61,9 @@ Buat file `.env` di root project untuk frontend:
 ```env
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<anon-key>
+# Wajib untuk halaman Simulator IoT; jangan pakai key device ESP32.
+VITE_SIM_DEVICE_ID=web-simulator
+VITE_SIM_DEVICE_KEY=<key-simulator-yang-kuat>
 ```
 
 Di Supabase Dashboard → Edge Functions → Secrets, tambahkan:
@@ -71,8 +74,42 @@ Di Supabase Dashboard → Edge Functions → Secrets, tambahkan:
 | `SUPABASE_ANON_KEY`         | Anon key (otomatis tersedia)               |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key (otomatis tersedia)       |
 | `SITE_URL`                  | URL frontend (untuk redirect email invite) |
-| `RFID_DEVICE_ID`            | Device ID yang diizinkan (default `esp32-lab-01`) |
-| `RFID_DEVICE_KEY`           | Device key yang diizinkan (default `sim-key`, ganti di produksi) |
+| `RFID_DEVICE_ID`            | Device ID hardware yang diizinkan (wajib)  |
+| `RFID_DEVICE_KEY`           | Device key hardware (wajib, gunakan key acak yang kuat) |
+| `RFID_SIMULATOR_ID`         | Device ID simulator web (opsional)         |
+| `RFID_SIMULATOR_KEY`        | Device key simulator web (opsional, terpisah dari hardware) |
+
+Tidak ada fallback `esp32-lab-01` / `sim-key`. Jika secret wajib belum
+diset, `rfid-tap` menolak request dengan `server_error`.
+
+### Kontrak respons `rfid-tap`
+
+Hasil bisnis (termasuk penolakan) tetap HTTP 200 dengan bentuk:
+
+```json
+{
+  "success": true,
+  "code": "dipinjam",
+  "action": "pinjam",
+  "message": "...",
+  "alat": { "id": "...", "nama": "...", "kode": "..." },
+  "kelas": "XI RPL 1",
+  "session": {
+    "uid_kartu": "...",
+    "kelas": "XI RPL 1",
+    "nama_pemegang": "...",
+    "expires_at": "2026-01-01T00:00:00+00:00",
+    "expires_in_seconds": 10
+  }
+}
+```
+
+- `session.expires_in_seconds` dihitung PostgreSQL dari `expires_at - now()`.
+  Firmware memakai nilai ini sebagai awal timer LCD; timer lokal hanya untuk
+  menggambar hitung mundur, bukan sumber keputusan sesi.
+- `session.expires_at` tetap tersedia untuk web.
+- Firmware wajib memeriksa `success`/`code`, bukan status HTTP.
+- Tap alat yang sama pada sesi yang sama menghasilkan `tap_duplikat`.
 
 ---
 
@@ -133,8 +170,8 @@ curl -X POST http://localhost:54321/functions/v1/rfid-tap \
   -H "Content-Type: application/json" \
   -H "apikey: <anon-key>" \
   -H "Authorization: Bearer <anon-key>" \
-  -H "x-device-id: esp32-lab-01" \
-  -H "x-device-key: sim-key" \
+  -H "x-device-id: <device-id>" \
+  -H "x-device-key: <device-key>" \
   -d '{"uid":"ABC123"}'
 
 # Respons bisnis selalu HTTP 200 dengan kontrak:

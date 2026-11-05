@@ -63,12 +63,18 @@ export async function callFunction(name, body, options = {}) {
  * Respons bisnis (termasuk penolakan) tetap HTTP 200 dan dikembalikan
  * apa adanya. Pemanggil wajib memeriksa `json.success`, bukan status HTTP.
  */
-export async function callRfidTap(uid, deviceId = 'web-simulator', deviceKey = 'sim-key') {
+export async function callRfidTap(uid, deviceId, deviceKey) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnon) {
     throw new Error('Supabase belum dikonfigurasi. Isi VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY di file .env');
+  }
+
+  if (!deviceId || !deviceKey) {
+    const err = new Error('Kredensial simulator belum diatur. Isi VITE_SIM_DEVICE_ID dan VITE_SIM_DEVICE_KEY di file .env');
+    err.code = 'konfigurasi_simulator';
+    throw err;
   }
 
   let res;

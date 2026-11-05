@@ -47,52 +47,52 @@ const INITIAL_KARTU = [
 const INITIAL_ALAT = [
   {
     id: 'ALT-001', kode: 'MM-001', nama: 'Multimeter Digital Fluke',
-    kategori: 'elektronik', uid_rfid: 'STK-ALT-001',
+    kategori: 'elektronik',
     jumlah_total: 5, jumlah_rusak: 0, stok_tersedia: 5,
     created_at: new Date().toISOString(),
   },
   {
     id: 'ALT-002', kode: 'OSC-002', nama: 'Oscilloscope Rigol DS1054Z',
-    kategori: 'elektronik', uid_rfid: 'STK-ALT-002',
+    kategori: 'elektronik',
     jumlah_total: 2, jumlah_rusak: 0, stok_tersedia: 2,
     created_at: new Date().toISOString(),
   },
   {
     id: 'ALT-003', kode: 'SLD-003', nama: 'Solder Station Dekko',
-    kategori: 'elektronik', uid_rfid: 'STK-ALT-003',
+    kategori: 'elektronik',
     jumlah_total: 10, jumlah_rusak: 1, stok_tersedia: 9,
     created_at: new Date().toISOString(),
   },
   {
     id: 'ALT-004', kode: 'TNG-004', nama: 'Tang Kombinasi Tekiro',
-    kategori: 'mekanik', uid_rfid: 'STK-ALT-004',
+    kategori: 'mekanik',
     jumlah_total: 8, jumlah_rusak: 0, stok_tersedia: 8,
     created_at: new Date().toISOString(),
   },
   {
     id: 'ALT-005', kode: 'CRM-005', nama: 'Crimping Tool RJ45',
-    kategori: 'jaringan', uid_rfid: 'STK-ALT-005',
+    kategori: 'jaringan',
     jumlah_total: 3, jumlah_rusak: 3, stok_tersedia: 0,
     tipe: 'alat', satuan: 'unit',
     created_at: new Date().toISOString(),
   },
   {
     id: 'ALT-006', kode: 'KBL-006', nama: 'Kabel UTP Cat6',
-    kategori: 'jaringan', uid_rfid: 'STK-ALT-006',
+    kategori: 'jaringan',
     jumlah_total: 100, jumlah_rusak: 0, stok_tersedia: 100,
     tipe: 'habis_pakai', satuan: 'meter',
     created_at: new Date().toISOString(),
   },
   {
     id: 'ALT-007', kode: 'TIM-007', nama: 'Timah Solder (Tin Lead)',
-    kategori: 'elektronik', uid_rfid: 'STK-ALT-007',
+    kategori: 'elektronik',
     jumlah_total: 500, jumlah_rusak: 0, stok_tersedia: 500,
     tipe: 'habis_pakai', satuan: 'cm',
     created_at: new Date().toISOString(),
   },
   {
     id: 'ALT-008', kode: 'RJ-008', nama: 'Konektor RJ45',
-    kategori: 'jaringan', uid_rfid: 'STK-ALT-008',
+    kategori: 'jaringan',
     jumlah_total: 50, jumlah_rusak: 0, stok_tersedia: 50,
     tipe: 'habis_pakai', satuan: 'pcs',
     created_at: new Date().toISOString(),
@@ -117,8 +117,8 @@ function setStore(key, data) {
   window.dispatchEvent(new Event('simlab_storage_updated'));
 }
 
-// ── Sesi kartu 20 detik (in-memory, reset saat refresh) ───────
-export const SESSION_DURATION_SECONDS = 20;
+// ── Sesi kartu 10 detik (in-memory, reset saat refresh) ───────
+export const SESSION_DURATION_SECONDS = 10;
 export const SESSION_DURATION_MS = SESSION_DURATION_SECONDS * 1000;
 
 // { uid_kartu: { expires: Date, uid_kartu, kelas, processed: string[] } }
@@ -151,7 +151,7 @@ function extendSession(uid_kartu) {
   }
 }
 
-// Catat UID alat yang sudah diproses pada sesi aktif + perpanjang 20 detik.
+// Catat UID alat yang sudah diproses pada sesi aktif + perpanjang 10 detik.
 // UID yang sama tidak boleh diproses dua kali sampai sesi baru dimulai.
 function markToolProcessed(uid_kartu, uid_alat) {
   const s = kartuSessions[uid_kartu];
@@ -376,15 +376,19 @@ export const dbService = {
       (k) => String(k.uid_kartu || '').toUpperCase() === uidNorm
     );
 
-    const sessionInfo = (s) => (s
-      ? {
-          uid_kartu: s.uid_kartu,
-          kelas: s.kelas,
-          nama_pemegang:
-            kartuList.find((k) => k.uid_kartu === s.uid_kartu)?.nama_pemegang ?? null,
-          expires_at: new Date(s.expires).toISOString(),
-        }
-      : null);
+    const sessionInfo = (s) => {
+      if (!s) return null;
+      const expiresAt = new Date(s.expires).getTime();
+      return {
+        uid_kartu: s.uid_kartu,
+        kelas: s.kelas,
+        nama_pemegang:
+          kartuList.find((k) => k.uid_kartu === s.uid_kartu)?.nama_pemegang ?? null,
+        expires_at: new Date(expiresAt).toISOString(),
+        // Sisa waktu dihitung dari waktu kedaluwarsa sesi, bukan timer UI.
+        expires_in_seconds: Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)),
+      };
+    };
 
     // ---------- UID KARTU KELAS ----------
     if (kartu) {
@@ -450,9 +454,9 @@ export const dbService = {
 
     // ---------- UID TAG ALAT ----------
     const alatList = dbService.getAlatWithStok();
-    // Satu baris alat = satu unit fisik. `kode` adalah UID stiker RFID.
+    // Kolom UID stiker RFID pada skema ini adalah `alat.kode`.
     const alat = alatList.find(
-      (a) => String(a.kode || a.uid_rfid || '').toUpperCase() === uidNorm
+      (a) => String(a.kode || '').trim().toUpperCase() === uidNorm
     );
 
     if (!alat) {
@@ -580,35 +584,20 @@ export const dbService = {
 
     // ---------- ALAT PINJAM ----------
     const transaksi = dbService.getTransaksi();
-    const activeRows = transaksi.filter(
-      (t) => t.alat_id === alat.id && t.status === 'dipinjam'
-    );
-    const ownTrx = activeRows.find(
-      (t) => t.uid_kartu === sess.uid_kartu || (kelas && t.kelas === kelas)
-    );
-
-    if (activeRows.length > 0 && !ownTrx) {
-      const peminjamKelas = activeRows[0]?.kelas || 'kelas lain';
-      dbService._addTapLog(sess.uid_kartu, alat.kode, 'alat', 'otomatis', 'ditolak', 'sedang_dipinjam', kelas, alat.nama);
-      return {
-        success: false,
-        code: 'sedang_dipinjam',
-        action: 'tolak',
-        message: `${alat.nama} sedang dipinjam oleh ${peminjamKelas}.`,
-        alat: alatInfo,
-        kelas,
-        peminjam_kelas: peminjamKelas,
-        session: sessionInfo(sess),
-      };
-    }
+    const activeRows = transaksi
+      .filter((t) => t.alat_id === alat.id && t.status === 'dipinjam')
+      .sort((a, b) => new Date(a.waktu_pinjam) - new Date(b.waktu_pinjam));
+    // Prioritaskan transaksi milik kartu yang sama, lalu kelas yang sama.
+    const ownTrx =
+      activeRows.find((t) => t.uid_kartu === sess.uid_kartu) ||
+      activeRows.find((t) => kelas && t.kelas === kelas);
 
     if (ownTrx) {
-      // Kembalikan hanya transaksi aktif milik kelas ini.
+      // Kembalikan hanya satu transaksi yang dipilih, bukan semua
+      // transaksi aktif milik kelas tersebut.
       const now = new Date().toISOString();
       const updated = transaksi.map((t) => (
-        t.alat_id === alat.id &&
-        t.status === 'dipinjam' &&
-        (t.uid_kartu === sess.uid_kartu || (kelas && t.kelas === kelas))
+        t.id === ownTrx.id
           ? { ...t, status: 'dikembalikan', waktu_kembali: now }
           : t
       ));
@@ -627,7 +616,25 @@ export const dbService = {
       };
     }
 
+    // stok_tersedia sudah memperhitungkan transaksi aktif. Jika masih
+    // tersisa, alat dengan jumlah_total > 1 boleh dipinjam walau ada
+    // transaksi aktif dari kelas lain.
     if (alat.stok_tersedia <= 0) {
+      if (activeRows.length > 0) {
+        const peminjamKelas = activeRows[0]?.kelas || 'kelas lain';
+        dbService._addTapLog(sess.uid_kartu, alat.kode, 'alat', 'otomatis', 'ditolak', 'sedang_dipinjam', kelas, alat.nama);
+        return {
+          success: false,
+          code: 'sedang_dipinjam',
+          action: 'tolak',
+          message: `Stok ${alat.nama} habis; sedang dipinjam oleh ${peminjamKelas}.`,
+          alat: alatInfo,
+          kelas,
+          peminjam_kelas: peminjamKelas,
+          session: sessionInfo(sess),
+        };
+      }
+
       dbService._addTapLog(sess.uid_kartu, alat.kode, 'alat', 'otomatis', 'ditolak', 'stok_habis', kelas, alat.nama);
       return {
         success: false,

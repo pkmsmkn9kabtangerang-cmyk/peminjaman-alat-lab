@@ -7,7 +7,7 @@
 --
 -- Prinsip:
 --   * Satu sesi per device (rfid_session.device_id).
---   * Sesi berakhir setelah 20 detik tanpa tap berhasil.
+--   * Sesi berakhir setelah 10 detik tanpa tap berhasil.
 --   * processed_alat menyimpan UID alat yang sudah berhasil diproses
 --     pada sesi aktif. Tap UID yang sama ditolak sebagai tap_duplikat.
 --   * Tidak ada mode global PINJAM/KEMBALI. Aksi ditentukan per UID alat
@@ -217,13 +217,14 @@ BEGIN
           'uid_kartu', v_session.uid_kartu,
           'kelas', COALESCE(v_owner.kelas, v_session.kelas),
           'nama_pemegang', v_owner.nama_pemegang,
-          'expires_at', v_session.expires_at
+          'expires_at', v_session.expires_at,
+          'expires_in_seconds', GREATEST(0, CEIL(EXTRACT(EPOCH FROM (v_session.expires_at - v_now))))::INTEGER
         )
       );
     END IF;
 
     -- Mulai sesi baru. Tidak ada lagi penentuan mode pinjam/kembali.
-    v_expires := v_now + INTERVAL '20 seconds';
+    v_expires := v_now + INTERVAL '10 seconds';
 
     INSERT INTO public.rfid_session (
       device_id, uid_kartu, kelas, jenis, processed_alat,
@@ -260,7 +261,8 @@ BEGIN
         'uid_kartu', v_kartu.uid_kartu,
         'kelas', v_kartu.kelas,
         'nama_pemegang', v_kartu.nama_pemegang,
-        'expires_at', v_expires
+        'expires_at', v_expires,
+        'expires_in_seconds', GREATEST(0, CEIL(EXTRACT(EPOCH FROM (v_expires - v_now))))::INTEGER
       )
     );
   END IF;
@@ -270,9 +272,12 @@ BEGIN
   -- =====================================================
   -- Kunci row unit alat. Transaksi lain yang men-tap unit yang sama akan
   -- menunggu sampai transaksi ini commit, lalu membaca kondisi terbaru.
+  -- Kolom UID stiker RFID pada skema ini adalah public.alat.kode
+  -- (tidak ada kolom uid_rfid/kode_rfid terpisah). Jangan mencocokkan
+  -- UID ke public.alat.id.
   SELECT * INTO v_alat
   FROM public.alat
-  WHERE upper(kode) = v_uid
+  WHERE upper(btrim(kode)) = v_uid
   FOR UPDATE;
 
   IF NOT FOUND THEN
@@ -391,7 +396,8 @@ BEGIN
         'uid_kartu', v_session.uid_kartu,
         'kelas', v_kelas,
         'nama_pemegang', v_kartu.nama_pemegang,
-        'expires_at', v_session.expires_at
+        'expires_at', v_session.expires_at,
+        'expires_in_seconds', GREATEST(0, CEIL(EXTRACT(EPOCH FROM (v_session.expires_at - v_now))))::INTEGER
       )
     );
   END IF;
@@ -429,7 +435,8 @@ BEGIN
           'uid_kartu', v_session.uid_kartu,
           'kelas', v_kelas,
           'nama_pemegang', v_kartu.nama_pemegang,
-          'expires_at', v_session.expires_at
+          'expires_at', v_session.expires_at,
+          'expires_in_seconds', GREATEST(0, CEIL(EXTRACT(EPOCH FROM (v_session.expires_at - v_now))))::INTEGER
         )
       );
     END IF;
@@ -461,7 +468,8 @@ BEGIN
           'uid_kartu', v_session.uid_kartu,
           'kelas', v_kelas,
           'nama_pemegang', v_kartu.nama_pemegang,
-          'expires_at', v_session.expires_at
+          'expires_at', v_session.expires_at,
+          'expires_in_seconds', GREATEST(0, CEIL(EXTRACT(EPOCH FROM (v_session.expires_at - v_now))))::INTEGER
         )
       );
     END IF;
@@ -476,7 +484,7 @@ BEGIN
       'menunggu', NULL, NULL, v_now, v_now
     );
 
-    v_expires := v_now + INTERVAL '20 seconds';
+    v_expires := v_now + INTERVAL '10 seconds';
 
     UPDATE public.rfid_session
     SET processed_alat = array_append(COALESCE(processed_alat, ARRAY[]::TEXT[]), v_uid),
@@ -504,16 +512,17 @@ BEGIN
         'uid_kartu', v_session.uid_kartu,
         'kelas', v_kelas,
         'nama_pemegang', v_kartu.nama_pemegang,
-        'expires_at', v_expires
+        'expires_at', v_expires,
+        'expires_in_seconds', GREATEST(0, CEIL(EXTRACT(EPOCH FROM (v_expires - v_now))))::INTEGER
       )
     );
   END IF;
 
   -- =====================================================
-  -- D. ALAT PINJAM: periksa transaksi aktif per unit
+  -- D. ALAT PINJAM: stok dihitung dari unit yang aktif
   -- =====================================================
-  -- Kunci semua baris aktif unit ini agar dua request yang hampir
-  -- bersamaan tidak sama-sama melihat "belum dipinjam".
+  -- Kunci semua transaksi aktif unit ini agar dua request yang hampir
+  -- bersamaan tidak sama-sama melihat stok yang sama.
   PERFORM 1
   FROM public.transaksi t
   WHERE t.alat_id = v_alat.id
@@ -525,6 +534,8 @@ BEGIN
   WHERE t.alat_id = v_alat.id
     AND t.status = 'dipinjam';
 
+  -- Cari transaksi aktif yang paling mungkin dimaksud. Kartu yang sama
+  -- lebih diprioritaskan daripada kelas yang sama, lalu yang paling lama.
   SELECT * INTO v_trx
   FROM public.transaksi t
   WHERE t.alat_id = v_alat.id
@@ -533,58 +544,19 @@ BEGIN
       t.uid_kartu = v_session.uid_kartu
       OR (v_kelas IS NOT NULL AND t.kelas = v_kelas)
     )
-  ORDER BY t.waktu_pinjam ASC
+  ORDER BY (t.uid_kartu = v_session.uid_kartu) DESC NULLS LAST,
+           t.waktu_pinjam ASC
   LIMIT 1;
 
-  -- Dipinjam oleh kelas lain.
-  IF v_aktif > 0 AND v_trx.id IS NULL THEN
-    SELECT t.kelas INTO v_peminjam
-    FROM public.transaksi t
-    WHERE t.alat_id = v_alat.id
-      AND t.status = 'dipinjam'
-    ORDER BY t.waktu_pinjam ASC
-    LIMIT 1;
-
-    INSERT INTO public.tap_log (
-      id, uid_kartu, uid_alat, jenis_tap, jenis_terdeteksi,
-      kelas, nama_alat, status, error_code, is_read, waktu_tap
-    ) VALUES (
-      'LOG-' || gen_random_uuid()::text,
-      v_session.uid_kartu, v_alat.kode, 'alat', 'otomatis',
-      v_kelas, v_alat.nama, 'ditolak', 'sedang_dipinjam', FALSE, v_now
-    );
-
-    RETURN json_build_object(
-      'success', false,
-      'code', 'sedang_dipinjam',
-      'action', 'tolak',
-      'message', v_alat.nama || ' sedang dipinjam' ||
-        CASE WHEN v_peminjam IS NOT NULL THEN ' oleh ' || v_peminjam ELSE '' END || '.',
-      'alat', v_alat_json,
-      'kelas', v_kelas,
-      'peminjam_kelas', v_peminjam,
-      'session', json_build_object(
-        'uid_kartu', v_session.uid_kartu,
-        'kelas', v_kelas,
-        'nama_pemegang', v_kartu.nama_pemegang,
-        'expires_at', v_session.expires_at
-      )
-    );
-  END IF;
-
-  -- Sudah dipinjam oleh kelas yang sama -> kembalikan.
+  -- Sudah dipinjam oleh kartu/kelas yang sama -> kembalikan SATU transaksi
+  -- yang dipilih di atas, bukan semua transaksi kelas tersebut.
   IF v_trx.id IS NOT NULL THEN
     UPDATE public.transaksi
     SET status = 'dikembalikan',
         waktu_kembali = v_now
-    WHERE alat_id = v_alat.id
-      AND status = 'dipinjam'
-      AND (
-        uid_kartu = v_session.uid_kartu
-        OR (v_kelas IS NOT NULL AND kelas = v_kelas)
-      );
+    WHERE id = v_trx.id;
 
-    v_expires := v_now + INTERVAL '20 seconds';
+    v_expires := v_now + INTERVAL '10 seconds';
 
     UPDATE public.rfid_session
     SET processed_alat = array_append(COALESCE(processed_alat, ARRAY[]::TEXT[]), v_uid),
@@ -612,15 +584,55 @@ BEGIN
         'uid_kartu', v_session.uid_kartu,
         'kelas', v_kelas,
         'nama_pemegang', v_kartu.nama_pemegang,
-        'expires_at', v_expires
+        'expires_at', v_expires,
+        'expires_in_seconds', GREATEST(0, CEIL(EXTRACT(EPOCH FROM (v_expires - v_now))))::INTEGER
       )
     );
   END IF;
 
-  -- Belum dipinjam -> buat peminjaman baru.
-  v_stok := GREATEST(0, v_alat.jumlah_total - v_alat.jumlah_rusak);
+  -- Stok = total unit - rusak - transaksi aktif. Alat dengan
+  -- jumlah_total > 1 tetap bisa dipinjam selama masih ada unit bebas.
+  v_stok := GREATEST(0, v_alat.jumlah_total - v_alat.jumlah_rusak - v_aktif);
 
   IF v_stok <= 0 THEN
+    -- Jika stok habis karena sedang dipinjam, beri kode yang lebih
+    -- informatif daripada stok_habis.
+    IF v_aktif > 0 THEN
+      SELECT t.kelas INTO v_peminjam
+      FROM public.transaksi t
+      WHERE t.alat_id = v_alat.id
+        AND t.status = 'dipinjam'
+      ORDER BY t.waktu_pinjam ASC
+      LIMIT 1;
+
+      INSERT INTO public.tap_log (
+        id, uid_kartu, uid_alat, jenis_tap, jenis_terdeteksi,
+        kelas, nama_alat, status, error_code, is_read, waktu_tap
+      ) VALUES (
+        'LOG-' || gen_random_uuid()::text,
+        v_session.uid_kartu, v_alat.kode, 'alat', 'otomatis',
+        v_kelas, v_alat.nama, 'ditolak', 'sedang_dipinjam', FALSE, v_now
+      );
+
+      RETURN json_build_object(
+        'success', false,
+        'code', 'sedang_dipinjam',
+        'action', 'tolak',
+        'message', 'Stok ' || v_alat.nama || ' habis' ||
+          CASE WHEN v_peminjam IS NOT NULL THEN '; sedang dipinjam oleh ' || v_peminjam ELSE '; sedang dipinjam' END || '.',
+        'alat', v_alat_json,
+        'kelas', v_kelas,
+        'peminjam_kelas', v_peminjam,
+        'session', json_build_object(
+          'uid_kartu', v_session.uid_kartu,
+          'kelas', v_kelas,
+          'nama_pemegang', v_kartu.nama_pemegang,
+          'expires_at', v_session.expires_at,
+          'expires_in_seconds', GREATEST(0, CEIL(EXTRACT(EPOCH FROM (v_session.expires_at - v_now))))::INTEGER
+        )
+      );
+    END IF;
+
     INSERT INTO public.tap_log (
       id, uid_kartu, uid_alat, jenis_tap, jenis_terdeteksi,
       kelas, nama_alat, status, error_code, is_read, waktu_tap
@@ -641,7 +653,8 @@ BEGIN
         'uid_kartu', v_session.uid_kartu,
         'kelas', v_kelas,
         'nama_pemegang', v_kartu.nama_pemegang,
-        'expires_at', v_session.expires_at
+        'expires_at', v_session.expires_at,
+        'expires_in_seconds', GREATEST(0, CEIL(EXTRACT(EPOCH FROM (v_session.expires_at - v_now))))::INTEGER
       )
     );
   END IF;
@@ -656,7 +669,7 @@ BEGIN
     'dipinjam', 'otomatis', 'baik', v_now, v_now
   );
 
-  v_expires := v_now + INTERVAL '20 seconds';
+  v_expires := v_now + INTERVAL '10 seconds';
 
   UPDATE public.rfid_session
   SET processed_alat = array_append(COALESCE(processed_alat, ARRAY[]::TEXT[]), v_uid),
@@ -684,7 +697,8 @@ BEGIN
       'uid_kartu', v_session.uid_kartu,
       'kelas', v_kelas,
       'nama_pemegang', v_kartu.nama_pemegang,
-      'expires_at', v_expires
+      'expires_at', v_expires,
+      'expires_in_seconds', GREATEST(0, CEIL(EXTRACT(EPOCH FROM (v_expires - v_now))))::INTEGER
     )
   );
 END;

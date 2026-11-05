@@ -10,7 +10,7 @@ import FormField, { inputClass } from '../components/FormField';
 import { showFeedback, friendlyError } from '../lib/feedback';
 import { beginTapCapture } from '../lib/tapCapture';
 import PageNote from '../components/PageNote';
-import { IconPlus, IconRefresh, IconMail } from '@tabler/icons-react';
+import { IconPlus, IconRefresh, IconMail, IconPencil, IconTrash } from '@tabler/icons-react';
 
 const EMPTY_FORM = {
   id: '', kode: '', nama: '', kategori: 'elektronik', jumlah_total: 1, jumlah_rusak: 0, tipe: 'pinjam', satuan: 'unit'
@@ -495,11 +495,23 @@ export default function KelolaAlat() {
       label: '',
       render: (row) => (
         <div className="flex items-center gap-1 justify-end">
-          <button type="button" onClick={() => openEdit(row)} className="table-action table-action-edit">
-            Edit
+          <button
+            type="button"
+            onClick={() => openEdit(row)}
+            className="table-action table-action-edit"
+            title="Ubah alat"
+            aria-label={`Ubah ${row.nama}`}
+          >
+            <IconPencil size={17} />
           </button>
-          <button type="button" onClick={() => setDeleteTarget(row)} className="table-action table-action-danger">
-            Hapus
+          <button
+            type="button"
+            onClick={() => setDeleteTarget(row)}
+            className="table-action table-action-danger"
+            title="Hapus alat"
+            aria-label={`Hapus ${row.nama}`}
+          >
+            <IconTrash size={17} />
           </button>
         </div>
       ),

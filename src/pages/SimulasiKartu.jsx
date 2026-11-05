@@ -30,11 +30,23 @@ export default function SimulasiIotPage() {
   const prevSessionUidRef = useRef(null);
 
   const applySession = useCallback((session) => {
-    if (!session?.uid_kartu || !session?.expires_at) {
+    if (!session?.uid_kartu) {
       setActiveSession(null);
       return null;
     }
-    const expires = new Date(session.expires_at);
+
+    // Utamakan sisa detik dari database agar countdown tidak terpengaruh
+    // jam perangkat pengguna. `expires_at` tetap dipakai sebagai fallback.
+    const rawRemaining = session.expires_in_seconds;
+    const hasRemaining =
+      rawRemaining !== null &&
+      rawRemaining !== undefined &&
+      rawRemaining !== '' &&
+      Number.isFinite(Number(rawRemaining));
+    const expires = hasRemaining
+      ? new Date(Date.now() + Math.max(0, Number(rawRemaining)) * 1000)
+      : new Date(session.expires_at);
+
     if (Number.isNaN(expires.getTime()) || expires.getTime() <= Date.now()) {
       setActiveSession(null);
       return null;
@@ -130,12 +142,12 @@ export default function SimulasiIotPage() {
     };
   }, [loadData]);
 
-  // Countdown timer untuk sesi aktif (20 detik)
+  // Countdown timer untuk sesi aktif (10 detik)
   useEffect(() => {
     const updateCountdown = () => {
       if (!activeSession) {
         if (prevSessionUidRef.current) {
-          addLog('[SYS] Waktu sesi habis (timeout 20s). Slot kartu kini bebas untuk kelas berikutnya.', 'system');
+          addLog('[SYS] Waktu sesi habis (timeout 10s). Slot kartu kini bebas untuk kelas berikutnya.', 'system');
           prevSessionUidRef.current = null;
         }
         setTimeLeft(0);
@@ -151,7 +163,7 @@ export default function SimulasiIotPage() {
       if (diff === 0) {
         // Sesi backend sudah kedaluwarsa; jangan tampilkan sesi lama.
         setActiveSession(null);
-        addLog('[SYS] Waktu sesi 20s telah berakhir. Slot kartu kembali bebas.', 'system');
+        addLog('[SYS] Waktu sesi 10s telah berakhir. Slot kartu kembali bebas.', 'system');
         prevSessionUidRef.current = null;
       }
     };
@@ -172,9 +184,12 @@ export default function SimulasiIotPage() {
 
       if (isSupabaseConfigured) {
         // ── Mode Supabase: kirim ke edge function rfid-tap ──
-        // x-device-key di sini adalah sim-key, hanya untuk testing.
-        // Di prod nyata, kunci ada di firmware ESP32 dan di secrets server.
-        res = await callRfidTap(uid, 'web-simulator', import.meta.env.VITE_SIM_DEVICE_KEY ?? 'sim-key');
+        // Simulator memakai pasangan kredensial terpisah dari hardware.
+        res = await callRfidTap(
+          uid,
+          import.meta.env.VITE_SIM_DEVICE_ID,
+          import.meta.env.VITE_SIM_DEVICE_KEY
+        );
       } else {
         // ── Mode local: proses via localStorage store ──
         await new Promise((r) => setTimeout(r, 450)); // simulasi latency
@@ -272,7 +287,7 @@ export default function SimulasiIotPage() {
     handleTap(activeSession.uid_kartu, activeSession.kelas || activeSession.uid_kartu);
   };
 
-  const maxDuration = SESSION_DURATION_SECONDS || 20;
+  const maxDuration = SESSION_DURATION_SECONDS;
   const progressPercent = Math.min(100, Math.max(0, (timeLeft / maxDuration) * 100));
 
   return (
@@ -406,7 +421,7 @@ export default function SimulasiIotPage() {
 
             <div className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
               {alatList.map((a) => {
-                const uid = a.kode || a.uid_rfid;
+                const uid = a.kode;
                 return (
                   <button
                     key={a.id || uid}
