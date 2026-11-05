@@ -110,7 +110,7 @@ Hasil bisnis (termasuk penolakan) tetap HTTP 200 dengan bentuk:
     "kelas": "XI RPL 1",
     "nama_pemegang": "...",
     "expires_at": "2026-01-01T00:00:00+00:00",
-    "expires_in_seconds": 10
+    "expires_in_seconds": 20
   }
 }
 ```
@@ -174,7 +174,8 @@ supabase secrets set SITE_URL=https://your-frontend-domain.com
 supabase start
 
 # Terapkan migration (termasuk 012_rfid_atomic_tap.sql,
-# 013_guard_hapus_transaksi_aktif.sql, dan 014_guard_alat_dipinjam.sql)
+# 013_guard_hapus_transaksi_aktif.sql, 014_guard_alat_dipinjam.sql,
+# dan 015_rfid_session_20s.sql)
 supabase db reset
 
 # Test rfid-tap (wajib menyertakan header device)

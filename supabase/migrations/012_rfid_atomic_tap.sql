@@ -7,7 +7,7 @@
 --
 -- Prinsip:
 --   * Satu sesi per device (rfid_session.device_id).
---   * Sesi berakhir setelah 10 detik tanpa tap berhasil.
+--   * Sesi berakhir setelah 20 detik tanpa tap berhasil.
 --   * processed_alat menyimpan UID alat yang sudah berhasil diproses
 --     pada sesi aktif. Tap UID yang sama ditolak sebagai tap_duplikat.
 --   * Tidak ada mode global PINJAM/KEMBALI. Aksi ditentukan per UID alat
@@ -224,7 +224,7 @@ BEGIN
     END IF;
 
     -- Mulai sesi baru. Tidak ada lagi penentuan mode pinjam/kembali.
-    v_expires := v_now + INTERVAL '10 seconds';
+    v_expires := v_now + INTERVAL '20 seconds';
 
     INSERT INTO public.rfid_session (
       device_id, uid_kartu, kelas, jenis, processed_alat,
@@ -484,7 +484,7 @@ BEGIN
       'menunggu', NULL, NULL, v_now, v_now
     );
 
-    v_expires := v_now + INTERVAL '10 seconds';
+    v_expires := v_now + INTERVAL '20 seconds';
 
     UPDATE public.rfid_session
     SET processed_alat = array_append(COALESCE(processed_alat, ARRAY[]::TEXT[]), v_uid),
@@ -556,7 +556,7 @@ BEGIN
         waktu_kembali = v_now
     WHERE id = v_trx.id;
 
-    v_expires := v_now + INTERVAL '10 seconds';
+    v_expires := v_now + INTERVAL '20 seconds';
 
     UPDATE public.rfid_session
     SET processed_alat = array_append(COALESCE(processed_alat, ARRAY[]::TEXT[]), v_uid),
@@ -669,7 +669,7 @@ BEGIN
     'dipinjam', 'otomatis', 'baik', v_now, v_now
   );
 
-  v_expires := v_now + INTERVAL '10 seconds';
+  v_expires := v_now + INTERVAL '20 seconds';
 
   UPDATE public.rfid_session
   SET processed_alat = array_append(COALESCE(processed_alat, ARRAY[]::TEXT[]), v_uid),

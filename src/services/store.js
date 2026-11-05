@@ -117,8 +117,8 @@ function setStore(key, data) {
   window.dispatchEvent(new Event('simlab_storage_updated'));
 }
 
-// ── Sesi kartu 10 detik (in-memory, reset saat refresh) ───────
-export const SESSION_DURATION_SECONDS = 10;
+// ── Sesi kartu 20 detik (in-memory, reset saat refresh) ───────
+export const SESSION_DURATION_SECONDS = 20;
 export const SESSION_DURATION_MS = SESSION_DURATION_SECONDS * 1000;
 
 // { uid_kartu: { expires: Date, uid_kartu, kelas, processed: string[] } }
@@ -151,7 +151,7 @@ function extendSession(uid_kartu) {
   }
 }
 
-// Catat UID alat yang sudah diproses pada sesi aktif + perpanjang 10 detik.
+// Catat UID alat yang sudah diproses pada sesi aktif + perpanjang 20 detik.
 // UID yang sama tidak boleh diproses dua kali sampai sesi baru dimulai.
 function markToolProcessed(uid_kartu, uid_alat) {
   const s = kartuSessions[uid_kartu];

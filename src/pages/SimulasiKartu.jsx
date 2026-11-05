@@ -19,6 +19,13 @@ import {
   IconPlayerStop,
 } from '@tabler/icons-react';
 
+// Tampilkan durasi yang benar-benar dikirim backend. Konstanta lokal hanya
+// dipakai sebagai fallback untuk mode demo atau respons lama.
+const sessionSeconds = (res) => {
+  const value = Number(res?.session?.expires_in_seconds);
+  return Number.isFinite(value) && value > 0 ? value : SESSION_DURATION_SECONDS;
+};
+
 export default function SimulasiIotPage() {
   const [kartuList, setKartuList] = useState([]);
   const [alatList, setAlatList]   = useState([]);
@@ -43,6 +50,17 @@ export default function SimulasiIotPage() {
       rawRemaining !== undefined &&
       rawRemaining !== '' &&
       Number.isFinite(Number(rawRemaining));
+
+    if (!hasRemaining) {
+      // Respons lama hanya mengirim expires_at. Timer bisa terlihat lebih
+      // pendek karena jam browser berbeda dengan jam database, jadi catat
+      // penyebabnya agar deployment backend yang tertinggal mudah terlihat.
+      console.warn(
+        '[SimulasiKartu] session.expires_in_seconds tidak ada; memakai expires_at. ' +
+          'Pastikan Edge Function rfid-tap dan migration RPC terbaru sudah diterapkan.'
+      );
+    }
+
     const expires = hasRemaining
       ? new Date(Date.now() + Math.max(0, Number(rawRemaining)) * 1000)
       : new Date(session.expires_at);
@@ -142,12 +160,12 @@ export default function SimulasiIotPage() {
     };
   }, [loadData]);
 
-  // Countdown timer untuk sesi aktif (10 detik)
+  // Countdown timer untuk sesi aktif (20 detik)
   useEffect(() => {
     const updateCountdown = () => {
       if (!activeSession) {
         if (prevSessionUidRef.current) {
-          addLog('[SYS] Waktu sesi habis (timeout 10s). Slot kartu kini bebas untuk kelas berikutnya.', 'system');
+          addLog(`[SYS] Waktu sesi habis (timeout ${SESSION_DURATION_SECONDS}s). Slot kartu kini bebas untuk kelas berikutnya.`, 'system');
           prevSessionUidRef.current = null;
         }
         setTimeLeft(0);
@@ -163,7 +181,7 @@ export default function SimulasiIotPage() {
       if (diff === 0) {
         // Sesi backend sudah kedaluwarsa; jangan tampilkan sesi lama.
         setActiveSession(null);
-        addLog('[SYS] Waktu sesi 10s telah berakhir. Slot kartu kembali bebas.', 'system');
+        addLog(`[SYS] Waktu sesi ${SESSION_DURATION_SECONDS}s telah berakhir. Slot kartu kembali bebas.`, 'system');
         prevSessionUidRef.current = null;
       }
     };
@@ -211,13 +229,13 @@ export default function SimulasiIotPage() {
 
       if (res.success) {
         if (res.code === 'sesi_dimulai') {
-          addLog(`[RX] OK Sesi ${res.kelas} aktif - Durasi ${SESSION_DURATION_SECONDS} detik`, 'success');
+          addLog(`[RX] OK Sesi ${res.kelas} aktif - Durasi ${sessionSeconds(res)} detik`, 'success');
         } else if (res.code === 'sesi_selesai') {
           addLog(`[RX] OK Sesi Selesai: ${res.kelas} mengakhiri sesi. Slot kartu kini bebas!`, 'success');
         } else if (res.code === 'dipinjam') {
-          addLog(`[RX] OK Pinjam "${alatName}" (${res.kelas}) - Sesi di-reset ke ${SESSION_DURATION_SECONDS}s`, 'success');
+          addLog(`[RX] OK Pinjam "${alatName}" (${res.kelas}) - Sesi di-reset ke ${sessionSeconds(res)}s`, 'success');
         } else if (res.code === 'dikembalikan') {
-          addLog(`[RX] OK Kembali "${alatName}" (${res.kelas}) - Sesi di-reset ke ${SESSION_DURATION_SECONDS}s`, 'success');
+          addLog(`[RX] OK Kembali "${alatName}" (${res.kelas}) - Sesi di-reset ke ${sessionSeconds(res)}s`, 'success');
         } else if (res.code === 'menunggu_persetujuan') {
           addLog(
             `[RX] Consumable "${alatName}" (${res.kelas}) dicatat! Menunggu persetujuan petugas di Dashboard.`,
@@ -235,7 +253,7 @@ export default function SimulasiIotPage() {
         } else if (res.code === 'sesi_kartu_lain_aktif') {
           const activeName = res.session?.kelas || res.session?.nama_pemegang || res.session?.uid_kartu || 'lain';
           addLog(
-            `[RX] TOLAK: Kartu ${label} tidak bisa tap! Sesi ${activeName} sedang aktif. Tunggu selesai atau habis (${SESSION_DURATION_SECONDS}s).`,
+            `[RX] TOLAK: Kartu ${label} tidak bisa tap! Sesi ${activeName} sedang aktif. Tunggu selesai atau habis (${sessionSeconds(res)}s).`,
             'error'
           );
         } else if (res.code === 'kartu_nonaktif') {
@@ -507,7 +525,11 @@ export default function SimulasiIotPage() {
                   <div className="w-full bg-blue-200/60 rounded-full h-2 overflow-hidden">
                     <div
                       className={`h-2 rounded-full transition-all duration-300 ${
-                        timeLeft > 10 ? 'bg-emerald-500' : timeLeft > 5 ? 'bg-amber-500' : 'bg-red-500'
+                        timeLeft > maxDuration / 2
+                          ? 'bg-emerald-500'
+                          : timeLeft > maxDuration / 4
+                            ? 'bg-amber-500'
+                            : 'bg-red-500'
                       }`}
                       style={{ width: `${progressPercent}%` }}
                     />

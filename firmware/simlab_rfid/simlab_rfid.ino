@@ -9,8 +9,8 @@
  *    1. Tap KARTU KELAS  -> sesi kelas dimulai (tanpa mode PINJAM/KEMBALI)
  *    2. Tap TAG ALAT     -> backend menentukan pinjam / kembali / tolak
  *    3. Tap KARTU KELAS lagi -> sesi selesai
- *    Sesi otomatis habis 10 detik setelah tap terakhir.
- *    Setiap tap alat yang berhasil memperpanjang sesi 10 detik.
+ *    Sesi otomatis habis 20 detik setelah tap terakhir.
+ *    Setiap tap alat yang berhasil memperpanjang sesi 20 detik.
  *    Tap alat yang sama pada sesi aktif ditolak sebagai TAP DUPLIKAT.
  *
  *  Firmware TIDAK menentukan sendiri tindakan pinjam atau kembali.
@@ -86,7 +86,7 @@ const char* DEVICE_KEY        = "";
 // ================================================================
 //  WAKTU
 // ================================================================
-const unsigned long SESSION_MS            = 10000; // fallback; nilai utama dari session.expires_in_seconds
+const unsigned long SESSION_MS            = 20000; // fallback; nilai utama dari session.expires_in_seconds
 const unsigned long SAME_TAG_COOLDOWN_MS  = 2500;  // abaikan tap kartu yg sama berulang
 const unsigned long MESSAGE_MS            = 3000;  // lama pesan tampil di LCD
 const unsigned long WIFI_RETRY_MS         = 10000;
@@ -345,10 +345,11 @@ void applySessionFromResponse(JsonVariantConst session) {
   }
 
   int remaining = session["expires_in_seconds"] | -1;
-  if (remaining < 0) {
+  if (remaining < 0 || remaining > 300) {
     // Kompatibilitas mundur saja; backend terbaru selalu mengirim field ini.
     remaining = (int)(SESSION_MS / 1000UL);
   }
+  // Field dari database dalam satuan detik, millis() dalam milidetik.
   sessionUntil = millis() + (unsigned long)remaining * 1000UL;
 }
 

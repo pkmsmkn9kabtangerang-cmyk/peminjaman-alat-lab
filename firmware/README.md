@@ -62,9 +62,9 @@ Sketch: [`simlab_rfid/simlab_rfid.ino`](simlab_rfid/simlab_rfid.ino)
    (juga tercetak di Serial Monitor).
 2. Daftarkan UID tersebut di web: **Kartu RFID** (untuk kartu kelas) atau **Kelola Alat** (kolom *Kode stiker / Tag RFID alat*).
 3. Alur peminjaman:
-   - Tap **kartu kelas** → sesi mulai, LCD menampilkan **kelas** dan hitung mundur 10 detik
+   - Tap **kartu kelas** → sesi mulai, LCD menampilkan **kelas** dan hitung mundur 20 detik
    - Tap **stiker alat** → backend menentukan sendiri: `DIPINJAM`, `DIKEMBALIKAN`, atau penolakan
-   - Setiap tap alat yang berhasil memperpanjang sesi 10 detik
+   - Setiap tap alat yang berhasil memperpanjang sesi 20 detik
    - Timer LCD mengikuti `session.expires_in_seconds` dari database; timer lokal
      hanya untuk menggambar hitung mundur, bukan sumber keputusan sesi
    - Tap **stiker alat yang sama** pada sesi yang sama → `TAP DUPLIKAT` (bukan pengembalian)
