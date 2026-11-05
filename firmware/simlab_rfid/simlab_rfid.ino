@@ -56,8 +56,8 @@ const char* SUPABASE_URL      = "";
 const char* SUPABASE_ANON_KEY = "";
 
 // Identitas alat (dikirim di header x-device-id / x-device-key)
-const char* DEVICE_ID         = "esp32-lab-01";
-const char* DEVICE_KEY        = "sim-key";
+const char* DEVICE_ID         = "";
+const char* DEVICE_KEY        = "";
 
 // ================================================================
 //  PIN & PERANGKAT
