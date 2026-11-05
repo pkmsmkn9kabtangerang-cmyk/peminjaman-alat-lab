@@ -58,6 +58,11 @@ transaksi tersebut masih berstatus `dipinjam`. Kembalikan alat terlebih dahulu;
 migration `013_guard_hapus_transaksi_aktif.sql` juga memasang trigger database
 sebagai pengaman terakhir.
 
+Alat yang masih memiliki transaksi `dipinjam` tidak dapat diubah maupun dihapus.
+`manage-alat` mengembalikan HTTP `422` dengan `code: "alat_sedang_dipinjam"`.
+Migration `014_guard_alat_dipinjam.sql` memasang trigger `BEFORE UPDATE` dan
+`BEFORE DELETE` pada tabel `alat` sebagai pengaman terakhir.
+
 ---
 
 ## ⚙️ Environment Variables yang Dibutuhkan
@@ -168,8 +173,8 @@ supabase secrets set SITE_URL=https://your-frontend-domain.com
 # Jalankan Supabase lokal
 supabase start
 
-# Terapkan migration (termasuk 012_rfid_atomic_tap.sql dan
-# 013_guard_hapus_transaksi_aktif.sql)
+# Terapkan migration (termasuk 012_rfid_atomic_tap.sql,
+# 013_guard_hapus_transaksi_aktif.sql, dan 014_guard_alat_dipinjam.sql)
 supabase db reset
 
 # Test rfid-tap (wajib menyertakan header device)

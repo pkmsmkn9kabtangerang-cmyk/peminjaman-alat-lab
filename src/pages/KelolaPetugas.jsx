@@ -362,7 +362,7 @@ export default function PenggunaPage({ currentUser }) {
               title="Ubah pengguna"
               aria-label={`Ubah pengguna ${row.nama_lengkap || row.username}`}
             >
-              <IconPencil size={17} />
+              <IconPencil size={20} />
             </button>
             {row.is_verified === false && (
               <button
@@ -371,7 +371,7 @@ export default function PenggunaPage({ currentUser }) {
                 className="table-action"
                 title="Kirim ulang undangan"
               >
-                <IconSend size={13} className="inline mr-1" />
+                <IconSend size={15} className="inline mr-1" />
                 Kirim ulang
               </button>
             )}
@@ -382,7 +382,7 @@ export default function PenggunaPage({ currentUser }) {
               title="Hapus pengguna"
               aria-label={`Hapus pengguna ${row.nama_lengkap || row.username}`}
             >
-              <IconTrash size={17} />
+              <IconTrash size={20} />
             </button>
           </div>
         );
@@ -421,7 +421,7 @@ export default function PenggunaPage({ currentUser }) {
               title="Refresh data"
               aria-label="Muat ulang data pengguna"
             >
-              <IconRefresh size={18} />
+              <IconRefresh size={20} />
               <span className="text-sm font-semibold min-[420px]:sr-only">Muat ulang</span>
             </button>
             <Button icon={IconPlus} onClick={openAdd} className="w-full justify-center min-[420px]:flex-1 md:w-auto md:flex-none">

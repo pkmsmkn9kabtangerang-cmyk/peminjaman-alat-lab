@@ -24,14 +24,61 @@ const satuanAlat = (item) =>
 // ── Data access: Supabase jika ada, localStorage jika tidak ──
 async function fetchAlat() {
   if (isSupabaseConfigured) {
-    const { data, error } = await supabase
-      .from('alat')
-      .select('id, kode, nama, kategori, jumlah_total, jumlah_rusak, tipe, satuan, created_at')
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return data ?? [];
+    const [alatRes, trxRes] = await Promise.all([
+      supabase
+        .from('alat')
+        .select('id, kode, nama, kategori, jumlah_total, jumlah_rusak, tipe, satuan, created_at')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('transaksi')
+        .select('alat_id')
+        .eq('status', 'dipinjam'),
+    ]);
+    if (alatRes.error) throw alatRes.error;
+    if (trxRes.error) throw trxRes.error;
+
+    const activeCount = new Map();
+    for (const trx of trxRes.data ?? []) {
+      if (!trx.alat_id) continue;
+      activeCount.set(trx.alat_id, (activeCount.get(trx.alat_id) || 0) + 1);
+    }
+
+    return (alatRes.data ?? []).map((a) => ({
+      ...a,
+      dipinjam_aktif: activeCount.get(a.id) || 0,
+    }));
   }
-  return dbService.getAlat();
+
+  const transaksi = dbService.getTransaksi();
+  return dbService.getAlat().map((a) => ({
+    ...a,
+    dipinjam_aktif: transaksi.filter(
+      (t) => t.alat_id === a.id && t.status === 'dipinjam'
+    ).length,
+  }));
+}
+
+async function getActiveLoanCount(alatId) {
+  if (isSupabaseConfigured) {
+    const { count, error } = await supabase
+      .from('transaksi')
+      .select('id', { count: 'exact', head: true })
+      .eq('alat_id', alatId)
+      .eq('status', 'dipinjam');
+    if (error) throw error;
+    return count ?? 0;
+  }
+  return dbService
+    .getTransaksi()
+    .filter((t) => t.alat_id === alatId && t.status === 'dipinjam').length;
+}
+
+function alatSedangDipinjamError() {
+  const err = new Error(
+    'Alat tidak dapat diubah karena masih dipinjam. Kembalikan alat terlebih dahulu.'
+  );
+  err.code = 'alat_sedang_dipinjam';
+  return err;
 }
 
 async function insertAlat(payload) {
@@ -57,6 +104,9 @@ async function insertAlat(payload) {
 
 async function updateAlat(id, payload) {
   if (isSupabaseConfigured) {
+    const activeCount = await getActiveLoanCount(id);
+    if (activeCount > 0) throw alatSedangDipinjamError();
+
     const { data, error } = await supabase
       .from('alat')
       .update(payload)
@@ -66,11 +116,15 @@ async function updateAlat(id, payload) {
     if (error) throw error;
     return data;
   }
-  const current = dbService.getAlat();
-  const updated = current.map((a) =>
-    a.id === id ? { ...a, ...payload, stok_tersedia: Number(payload.jumlah_total) - Number(payload.jumlah_rusak) } : a
-  );
-  dbService.saveAlat(updated);
+
+  const result = dbService.updateAlat(id, payload);
+  if (!result.ok) {
+    if (result.error === 'alat_sedang_dipinjam') throw alatSedangDipinjamError();
+    const err = new Error('Alat tidak ditemukan.');
+    err.code = result.error;
+    throw err;
+  }
+  return result.data;
 }
 
 async function deleteAlat(id) {
@@ -214,11 +268,20 @@ export default function KelolaAlat() {
   useEffect(() => {
     reload();
 
-    // Subscribe Realtime jika Supabase terkonfigurasi
-    if (!isSupabaseConfigured) return;
+    // Mode demo/local: perubahan transaksi dari simulator harus langsung
+    // memperbarui status "sedang dipinjam" pada tabel alat.
+    if (!isSupabaseConfigured) {
+      const handleStorage = () => reload();
+      window.addEventListener('simlab_storage_updated', handleStorage);
+      return () => window.removeEventListener('simlab_storage_updated', handleStorage);
+    }
+
+    // Status edit/delete bergantung pada transaksi aktif, jadi dengarkan
+    // perubahan alat sekaligus transaksi.
     const ch = supabase
       .channel('alat-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'alat' }, () => reload())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transaksi' }, () => reload())
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [reload]);
@@ -319,6 +382,15 @@ export default function KelolaAlat() {
   };
 
   const openEdit = (item) => {
+    if (Number(item.dipinjam_aktif) > 0) {
+      showFeedback({
+        type: 'warning',
+        title: 'Alat sedang dipinjam',
+        message: `${item.nama} belum dikembalikan. Kembalikan alat terlebih dahulu sebelum mengubah datanya.`,
+      });
+      return;
+    }
+
     const habisPakai = item.tipe === 'habis_pakai';
     setEditItem(item);
     setErrors({});
@@ -404,6 +476,15 @@ export default function KelolaAlat() {
       reload();
     } catch (err) {
       console.error('[KelolaAlat] save error:', err);
+      if (err?.code === 'alat_sedang_dipinjam' || /masih dipinjam/i.test(err?.message || '')) {
+        showFeedback({
+          type: 'warning',
+          title: 'Alat sedang dipinjam',
+          message: err.message || 'Kembalikan alat terlebih dahulu sebelum mengubah datanya.',
+        });
+        reload();
+        return;
+      }
       showFeedback({
         type: 'error',
         title: editItem ? 'Perubahan gagal disimpan.' : 'Alat gagal ditambahkan.',
@@ -446,7 +527,16 @@ export default function KelolaAlat() {
       key: 'nama',
       label: 'Nama Alat',
       sortable: true,
-      render: (row) => <p className="font-medium text-main">{row.nama}</p>,
+      render: (row) => (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-medium text-main">{row.nama}</p>
+          {Number(row.dipinjam_aktif) > 0 && (
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+              Dipinjam{Number(row.dipinjam_aktif) > 1 ? ` ${row.dipinjam_aktif}` : ''}
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       key: 'kode',
@@ -493,28 +583,41 @@ export default function KelolaAlat() {
     {
       key: 'aksi',
       label: '',
-      render: (row) => (
-        <div className="flex items-center gap-1 justify-end">
-          <button
-            type="button"
-            onClick={() => openEdit(row)}
-            className="table-action table-action-edit"
-            title="Ubah alat"
-            aria-label={`Ubah ${row.nama}`}
-          >
-            <IconPencil size={17} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setDeleteTarget(row)}
-            className="table-action table-action-danger"
-            title="Hapus alat"
-            aria-label={`Hapus ${row.nama}`}
-          >
-            <IconTrash size={17} />
-          </button>
-        </div>
-      ),
+      render: (row) => {
+        const sedangDipinjam = Number(row.dipinjam_aktif) > 0;
+        return (
+          <div className="flex items-center gap-1 justify-end">
+            <button
+              type="button"
+              onClick={() => openEdit(row)}
+              disabled={sedangDipinjam}
+              className="table-action table-action-edit disabled:cursor-not-allowed disabled:opacity-40"
+              title={sedangDipinjam ? 'Alat sedang dipinjam — tidak bisa diubah' : 'Ubah alat'}
+              aria-label={
+                sedangDipinjam
+                  ? `${row.nama} sedang dipinjam, tidak bisa diubah`
+                  : `Ubah ${row.nama}`
+              }
+            >
+              <IconPencil size={17} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeleteTarget(row)}
+              disabled={sedangDipinjam}
+              className="table-action table-action-danger disabled:cursor-not-allowed disabled:opacity-40"
+              title={sedangDipinjam ? 'Alat sedang dipinjam — tidak bisa dihapus' : 'Hapus alat'}
+              aria-label={
+                sedangDipinjam
+                  ? `${row.nama} sedang dipinjam, tidak bisa dihapus`
+                  : `Hapus ${row.nama}`
+              }
+            >
+              <IconTrash size={17} />
+            </button>
+          </div>
+        );
+      },
     },
   ];
 
@@ -526,7 +629,7 @@ export default function KelolaAlat() {
       />
 
       <PageNote title="Informasi Penting" icon={IconMail}>
-        Alat yang didaftarkan di sini akan langsung sinkron dengan ketersediaan stok secara realtime. Pastikan kode alat unik untuk setiap jenis barang agar tidak terjadi tumpang tindih data saat peminjaman.
+        Alat yang didaftarkan di sini akan langsung sinkron dengan ketersediaan stok secara realtime. Pastikan kode alat unik untuk setiap jenis barang agar tidak terjadi tumpang tindih data saat peminjaman. Alat yang sedang dipinjam tidak dapat diubah atau dihapus sampai transaksinya dikembalikan.
       </PageNote>
 
       <DataTable
@@ -601,8 +704,8 @@ export default function KelolaAlat() {
                 />
                 {form.kode ? (
                   <span className={`absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shadow-xs ${errors.kode
-                      ? 'text-rose-700 bg-rose-50 border border-rose-200'
-                      : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                    ? 'text-rose-700 bg-rose-50 border border-rose-200'
+                    : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
                     }`}>
                     <span className={`w-2 h-2 rounded-full ${errors.kode ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
                     {errors.kode ? 'Duplikat' : 'Terbaca'}

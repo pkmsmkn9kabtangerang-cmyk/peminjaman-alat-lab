@@ -6,6 +6,10 @@
 // PUT    /manage-alat?id=:id       → update alat               [admin only]
 // DELETE /manage-alat?id=:id       → hapus alat                [admin only]
 //
+// Alat yang memiliki transaksi berstatus `dipinjam` tidak dapat diubah
+// maupun dihapus (422, code `alat_sedang_dipinjam`). Kembalikan alat
+// terlebih dahulu.
+//
 // Body POST/PUT: {
 //   nama: string,
 //   kode: string,          // UID stiker RFID alat (unik per unit fisik)
@@ -146,12 +150,31 @@ Deno.serve(async (req) => {
 
       if (!existing) return json({ success: false, message: "Alat tidak ditemukan" }, 404);
 
+      // Alat yang masih dipinjam tidak boleh diubah sama sekali. Perubahan
+      // nama, kode, kategori, tipe, maupun jumlah unit dapat membuat data
+      // inventaris tidak cocok dengan transaksi yang sedang berjalan.
+      const { count: activeCount, error: activeErr } = await supabaseAdmin
+        .from("transaksi")
+        .select("id", { count: "exact", head: true })
+        .eq("alat_id", id)
+        .eq("status", "dipinjam");
+
+      if (activeErr) throw activeErr;
+
+      if ((activeCount ?? 0) > 0) {
+        return json(
+          {
+            success: false,
+            error: "alat_sedang_dipinjam",
+            code: "alat_sedang_dipinjam",
+            message: "Alat tidak dapat diubah karena masih dipinjam. Kembalikan alat terlebih dahulu.",
+          },
+          422
+        );
+      }
+
       // Jika ubah tipe, cek apakah ada pinjaman aktif atau permintaan menunggu
       if (tipe && tipe !== existing.tipe) {
-         const { data: trxAktif } = await supabaseAdmin.from("transaksi").select("id").eq("alat_id", id).eq("status", "dipinjam").limit(1);
-         if (trxAktif && trxAktif.length > 0) {
-            return json({ success: false, message: "Tidak dapat mengubah tipe karena ada pinjaman aktif" }, 422);
-         }
          const { data: reqMenunggu } = await supabaseAdmin.from("permintaan_habis_pakai").select("id").eq("alat_id", id).eq("status", "menunggu").limit(1);
          if (reqMenunggu && reqMenunggu.length > 0) {
             return json({ success: false, message: "Tidak dapat mengubah tipe karena ada permintaan yang sedang menunggu" }, 422);

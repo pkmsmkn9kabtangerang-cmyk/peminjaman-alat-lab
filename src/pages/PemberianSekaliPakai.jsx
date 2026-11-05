@@ -216,7 +216,7 @@ export default function PemberianSekaliPakai({ user }) {
             title="Refresh data"
             aria-label="Muat ulang data pemberian"
           >
-            <IconRefresh size={18} className={loading ? 'animate-spin' : ''} />
+            <IconRefresh size={20} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
 

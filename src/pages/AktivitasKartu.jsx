@@ -697,7 +697,7 @@ export default function AktivitasKartuPage() {
                   className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 min-[420px]:w-11 min-[420px]:border-0 min-[420px]:bg-transparent"
                   title="Refresh data"
                 >
-                  <IconRefresh size={18} />
+                  <IconRefresh size={20} />
                   <span className="text-sm font-semibold min-[420px]:sr-only">Muat ulang</span>
                 </button>
                 {isAdmin && (
@@ -751,7 +751,7 @@ export default function AktivitasKartuPage() {
                   className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 min-[420px]:w-11 min-[420px]:border-0 min-[420px]:bg-transparent"
                   title="Refresh data"
                 >
-                  <IconRefresh size={18} />
+                  <IconRefresh size={20} />
                   <span className="text-sm font-semibold min-[420px]:sr-only">Muat ulang</span>
                 </button>
                 {isAdmin && (

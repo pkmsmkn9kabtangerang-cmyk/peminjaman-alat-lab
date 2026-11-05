@@ -230,6 +230,37 @@ export const dbService = {
   },
   saveAlat: (a) => setStore('alat', a),
 
+  // Perbarui satu alat. Alat yang masih memiliki transaksi aktif tidak
+  // boleh diubah agar data inventaris dan pinjaman tetap konsisten.
+  updateAlat: (id, payload) => {
+    const transaksi = getStore('transaksi', INITIAL_TRANSAKSI);
+    const sedangDipinjam = transaksi.some(
+      (t) => t.alat_id === id && t.status === 'dipinjam'
+    );
+    if (sedangDipinjam) {
+      return { ok: false, error: 'alat_sedang_dipinjam' };
+    }
+
+    const current = getStore('alat', INITIAL_ALAT);
+    const index = current.findIndex((a) => a.id === id);
+    if (index === -1) {
+      return { ok: false, error: 'alat_tidak_ditemukan' };
+    }
+
+    const previous = current[index];
+    const next = {
+      ...previous,
+      ...payload,
+      stok_tersedia:
+        Number(payload.jumlah_total ?? previous.jumlah_total) -
+        Number(payload.jumlah_rusak ?? previous.jumlah_rusak),
+    };
+    const updated = [...current];
+    updated[index] = next;
+    setStore('alat', updated);
+    return { ok: true, data: next };
+  },
+
   // Hitung stok_tersedia dari jumlah_total & jumlah_dipinjam aktif.
   // Untuk alat sekali pakai, jumlah_total adalah total unit yang dimiliki
   // dan tidak berkurang; stok dihitung dari permintaan yang disetujui.

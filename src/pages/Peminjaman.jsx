@@ -163,9 +163,9 @@ export default function PeminjamanPage({ user }) {
       const successMessage =
         selectedAlat?.tipe === 'habis_pakai'
           ? `Pemberian ${jumlah} ${selectedAlat?.satuan || 'unit'} ${selectedAlat?.nama} ` +
-            `untuk kelas ${selectedKartu.kelas} berhasil dicatat.`
+          `untuk kelas ${selectedKartu.kelas} berhasil dicatat.`
           : `Peminjaman ${jumlah} ${selectedAlat?.satuan || 'unit'} ${selectedAlat?.nama} ` +
-            `untuk kelas ${selectedKartu.kelas} berhasil dicatat.`;
+          `untuk kelas ${selectedKartu.kelas} berhasil dicatat.`;
 
       showManualSuccess(successMessage);
       setSuccessInfo(successMessage);
@@ -210,7 +210,7 @@ export default function PeminjamanPage({ user }) {
             title="Refresh data"
             aria-label="Muat ulang data peminjaman"
           >
-            <IconRefresh size={18} className={loading ? 'animate-spin' : ''} />
+            <IconRefresh size={20} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
 

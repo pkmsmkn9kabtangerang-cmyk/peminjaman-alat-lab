@@ -449,7 +449,7 @@ export default function KartuRfidPage() {
               title="Ubah kartu"
               aria-label={`Ubah kartu ${row.kelas}`}
             >
-              <IconPencil size={17} />
+              <IconPencil size={20} />
             </button>
             <button
               type="button"
@@ -458,7 +458,7 @@ export default function KartuRfidPage() {
               title={isBorrowing ? 'Kartu tidak dapat dihapus karena masih meminjam alat' : 'Hapus kartu'}
               aria-label={`Hapus kartu ${row.kelas}`}
             >
-              <IconTrash size={17} />
+              <IconTrash size={20} />
             </button>
           </div>
         );
@@ -493,7 +493,7 @@ export default function KartuRfidPage() {
               className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 min-[420px]:w-11 min-[420px]:border-0 min-[420px]:bg-transparent"
               title="Refresh data"
             >
-              <IconRefresh size={18} />
+              <IconRefresh size={20} />
               <span className="text-sm font-semibold min-[420px]:sr-only">Muat ulang</span>
             </button>
             <Button icon={IconPlus} onClick={openAdd} className="w-full justify-center min-[420px]:flex-1 md:w-auto md:flex-none">

@@ -241,7 +241,7 @@ export default function PengembalianPage({ user }) {
             title="Refresh data"
             aria-label="Muat ulang data pengembalian"
           >
-            <IconRefresh size={18} className={loadingKartu ? 'animate-spin' : ''} />
+            <IconRefresh size={20} className={loadingKartu ? 'animate-spin' : ''} />
           </button>
         </div>
 
