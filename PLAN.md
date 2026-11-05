@@ -156,7 +156,7 @@ Semua backend serverless berlokasi di direktori `supabase/functions/` (Deno runt
 | **`process-manual`** | `POST` | Admin, Petugas (JWT) | Memproses peminjaman dan pengembalian yang dilakukan manual oleh staf via web (memvalidasi stok, update status transaksi, isi catatan & kondisi). |
 | **`manage-alat`** | `GET, POST, PUT, DELETE`| Read: Authenticated<br>Write: Admin | CRUD inventaris alat lab, kode alat, kategori, jumlah total, dan pelaporan unit rusak. |
 | **`manage-kartu`** | `GET, POST, PUT, DELETE`| Read: Authenticated<br>Write: Admin | Registrasi kartu RFID kelas, status aktif/blokir, nama ketua/pemegang kartu. |
-| **`manage-transaksi`**| `GET, PUT, DELETE` | Admin & Petugas (Clear all: Admin) | Mengambil daftar riwayat transaksi, update catatan/kondisi, serta fitur *danger zone* pembersihan massal riwayat / tap log. |
+| **`manage-transaksi`**| `GET, PUT, DELETE` | Admin & Petugas (Clear all: Admin) | Mengambil daftar riwayat transaksi, update catatan/kondisi, serta fitur *danger zone* pembersihan massal riwayat / tap log. Penghapusan riwayat pinjam ditolak selama masih ada transaksi berstatus `dipinjam`; alat harus dikembalikan terlebih dahulu. |
 | **`manage-pengguna`** | `GET, PUT, DELETE` | Admin only (JWT) | Mengelola profil petugas, ganti data/NIP, hapus petugas. **Dilengkapi proteksi:** Admin tidak bisa menghapus atau mengubah akun dirinya sendiri. |
 | **`dashboard-stats`** | `GET` | Authenticated (JWT) | Menyediakan data metrik statistik dashboard (total alat, unit dipinjam, unit rusak, tren aktivitas 7/30 hari). |
 

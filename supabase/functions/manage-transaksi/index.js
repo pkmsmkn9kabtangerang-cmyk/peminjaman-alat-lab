@@ -11,6 +11,10 @@
 // DELETE /manage-transaksi?clear=riwayat    → hapus SEMUA riwayat             [admin only]
 // DELETE /manage-transaksi?clear=taplog     → hapus SEMUA tap_log             [admin only]
 //
+// Penghapusan transaksi berstatus `dipinjam` selalu ditolak (409,
+// code `masih_ada_pinjam`). Pengguna harus mengembalikan alat terlebih
+// dahulu agar stok dan riwayat tetap konsisten.
+//
 // Body PUT: { kondisi_kembali?: string, catatan?: string }
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -90,10 +94,32 @@ Deno.serve(async (req) => {
         }
 
         if (clear === "riwayat" || clear === "pinjam") {
+          // Riwayat pinjam tidak boleh dihapus selama masih ada unit yang
+          // belum dikembalikan. Menghapus transaksi aktif akan membuat alat
+          // seolah-olah tersedia kembali padahal masih dipegang peminjam.
+          const { count: activeCount, error: countErr } = await supabaseAdmin
+            .from("transaksi")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "dipinjam");
+
+          if (countErr) throw countErr;
+
+          if ((activeCount ?? 0) > 0) {
+            return json(
+              {
+                success: false,
+                code: "masih_ada_pinjam",
+                message: `Masih ada ${activeCount} peminjaman aktif. Kembalikan semua alat terlebih dahulu sebelum menghapus riwayat.`,
+                active_count: activeCount,
+              },
+              409
+            );
+          }
+
           const { error: deleteErr } = await supabaseAdmin
             .from("transaksi")
             .delete()
-            .neq("id", ""); // delete all rows
+            .neq("id", ""); // delete all returned rows
 
           if (deleteErr) throw deleteErr;
           return json({ success: true, message: "Semua riwayat transaksi peminjaman berhasil dihapus" });
@@ -128,6 +154,29 @@ Deno.serve(async (req) => {
 
       if (!["admin", "super_admin"].includes(profile.role)) {
         return json({ success: false, message: "Hanya Admin atau Super Admin yang dapat menghapus transaksi" }, 403);
+      }
+
+      const { data: trx, error: trxErr } = await supabaseAdmin
+        .from("transaksi")
+        .select("id, status, nama_alat")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (trxErr) throw trxErr;
+      if (!trx) {
+        return json({ success: false, code: "transaksi_tidak_ditemukan", message: "Transaksi tidak ditemukan" }, 404);
+      }
+
+      if (trx.status === "dipinjam") {
+        return json(
+          {
+            success: false,
+            code: "masih_ada_pinjam",
+            message: `Transaksi ${trx.nama_alat || trx.id} masih dipinjam. Kembalikan alat terlebih dahulu sebelum menghapus riwayat.`,
+            active_count: 1,
+          },
+          409
+        );
       }
 
       const { error: deleteErr } = await supabaseAdmin

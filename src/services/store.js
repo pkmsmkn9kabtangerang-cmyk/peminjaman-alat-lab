@@ -275,6 +275,18 @@ export const dbService = {
   getTransaksi:  () => getStore('transaksi', INITIAL_TRANSAKSI),
   saveTransaksi: (t) => setStore('transaksi', t),
 
+  // Hapus seluruh riwayat hanya jika tidak ada transaksi aktif. Transaksi
+  // aktif harus dikembalikan dulu agar stok tidak berubah palsu.
+  clearTransaksi: () => {
+    const transaksi = getStore('transaksi', INITIAL_TRANSAKSI);
+    const activeCount = transaksi.filter((t) => t.status === 'dipinjam').length;
+    if (activeCount > 0) {
+      return { ok: false, error: 'masih_ada_pinjam', active_count: activeCount };
+    }
+    setStore('transaksi', []);
+    return { ok: true, deleted: transaksi.length };
+  },
+
   // --- Permintaan Habis Pakai ---
   getPermintaan: () => getStore('permintaan', []),
   savePermintaan: (p) => setStore('permintaan', p),

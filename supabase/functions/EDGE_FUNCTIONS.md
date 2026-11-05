@@ -52,6 +52,12 @@ supabase/
 | `manage-pengguna`   | POST            | `/manage-pengguna?id=:uid&aksi=reset-password` | Admin                 |
 | `dashboard-stats`   | GET             | `/dashboard-stats?days=7`                      | Semua (authenticated) |
 
+Penghapusan riwayat pinjam (`clear=riwayat`/`clear=pinjam`) dan penghapusan
+satu transaksi ditolak dengan HTTP `409` dan `code: "masih_ada_pinjam"` selama
+transaksi tersebut masih berstatus `dipinjam`. Kembalikan alat terlebih dahulu;
+migration `013_guard_hapus_transaksi_aktif.sql` juga memasang trigger database
+sebagai pengaman terakhir.
+
 ---
 
 ## ⚙️ Environment Variables yang Dibutuhkan
@@ -162,7 +168,8 @@ supabase secrets set SITE_URL=https://your-frontend-domain.com
 # Jalankan Supabase lokal
 supabase start
 
-# Terapkan migration (termasuk 012_rfid_atomic_tap.sql)
+# Terapkan migration (termasuk 012_rfid_atomic_tap.sql dan
+# 013_guard_hapus_transaksi_aktif.sql)
 supabase db reset
 
 # Test rfid-tap (wajib menyertakan header device)

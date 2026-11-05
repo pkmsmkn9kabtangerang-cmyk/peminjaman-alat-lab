@@ -248,38 +248,56 @@ export default function RiwayatPage() {
   const handleClearAll = async () => {
     if (!isClearConfirmed) return;
 
+    // Riwayat pinjam tidak boleh dihapus selama masih ada unit yang belum
+    // dikembalikan. Pemeriksaan server tetap menjadi penentu utama.
+    if (clearTarget === 'pinjam' && activePinjamCount > 0) {
+      showFeedback({
+        type: 'warning',
+        title: 'Masih ada peminjaman aktif',
+        message: `${activePinjamCount} alat belum dikembalikan. Kembalikan semua alat terlebih dahulu sebelum menghapus riwayat.`,
+      });
+      setShowClearModal(false);
+      setClearInput('');
+      return;
+    }
+
     if (clearTarget === 'pinjam') {
       if (isSupabaseConfigured) {
         try {
-          let cleared = false;
-          try {
-            const res = await callFunction('manage-transaksi', null, {
-              method: 'DELETE',
-              params: { clear: 'pinjam' },
-            });
-            if (res?.success) cleared = true;
-          } catch (edgeErr) {
-            console.warn('[Riwayat] Edge function clear failed, trying direct delete:', edgeErr);
-          }
-
-          if (!cleared) {
-            // Direct delete: id di tabel transaksi adalah teks, gunakan neq('id', '')
-            const { error: trxErr } = await supabase.from('transaksi').delete().neq('id', '');
-            if (trxErr) throw trxErr;
-          }
+          await callFunction('manage-transaksi', null, {
+            method: 'DELETE',
+            params: { clear: 'pinjam' },
+          });
 
           showFeedback({ type: 'success', title: 'Semua riwayat peminjaman & pengembalian berhasil dihapus.' });
           setData([]);
           reloadData();
         } catch (err) {
           console.error('[Riwayat] clear error:', err);
-          showFeedback({ type: 'error', title: 'Gagal menghapus riwayat peminjaman.', message: friendlyError(err) });
+          if (err?.code === 'masih_ada_pinjam') {
+            showFeedback({
+              type: 'warning',
+              title: 'Riwayat tidak dihapus',
+              message: err.message || 'Masih ada alat yang dipinjam. Kembalikan semua alat terlebih dahulu.',
+            });
+            reloadData();
+          } else {
+            showFeedback({ type: 'error', title: 'Gagal menghapus riwayat peminjaman.', message: friendlyError(err) });
+          }
         }
       } else {
-        dbService.saveTransaksi([]);
-        setData([]);
-        reloadData();
-        showFeedback({ type: 'success', title: 'Semua riwayat transaksi peminjaman berhasil dihapus.' });
+        const result = dbService.clearTransaksi();
+        if (!result.ok) {
+          showFeedback({
+            type: 'warning',
+            title: 'Riwayat tidak dihapus',
+            message: `Masih ada ${result.active_count} peminjaman aktif. Kembalikan semua alat terlebih dahulu.`,
+          });
+        } else {
+          setData([]);
+          reloadData();
+          showFeedback({ type: 'success', title: 'Semua riwayat transaksi peminjaman berhasil dihapus.' });
+        }
       }
     } else {
       // clearTarget === 'sekali_pakai'
@@ -567,6 +585,14 @@ export default function RiwayatPage() {
                         showFeedback({ type: 'warning', title: 'Data kosong', message: 'Tidak ada data riwayat peminjaman untuk dihapus.' });
                         return;
                       }
+                      if (activePinjamCount > 0) {
+                        showFeedback({
+                          type: 'warning',
+                          title: 'Masih ada peminjaman aktif',
+                          message: `${activePinjamCount} alat belum dikembalikan. Kembalikan semua alat terlebih dahulu sebelum menghapus riwayat.`,
+                        });
+                        return;
+                      }
                       setClearTarget('pinjam');
                       setShowClearModal(true);
                     }}
@@ -646,7 +672,7 @@ export default function RiwayatPage() {
         title={clearTarget === 'pinjam' ? 'Hapus Riwayat Peminjaman' : 'Hapus Riwayat Sekali Pakai'}
         subtitle={
           clearTarget === 'pinjam'
-            ? 'Semua catatan peminjaman dan pengembalian akan dihapus permanen.'
+            ? 'Hanya riwayat yang sudah dikembalikan yang dapat dihapus. Kembalikan semua alat terlebih dahulu.'
             : 'Riwayat pemberian alat sekali pakai yang sudah diproses akan dihapus permanen.'
         }
         icon={IconAlertTriangle}
@@ -663,7 +689,7 @@ export default function RiwayatPage() {
                 <p className="text-sm font-bold text-red-900">Tindakan ini tidak bisa dibatalkan</p>
                 <p className="mt-1 text-sm leading-relaxed text-red-800">
                   {clearTarget === 'pinjam'
-                    ? 'Seluruh data transaksi peminjaman dan pengembalian akan dihapus dari sistem.'
+                    ? 'Seluruh catatan peminjaman yang sudah dikembalikan akan dihapus permanen. Riwayat pinjaman yang masih aktif tidak dapat dihapus.'
                     : 'Hanya riwayat yang sudah disetujui, ditolak, atau dibatalkan yang akan dihapus.'}
                 </p>
               </div>
@@ -705,11 +731,11 @@ export default function RiwayatPage() {
           </div>
 
           {clearTarget === 'pinjam' && activePinjamCount > 0 && (
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-sm text-amber-900">
-              <p className="font-bold">Perhatian: masih ada peminjaman aktif</p>
+            <div className="rounded-xl border border-red-300 bg-red-50 p-3.5 text-sm text-red-900">
+              <p className="font-bold">Penghapusan diblokir</p>
               <p className="mt-1 leading-relaxed">
-                {activePinjamCount} peminjaman yang belum dikembalikan juga akan ikut terhapus.
-                Sebaiknya proses pengembalian alat terlebih dahulu.
+                Masih ada {activePinjamCount} peminjaman yang belum dikembalikan.
+                Kembalikan semua alat terlebih dahulu; setelah itu riwayat baru bisa dihapus.
               </p>
             </div>
           )}
@@ -776,7 +802,7 @@ export default function RiwayatPage() {
             <Button
               variant="danger"
               icon={IconTrash}
-              disabled={!isClearConfirmed || (clearTarget === 'pinjam' ? data.length === 0 : processedSekaliPakaiCount === 0)}
+              disabled={!isClearConfirmed || (clearTarget === 'pinjam' ? data.length === 0 || activePinjamCount > 0 : processedSekaliPakaiCount === 0)}
               onClick={handleClearAll}
               className="h-11 w-full justify-center sm:w-auto"
             >
