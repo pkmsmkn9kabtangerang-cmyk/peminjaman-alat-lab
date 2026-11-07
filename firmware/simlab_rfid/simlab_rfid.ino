@@ -37,11 +37,13 @@
  *    - MFRC522            by GithubCommunity (miguelbalboa)
  *    - LiquidCrystal I2C  by Frank de Brabander
  *    - ArduinoJson        by Benoit Blanchon (versi 7.x)
+ *    - WiFiManager        by tzapu
  *  WiFi, HTTPClient, WiFiClientSecure sudah bawaan board ESP32.
  * ================================================================
  */
 
 #include <WiFi.h>
+#include <WiFiManager.h>       // Library: WiFiManager by tzapu
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <SPI.h>
@@ -53,14 +55,20 @@
 // ================================================================
 //  KONFIGURASI — WAJIB DIISI SEBELUM UPLOAD
 // ================================================================
-const char* WIFI_SSID         = "";
-const char* WIFI_PASSWORD     = "";
+// WiFi sekolah TIDAK lagi ditulis di firmware. WiFiManager akan
+// menyimpan SSID/password ke memori ESP32 (NVS) setelah setup pertama.
+//
+// Hotspot ini hanya untuk halaman konfigurasi WiFi, BUKAN WiFi sekolah.
+// Ganti password AP dengan milik sendiri (minimal 8 karakter).
+const char* CONFIG_AP_NAME     = "di isi sendiri";
+const char* CONFIG_AP_PASSWORD = "di isi sendiri";
 
-// Sama dengan VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY di web
+// Supabase
 const char* SUPABASE_URL      = "";
 const char* SUPABASE_ANON_KEY = "";
 
-// Identitas alat (dikirim di header x-device-id / x-device-key)
+// Identitas alat (dikirim di header x-device-id / x-device-key).
+// Value harus sama dengan value secret rfid_device_id / rfid_device_key.
 const char* DEVICE_ID         = "";
 const char* DEVICE_KEY        = "";
 
@@ -89,14 +97,18 @@ const char* DEVICE_KEY        = "";
 const unsigned long SESSION_MS            = 20000; // fallback; nilai utama dari session.expires_in_seconds
 const unsigned long SAME_TAG_COOLDOWN_MS  = 2500;  // abaikan tap kartu yg sama berulang
 const unsigned long MESSAGE_MS            = 3000;  // lama pesan tampil di LCD
-const unsigned long WIFI_RETRY_MS         = 10000;
-const uint16_t      HTTP_TIMEOUT_MS       = 10000;
+const unsigned long WIFI_RETRY_MS             = 10000; // percobaan koneksi ulang tiap 10 detik
+const unsigned long WIFI_PORTAL_RETRY_MS      = 120000; // portal dicoba setelah offline terus 2 menit
+const unsigned long WIFI_CONNECT_TIMEOUT_SEC = 20;    // waktu mencoba WiFi tersimpan
+const unsigned long WIFI_PORTAL_TIMEOUT_SEC  = 300;   // portal setup aktif maksimal 5 menit per percobaan
+const uint16_t      HTTP_TIMEOUT_MS           = 10000;
 
 // ================================================================
 //  OBJEK & STATE
 // ================================================================
 MFRC522           rfid(PIN_RFID_SS, PIN_RFID_RST);
 LiquidCrystal_I2C lcd(LCD_ADDRESS, LCD_COLS, LCD_ROWS);
+WiFiManager       wifiManager;
 
 String        lastUid;
 unsigned long lastUidAt     = 0;
@@ -108,8 +120,11 @@ String        sessionKelas;            // kelas/angkatan
 unsigned long sessionUntil  = 0;
 
 unsigned long messageUntil  = 0;       // selama pesan tampil, layar idle tidak digambar
-unsigned long idleDrawAt    = 0;
-unsigned long wifiRetryAt   = 0;
+unsigned long idleDrawAt       = 0;
+unsigned long wifiRetryAt      = 0;
+unsigned long wifiDisconnectedAt = 0;
+unsigned long wifiPortalRetryAt  = 0;
+bool          wifiWasConnected   = false;
 
 String        scrollText;              // teks baris 2 yang terlalu panjang
 unsigned int  scrollPos     = 0;
@@ -219,42 +234,135 @@ void beepSession() { beepPattern(2, 90, 80); }   // sesi mulai / selesai
 void beepError()   { beepPattern(3, 200, 100); } // ditolak / error
 
 // ================================================================
-//  WIFI
+//  WIFI MANAGER
 // ================================================================
-void connectWiFi(unsigned long waitMs) {
+// Perilaku: 
+// - Boot pertama / belum ada WiFi tersimpan: buka SIMLAB-SETUP.
+// - WiFi tersimpan dan tersedia: langsung konek, tanpa membuka hotspot.
+// - WiFi terputus: coba reconnect setiap 10 detik.
+// - Offline terus 2 menit: buka portal setup agar admin dapat mengganti WiFi.
+// - Portal aktif maksimal 5 menit per percobaan; setelah timeout, firmware
+//   tetap hidup dan mencoba konek ulang, bukan restart dalam loop.
+
+void showWiFiConnected() {
+  wifiWasConnected = true;
+  wifiDisconnectedAt = 0;
+  wifiPortalRetryAt = 0;
+  wifiRetryAt = millis() + WIFI_RETRY_MS;
+
+  Serial.printf("[WiFi] Terhubung ke %s, IP: %s\n",
+                WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+  showMessage("WiFi terhubung", WiFi.localIP().toString(), 2000);
+  beepOk();
+}
+
+void showWiFiConfigMode(WiFiManager *manager) {
+  Serial.println("[WiFi] Mode konfigurasi aktif.");
+  Serial.printf("[WiFi] Hubungkan HP ke %s\n", manager->getConfigPortalSSID().c_str());
+  Serial.println("[WiFi] Buka http://192.168.4.1");
+  lcdPrint(0, "WIFI SETUP AKTIF");
+  lcdPrint(1, "192.168.4.1");
+}
+
+bool connectWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  lcdPrint(0, "Konek WiFi...");
-  lcdPrint(1, WIFI_SSID);
-  Serial.printf("[WiFi] Menghubungkan ke %s", WIFI_SSID);
+  wifiManager.setDebugOutput(true);
+  wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT_SEC);
+  wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SEC);
+  wifiManager.setWiFiAutoReconnect(true);
+  wifiManager.setAPCallback(showWiFiConfigMode);
+  wifiManager.setTitle("SIMLAB WiFi Setup");
 
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < waitMs) {
-    delay(300);
-    Serial.print('.');
+  lcdPrint(0, "Cek WiFi...      ");
+  lcdPrint(1, "Menghubungkan...");
+  Serial.println("[WiFi] Mencoba WiFi yang tersimpan.");
+
+  // autoConnect akan memakai kredensial yang tersimpan di NVS.
+  // Hotspot SIMLAB-SETUP hanya dibuka jika koneksi tidak berhasil.
+  bool connected = wifiManager.autoConnect(CONFIG_AP_NAME, CONFIG_AP_PASSWORD);
+
+  if (connected && WiFi.status() == WL_CONNECTED) {
+    showWiFiConnected();
+    return true;
   }
-  Serial.println();
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("[WiFi] Terhubung, IP: %s\n", WiFi.localIP().toString().c_str());
-    showMessage("WiFi terhubung", WiFi.localIP().toString(), 2000);
-    beepOk();
-  } else {
-    Serial.println("[WiFi] Gagal, akan dicoba ulang");
-    showMessage("WiFi gagal", "Mencoba ulang..", 2000);
-    beepError();
-  }
+  Serial.println("[WiFi] Belum terhubung. Firmware tetap berjalan dan akan mencoba lagi.");
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+
+  wifiWasConnected = false;
+  wifiDisconnectedAt = millis();
   wifiRetryAt = millis() + WIFI_RETRY_MS;
+  // Jangan buka portal lagi langsung setelah portal pertama timeout.
+  wifiPortalRetryAt = millis() + WIFI_PORTAL_RETRY_MS;
+  showMessage("WiFi belum siap", "Akan coba ulang", 3000);
+  return false;
+}
+
+void openWiFiConfigPortal() {
+  Serial.println("[WiFi] Membuka portal konfigurasi ulang.");
+  lcdPrint(0, "WIFI SETUP AKTIF");
+  lcdPrint(1, "Buka 192.168.4.1");
+
+  wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT_SEC);
+  wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SEC);
+  wifiManager.setWiFiAutoReconnect(true);
+  wifiManager.setAPCallback(showWiFiConfigMode);
+
+  // Gunakan autoConnect juga untuk percobaan ulang: library akan mencoba
+  // WiFi tersimpan dahulu, lalu membuka portal hanya jika koneksi gagal.
+  // Gunakan satu pola autoConnect agar alur koneksi dan portal konsisten.
+  bool connected = wifiManager.autoConnect(CONFIG_AP_NAME, CONFIG_AP_PASSWORD);
+
+  if (connected && WiFi.status() == WL_CONNECTED) {
+    showWiFiConnected();
+    return;
+  }
+
+  Serial.println("[WiFi] Portal ditutup/time out; koneksi akan dicoba lagi.");
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+
+  wifiWasConnected = false;
+  if (wifiDisconnectedAt == 0) wifiDisconnectedAt = millis();
+  wifiRetryAt = millis() + WIFI_RETRY_MS;
+  wifiPortalRetryAt = millis() + WIFI_PORTAL_RETRY_MS;
+  showMessage("WiFi belum siap", "Coba setup lagi", 3000);
 }
 
 void ensureWiFi() {
-  if (WiFi.status() == WL_CONNECTED || !timeReached(wifiRetryAt)) return;
-  wifiRetryAt = millis() + WIFI_RETRY_MS;
-  Serial.println("[WiFi] Reconnect...");
-  WiFi.disconnect();
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!wifiWasConnected) {
+      showWiFiConnected();
+    }
+    return;
+  }
+
+  if (wifiWasConnected) {
+    wifiWasConnected = false;
+    wifiDisconnectedAt = millis();
+    wifiPortalRetryAt = wifiDisconnectedAt + WIFI_PORTAL_RETRY_MS;
+    Serial.println("[WiFi] Koneksi terputus. Mencoba reconnect.");
+  }
+
+  if (wifiDisconnectedAt == 0) wifiDisconnectedAt = millis();
+
+  if (timeReached(wifiRetryAt)) {
+    wifiRetryAt = millis() + WIFI_RETRY_MS;
+    Serial.println("[WiFi] Reconnect menggunakan kredensial tersimpan...");
+    WiFi.reconnect();
+  }
+
+  // Jangan langsung memunculkan portal karena gangguan singkat.
+  // Portal baru dibuka jika ESP32 offline terus selama 2 menit.
+  if (millis() - wifiDisconnectedAt >= WIFI_PORTAL_RETRY_MS &&
+      timeReached(wifiPortalRetryAt)) {
+    openWiFiConfigPortal();
+  }
 }
 
 // ================================================================
@@ -347,10 +455,10 @@ void applySessionFromResponse(JsonVariantConst session) {
   int remaining = session["expires_in_seconds"] | -1;
   if (remaining < 0 || remaining > 300) {
     // Kompatibilitas mundur saja; backend terbaru selalu mengirim field ini.
-    remaining = (int)(SESSION_MS / 1000UL);
+    remaining = (int)(SESSION_MS / 1100UL);
   }
   // Field dari database dalam satuan detik, millis() dalam milidetik.
-  sessionUntil = millis() + (unsigned long)remaining * 1000UL;
+  sessionUntil = millis() + (unsigned long)remaining * 1100UL;
 }
 
 void handleResponse(int code, JsonDocument& r, bool parsed, const String& uid) {
@@ -499,7 +607,7 @@ void setup() {
     Serial.printf("[RFID] MFRC522 OK (versi 0x%02X)\n", version);
   }
 
-  connectWiFi(15000);
+  connectWiFi();
 }
 
 // ================================================================
